@@ -1077,7 +1077,10 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
                 score,
                 status,
                 correctCount,
-                totalQuestions: questions.length
+                totalQuestions: questions.length,
+                tabSwitches,
+                timeSpent,
+                questionResults
             },
             message: status === 'passed' ? 'Congratulations! You passed the test!' : 'Keep practicing!'
         });
@@ -1166,10 +1169,67 @@ app.get('/api/aptitude-submissions', async (req, res) => {
             studentName: s.student_name,
             score: s.score,
             status: s.status,
+            correctCount: s.correct_count,
+            totalQuestions: s.total_questions,
+            tabSwitches: s.tab_switches || 0,
+            timeSpent: s.time_spent,
             submittedAt: s.submitted_at
         }));
 
         res.json(cleanSubs);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single aptitude submission with question results
+app.get('/api/aptitude-submissions/:id', async (req, res) => {
+    try {
+        const submissionId = req.params.id;
+        
+        // Get submission details
+        const [submissions] = await pool.query(
+            'SELECT s.*, u.name as student_name FROM aptitude_submissions s JOIN users u ON s.student_id = u.id WHERE s.id = ?',
+            [submissionId]
+        );
+        
+        if (submissions.length === 0) {
+            return res.status(404).json({ error: 'Submission not found' });
+        }
+        
+        const s = submissions[0];
+        
+        // Get question results
+        const [questionResults] = await pool.query(
+            'SELECT * FROM aptitude_question_results WHERE submission_id = ?',
+            [submissionId]
+        );
+        
+        const result = {
+            id: s.id,
+            testId: s.test_id,
+            testTitle: s.test_title,
+            studentId: s.student_id,
+            studentName: s.student_name,
+            score: s.score,
+            status: s.status,
+            correctCount: s.correct_count,
+            totalQuestions: s.total_questions,
+            tabSwitches: s.tab_switches || 0,
+            timeSpent: s.time_spent,
+            submittedAt: s.submitted_at,
+            questionResults: questionResults.map(qr => ({
+                questionId: qr.question_id,
+                question: qr.question,
+                userAnswer: qr.user_answer,
+                correctAnswer: qr.correct_answer,
+                isCorrect: qr.is_correct === 'true' || qr.is_correct === true || qr.is_correct === 1,
+                explanation: qr.explanation,
+                category: qr.category
+            }))
+        };
+        
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles, Brain, Target, XCircle } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
+import AptitudeReportModal from '../components/AptitudeReportModal'
 import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
@@ -980,12 +981,29 @@ function AllSubmissions({ user }) {
                                 <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{new Date(sub.submittedAt).toLocaleString()}</td>
                                 <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>{sub.score}%</td>
                                 <td>
-                                    <span className={`status-badge ${sub.status}`}>{sub.status}</span>
-                                    {sub.plagiarism?.detected && (
-                                        <span className="status-badge plagiarized" style={{ marginLeft: '0.5rem' }}>
-                                            <AlertTriangle size={12} /> Plagiarism
-                                        </span>
-                                    )}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center' }}>
+                                        <span className={`status-badge ${sub.status}`}>{sub.status}</span>
+                                        {sub.plagiarism?.detected && (
+                                            <span className="status-badge plagiarized" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <AlertTriangle size={11} /> Plag
+                                            </span>
+                                        )}
+                                        {(sub.integrity?.integrityViolation || sub.tabSwitches > 0) && (
+                                            <span style={{
+                                                fontSize: '0.65rem',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                background: 'rgba(245, 158, 11, 0.15)',
+                                                color: '#f59e0b',
+                                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '3px'
+                                            }}>
+                                                <AlertTriangle size={10} /> {sub.integrity?.tabSwitches || sub.tabSwitches || 0} Viol
+                                            </span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td>
                                     {sub.subType === 'aptitude' ? (
@@ -1039,69 +1057,7 @@ function AllSubmissions({ user }) {
 
             {/* Aptitude Results Modal */}
             {viewAptitudeResult && (
-                <div className="modal-overlay" onClick={() => setViewAptitudeResult(null)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '80vh', overflowY: 'auto' }}>
-                        <div className="modal-header">
-                            <h2>Aptitude Test Results - {viewAptitudeResult.studentName}</h2>
-                            <button onClick={() => setViewAptitudeResult(null)} className="modal-close"><X size={20} /></button>
-                        </div>
-                        <div className="modal-body">
-                            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                                <h3 style={{ margin: 0, color: 'var(--primary)' }}>{viewAptitudeResult.testTitle}</h3>
-                                <p style={{ color: 'var(--text-muted)' }}>Submitted: {new Date(viewAptitudeResult.submittedAt).toLocaleString()}</p>
-                                <div style={{
-                                    display: 'inline-block',
-                                    padding: '1.5rem 3rem',
-                                    borderRadius: '16px',
-                                    background: viewAptitudeResult.status === 'passed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                    marginTop: '1rem'
-                                }}>
-                                    <div style={{ fontSize: '3rem', fontWeight: 800, color: viewAptitudeResult.status === 'passed' ? '#10b981' : '#ef4444' }}>
-                                        {viewAptitudeResult.score}%
-                                    </div>
-                                    <div style={{ color: viewAptitudeResult.status === 'passed' ? '#10b981' : '#ef4444', fontWeight: 600 }}>
-                                        {viewAptitudeResult.status === 'passed' ? '✓ PASSED' : '✗ FAILED'}
-                                    </div>
-                                    <div style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                                        {viewAptitudeResult.correctCount} / {viewAptitudeResult.totalQuestions} correct
-                                    </div>
-                                </div>
-                            </div>
-                            <h4 style={{ marginBottom: '1rem' }}>Question Breakdown</h4>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                {viewAptitudeResult.questionResults?.map((q, idx) => (
-                                    <div key={idx} style={{
-                                        padding: '1rem',
-                                        background: q.isCorrect ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
-                                        border: `1px solid ${q.isCorrect ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                                        borderRadius: '12px'
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                                            <span style={{
-                                                minWidth: '24px',
-                                                height: '24px',
-                                                borderRadius: '50%',
-                                                background: q.isCorrect ? '#10b981' : '#ef4444',
-                                                color: 'white',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: '0.75rem',
-                                                fontWeight: 600
-                                            }}>{q.isCorrect ? '✓' : '✗'}</span>
-                                            <span style={{ fontWeight: 500 }}>{q.question}</span>
-                                        </div>
-                                        <div style={{ marginLeft: '2rem', fontSize: '0.85rem' }}>
-                                            <div><strong>Student answer:</strong> <span style={{ color: q.isCorrect ? '#10b981' : '#ef4444' }}>{q.userAnswer}</span></div>
-                                            {!q.isCorrect && <div><strong>Correct answer:</strong> <span style={{ color: '#10b981' }}>{q.correctAnswer}</span></div>}
-                                            <div style={{ color: 'var(--text-muted)', marginTop: '0.25rem', fontStyle: 'italic' }}>{q.explanation}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <AptitudeReportModal submission={viewAptitudeResult} onClose={() => setViewAptitudeResult(null)} />
             )}
         </>
     )
@@ -1207,7 +1163,7 @@ function SubmissionReportModal({ submission, onClose }) {
                         <h4 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <CheckCircle size={18} color="#3b82f6" /> AI Feedback
                         </h4>
-                        <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', background: 'rgba(30, 41, 59, 0.5)', padding: '1rem', borderRadius: '0.5rem' }}>
+                        <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)' }}>
                             {submission.feedback || 'No feedback provided.'}
                         </p>
                     </div>
@@ -1233,7 +1189,7 @@ function SubmissionReportModal({ submission, onClose }) {
                             </h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                 {submission.analysis.correctness !== undefined && (
-                                    <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                                    <div style={{ background: 'var(--bg-tertiary)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                                         <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <CheckCircle size={22} color="#3b82f6" />
                                         </div>
@@ -1244,7 +1200,7 @@ function SubmissionReportModal({ submission, onClose }) {
                                     </div>
                                 )}
                                 {submission.analysis.efficiency !== undefined && (
-                                    <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                                    <div style={{ background: 'var(--bg-tertiary)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
                                         <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <Zap size={22} color="#10b981" />
                                         </div>
@@ -1255,7 +1211,7 @@ function SubmissionReportModal({ submission, onClose }) {
                                     </div>
                                 )}
                                 {submission.analysis.codeStyle !== undefined && (
-                                    <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                                    <div style={{ background: 'var(--bg-tertiary)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
                                         <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(139, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <Code size={22} color="#8b5cf6" />
                                         </div>
@@ -1266,7 +1222,7 @@ function SubmissionReportModal({ submission, onClose }) {
                                     </div>
                                 )}
                                 {submission.analysis.bestPractices !== undefined && (
-                                    <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                                    <div style={{ background: 'var(--bg-tertiary)', padding: '1rem 1.25rem', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                                         <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <Award size={22} color="#f59e0b" />
                                         </div>

@@ -1,8 +1,40 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { X, Clock, CheckCircle, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Send, Eye, Brain, Target, Award, Sparkles } from 'lucide-react'
 import axios from 'axios'
 
 const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+
+// Seeded random shuffle - ensures same student gets same order on refresh
+function seededShuffle(array, seed) {
+    const shuffled = [...array]
+    let currentIndex = shuffled.length
+    
+    // Simple seeded random number generator
+    const seededRandom = () => {
+        seed = (seed * 9301 + 49297) % 233280
+        return seed / 233280
+    }
+    
+    while (currentIndex > 0) {
+        const randomIndex = Math.floor(seededRandom() * currentIndex)
+        currentIndex--
+        ;[shuffled[currentIndex], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[currentIndex]]
+    }
+    
+    return shuffled
+}
+
+// Generate a numeric seed from student ID and test ID
+function generateSeed(studentId, testId) {
+    const combined = `${studentId}-${testId}`
+    let hash = 0
+    for (let i = 0; i < combined.length; i++) {
+        const char = combined.charCodeAt(i)
+        hash = ((hash << 5) - hash) + char
+        hash = hash & hash // Convert to 32bit integer
+    }
+    return Math.abs(hash)
+}
 
 // ==================== APTITUDE TEST INTERFACE (PROCTORED) ====================
 function AptitudeTestInterface({ test, user, onClose, onComplete }) {
@@ -17,7 +49,13 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
     const [result, setResult] = useState(null)
     const [showResult, setShowResult] = useState(false)
 
-    const questions = test.questions || []
+    // Shuffle questions based on student ID + test ID (deterministic per student)
+    const rawQuestions = test.questions || []
+    const questions = useMemo(() => {
+        const seed = generateSeed(user.id, test.id)
+        return seededShuffle(rawQuestions, seed)
+    }, [rawQuestions, user.id, test.id])
+
     const timerRef = useRef(null)
 
     // Enter fullscreen on mount
@@ -168,146 +206,449 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '2rem'
+                padding: '2rem',
+                overflowY: 'auto'
             }}>
                 <div style={{
-                    background: 'rgba(30, 41, 59, 0.9)',
+                    background: 'rgba(30, 41, 59, 0.95)',
                     backdropFilter: 'blur(20px)',
                     borderRadius: '24px',
                     border: '1px solid rgba(139, 92, 246, 0.3)',
-                    padding: '3rem',
-                    maxWidth: '600px',
+                    maxWidth: '900px',
                     width: '100%',
-                    textAlign: 'center'
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
                 }}>
+                    {/* Header */}
                     <div style={{
-                        width: '100px',
-                        height: '100px',
-                        borderRadius: '50%',
-                        background: result.status === 'passed'
-                            ? 'linear-gradient(135deg, #10b981, #06b6d4)'
-                            : 'linear-gradient(135deg, #ef4444, #f97316)',
+                        padding: '1.5rem 2rem',
+                        borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        margin: '0 auto 1.5rem'
+                        justifyContent: 'space-between',
+                        background: 'rgba(15, 23, 42, 0.5)'
                     }}>
-                        {result.status === 'passed' ? (
-                            <Award size={48} color="white" />
-                        ) : (
-                            <Target size={48} color="white" />
-                        )}
-                    </div>
-
-                    <h2 style={{
-                        fontSize: '2rem',
-                        fontWeight: 800,
-                        color: result.status === 'passed' ? '#10b981' : '#ef4444',
-                        marginBottom: '0.5rem'
-                    }}>
-                        {result.status === 'passed' ? 'Congratulations!' : 'Keep Practicing!'}
-                    </h2>
-
-                    <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
-                        {result.status === 'passed'
-                            ? 'You passed the aptitude test successfully!'
-                            : 'Don\'t worry, you can try again and improve!'}
-                    </p>
-
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
-                        gap: '1rem',
-                        marginBottom: '2rem'
-                    }}>
-                        <div style={{
-                            background: 'rgba(59, 130, 246, 0.1)',
-                            borderRadius: '12px',
-                            padding: '1rem'
-                        }}>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#3b82f6' }}>
-                                {result.score}%
-                            </div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Score</div>
-                        </div>
-                        <div style={{
-                            background: 'rgba(16, 185, 129, 0.1)',
-                            borderRadius: '12px',
-                            padding: '1rem'
-                        }}>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#10b981' }}>
-                                {result.correctCount}
-                            </div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Correct</div>
-                        </div>
-                        <div style={{
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            borderRadius: '12px',
-                            padding: '1rem'
-                        }}>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ef4444' }}>
-                                {result.totalQuestions - result.correctCount}
-                            </div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Wrong</div>
-                        </div>
-                    </div>
-
-                    {/* Question Review */}
-                    <div style={{
-                        background: 'rgba(15, 23, 42, 0.5)',
-                        borderRadius: '12px',
-                        padding: '1rem',
-                        maxHeight: '200px',
-                        overflowY: 'auto',
-                        marginBottom: '2rem',
-                        textAlign: 'left'
-                    }}>
-                        {result.questionResults?.map((qr, idx) => (
-                            <div key={idx} style={{
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '12px',
+                                background: result.status === 'passed'
+                                    ? 'linear-gradient(135deg, #10b981, #06b6d4)'
+                                    : 'linear-gradient(135deg, #ef4444, #f97316)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.75rem',
-                                padding: '0.5rem 0',
-                                borderBottom: idx < result.questionResults.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
+                                justifyContent: 'center'
                             }}>
-                                {qr.isCorrect ? (
-                                    <CheckCircle size={18} color="#10b981" />
-                                ) : (
-                                    <XCircle size={18} color="#ef4444" />
-                                )}
-                                <span style={{
-                                    fontSize: '0.85rem',
-                                    color: qr.isCorrect ? '#10b981' : '#ef4444',
-                                    flex: 1
-                                }}>
-                                    Q{idx + 1}: {qr.category}
-                                </span>
+                                <Brain size={24} color="white" />
                             </div>
-                        ))}
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'white' }}>
+                                    Aptitude Test Report
+                                </h2>
+                                <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
+                                    {test.title}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => {
+                                if (document.fullscreenElement) {
+                                    document.exitFullscreen()
+                                }
+                                onClose()
+                                if (onComplete) onComplete(result)
+                            }}
+                            style={{
+                                background: 'rgba(71, 85, 105, 0.5)',
+                                border: 'none',
+                                borderRadius: '8px',
+                                width: '36px',
+                                height: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: 'white'
+                            }}
+                        >
+                            <XCircle size={20} />
+                        </button>
                     </div>
 
-                    <button
-                        onClick={() => {
-                            if (document.fullscreenElement) {
-                                document.exitFullscreen()
-                            }
-                            onClose()
-                            if (onComplete) onComplete(result)
-                        }}
-                        style={{
-                            width: '100%',
-                            padding: '1rem',
-                            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                            border: 'none',
-                            borderRadius: '12px',
-                            color: 'white',
-                            fontSize: '1rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                        }}
-                    >
-                        Close & Return
-                    </button>
+                    {/* Scrollable Content */}
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        padding: '2rem'
+                    }}>
+                        {/* Score Summary */}
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: '3rem',
+                            marginBottom: '2rem',
+                            padding: '2rem',
+                            background: result.status === 'passed' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                            borderRadius: '16px',
+                            border: `1px solid ${result.status === 'passed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                        }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{
+                                    fontSize: '4rem',
+                                    fontWeight: 800,
+                                    color: result.status === 'passed' ? '#10b981' : '#ef4444',
+                                    lineHeight: 1
+                                }}>
+                                    {result.score}%
+                                </div>
+                                <div style={{ color: 'rgba(255,255,255,0.5)', marginTop: '0.5rem' }}>Overall Score</div>
+                            </div>
+                            <div style={{
+                                padding: '1rem 2rem',
+                                borderRadius: '12px',
+                                background: result.status === 'passed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                border: `1px solid ${result.status === 'passed' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem'
+                            }}>
+                                {result.status === 'passed' ? (
+                                    <CheckCircle size={28} color="#10b981" />
+                                ) : (
+                                    <XCircle size={28} color="#ef4444" />
+                                )}
+                                <span style={{
+                                    fontSize: '1.5rem',
+                                    fontWeight: 700,
+                                    color: result.status === 'passed' ? '#10b981' : '#ef4444'
+                                }}>
+                                    {result.status === 'passed' ? 'PASSED' : 'FAILED'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Stats Grid */}
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(5, 1fr)',
+                            gap: '1rem',
+                            marginBottom: '2rem'
+                        }}>
+                            <div style={{
+                                background: 'rgba(59, 130, 246, 0.1)',
+                                borderRadius: '12px',
+                                padding: '1.25rem',
+                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#3b82f6' }}>
+                                    {result.totalQuestions}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Total Questions</div>
+                            </div>
+                            <div style={{
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                borderRadius: '12px',
+                                padding: '1.25rem',
+                                border: '1px solid rgba(16, 185, 129, 0.2)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981' }}>
+                                    {result.correctCount}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Correct</div>
+                            </div>
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                borderRadius: '12px',
+                                padding: '1.25rem',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ef4444' }}>
+                                    {result.totalQuestions - result.correctCount}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Incorrect</div>
+                            </div>
+                            <div style={{
+                                background: 'rgba(245, 158, 11, 0.1)',
+                                borderRadius: '12px',
+                                padding: '1.25rem',
+                                border: '1px solid rgba(245, 158, 11, 0.2)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ 
+                                    fontSize: '1.75rem', 
+                                    fontWeight: 800, 
+                                    color: (result.tabSwitches || tabSwitches || 0) > 0 ? '#f59e0b' : '#10b981' 
+                                }}>
+                                    {result.tabSwitches || tabSwitches || 0}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                    <AlertTriangle size={12} />
+                                    Violations
+                                </div>
+                            </div>
+                            <div style={{
+                                background: 'rgba(139, 92, 246, 0.1)',
+                                borderRadius: '12px',
+                                padding: '1.25rem',
+                                border: '1px solid rgba(139, 92, 246, 0.2)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#8b5cf6' }}>
+                                    {result.timeSpent ? `${Math.floor(result.timeSpent / 60)}m` : `${Math.round(((test.duration * 60) - timeLeft) / 60)}m`}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                    <Clock size={12} />
+                                    Time Spent
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Violation Warning */}
+                        {(result.tabSwitches || tabSwitches || 0) > 0 && (
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '1rem',
+                                padding: '1rem 1.5rem',
+                                background: 'rgba(245, 158, 11, 0.1)',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                marginBottom: '2rem'
+                            }}>
+                                <AlertTriangle size={24} color="#f59e0b" />
+                                <div>
+                                    <strong style={{ color: '#f59e0b' }}>Tab Switch Violations Detected</strong>
+                                    <p style={{ margin: '0.25rem 0 0', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>
+                                        You switched tabs/windows {result.tabSwitches || tabSwitches || 0} time(s) during the test.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Detailed Question Breakdown */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h3 style={{
+                                margin: '0 0 1rem',
+                                fontSize: '1.1rem',
+                                fontWeight: 600,
+                                color: 'white',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}>
+                                <Target size={18} color="#8b5cf6" />
+                                Detailed Question Breakdown
+                            </h3>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {result.questionResults?.map((qr, idx) => (
+                                    <div key={idx} style={{
+                                        padding: '1.25rem',
+                                        background: qr.isCorrect ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                                        border: `1px solid ${qr.isCorrect ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
+                                        borderRadius: '12px'
+                                    }}>
+                                        {/* Question Header */}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: '0.75rem',
+                                            marginBottom: '1rem'
+                                        }}>
+                                            <span style={{
+                                                minWidth: '28px',
+                                                height: '28px',
+                                                borderRadius: '50%',
+                                                background: qr.isCorrect
+                                                    ? 'linear-gradient(135deg, #10b981, #06b6d4)'
+                                                    : 'linear-gradient(135deg, #ef4444, #f97316)',
+                                                color: 'white',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 700,
+                                                flexShrink: 0
+                                            }}>
+                                                {qr.isCorrect ? '✓' : '✗'}
+                                            </span>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.75rem',
+                                                    marginBottom: '0.5rem'
+                                                }}>
+                                                    <span style={{
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 600,
+                                                        color: '#8b5cf6',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.05em'
+                                                    }}>
+                                                        Question {idx + 1}
+                                                    </span>
+                                                    {qr.category && (
+                                                        <span style={{
+                                                            fontSize: '0.7rem',
+                                                            padding: '0.2rem 0.6rem',
+                                                            background: 'rgba(139, 92, 246, 0.2)',
+                                                            borderRadius: '20px',
+                                                            color: '#a78bfa'
+                                                        }}>
+                                                            {qr.category}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p style={{
+                                                    margin: 0,
+                                                    fontSize: '1rem',
+                                                    fontWeight: 500,
+                                                    color: 'white',
+                                                    lineHeight: 1.5
+                                                }}>
+                                                    {qr.question}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Answers Section */}
+                                        <div style={{
+                                            marginLeft: '2.5rem',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.75rem'
+                                        }}>
+                                            {/* Your Answer */}
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: '0.75rem',
+                                                padding: '0.75rem 1rem',
+                                                background: qr.isCorrect ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                                borderRadius: '8px',
+                                                border: `1px solid ${qr.isCorrect ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                                            }}>
+                                                <span style={{
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: 600,
+                                                    color: 'rgba(255,255,255,0.5)',
+                                                    minWidth: '100px'
+                                                }}>
+                                                    Your Answer:
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '0.9rem',
+                                                    fontWeight: 600,
+                                                    color: qr.isCorrect ? '#10b981' : '#ef4444'
+                                                }}>
+                                                    {qr.userAnswer || '(Not answered)'}
+                                                </span>
+                                            </div>
+
+                                            {/* Correct Answer (only show if incorrect) */}
+                                            {!qr.isCorrect && (
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    gap: '0.75rem',
+                                                    padding: '0.75rem 1rem',
+                                                    background: 'rgba(16, 185, 129, 0.1)',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(16, 185, 129, 0.2)'
+                                                }}>
+                                                    <span style={{
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 600,
+                                                        color: 'rgba(255,255,255,0.5)',
+                                                        minWidth: '100px'
+                                                    }}>
+                                                        Correct Answer:
+                                                    </span>
+                                                    <span style={{
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: 600,
+                                                        color: '#10b981'
+                                                    }}>
+                                                        {qr.correctAnswer}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Explanation */}
+                                            {qr.explanation && (
+                                                <div style={{
+                                                    padding: '0.75rem 1rem',
+                                                    background: 'rgba(139, 92, 246, 0.05)',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(139, 92, 246, 0.15)'
+                                                }}>
+                                                    <span style={{
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 600,
+                                                        color: '#a78bfa',
+                                                        display: 'block',
+                                                        marginBottom: '0.25rem'
+                                                    }}>
+                                                        💡 Explanation
+                                                    </span>
+                                                    <p style={{
+                                                        margin: 0,
+                                                        fontSize: '0.85rem',
+                                                        color: 'rgba(255,255,255,0.7)',
+                                                        lineHeight: 1.5
+                                                    }}>
+                                                        {qr.explanation}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{
+                        padding: '1.5rem 2rem',
+                        borderTop: '1px solid rgba(139, 92, 246, 0.2)',
+                        background: 'rgba(15, 23, 42, 0.5)',
+                        display: 'flex',
+                        justifyContent: 'flex-end'
+                    }}>
+                        <button
+                            onClick={() => {
+                                if (document.fullscreenElement) {
+                                    document.exitFullscreen()
+                                }
+                                onClose()
+                                if (onComplete) onComplete(result)
+                            }}
+                            style={{
+                                padding: '0.875rem 2rem',
+                                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: 'white',
+                                fontSize: '1rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}
+                        >
+                            Close & Return
+                        </button>
+                    </div>
                 </div>
             </div>
         )
