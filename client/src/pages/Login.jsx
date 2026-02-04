@@ -188,17 +188,6 @@ function Login() {
         setLoading(false)
     }
 
-    const demoLogin = async (role) => {
-        const credentials = {
-            admin: { email: 'admin@edu.com', password: 'admin123' },
-            mentor: { email: 'mentor1@edu.com', password: 'mentor123' },
-            student: { email: 'student1m1@edu.com', password: 'student123' }
-        }
-
-        setEmail(credentials[role].email)
-        setPassword(credentials[role].password)
-    }
-
     return (
         <div className="login-page">
             <NeuralBackground />

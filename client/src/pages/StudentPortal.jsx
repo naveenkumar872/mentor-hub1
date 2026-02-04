@@ -1195,6 +1195,18 @@ function AptitudeTests({ user }) {
     }
 
     const startTest = async (test) => {
+        // Check if deadline has passed
+        if (test.deadline && new Date(test.deadline) < new Date()) {
+            alert('This test has expired. The deadline has passed.')
+            return
+        }
+
+        // Check if max attempts reached
+        if (!canRetryTest(test) && getAttemptCount(test.id) > 0) {
+            alert(`You have reached the maximum number of attempts (${test.maxAttempts || 1}) for this test.`)
+            return
+        }
+
         // Fetch full test with questions
         try {
             const response = await axios.get(`${API_BASE}/aptitude/${test.id}`)
@@ -1219,6 +1231,25 @@ function AptitudeTests({ user }) {
         // Get the latest submission for this test (submissions are ordered by date DESC from backend)
         const testSubmissions = submissions.filter(s => s.testId === testId)
         return testSubmissions.length > 0 ? testSubmissions[0] : null
+    }
+
+    // Count how many attempts a student has made for a test
+    const getAttemptCount = (testId) => {
+        return submissions.filter(s => s.testId === testId).length
+    }
+
+    // Check if student can retry the test
+    const canRetryTest = (test) => {
+        const attemptCount = getAttemptCount(test.id)
+        const maxAttempts = test.maxAttempts || 1
+        return attemptCount < maxAttempts
+    }
+
+    // Get remaining attempts
+    const getRemainingAttempts = (test) => {
+        const attemptCount = getAttemptCount(test.id)
+        const maxAttempts = test.maxAttempts || 1
+        return Math.max(0, maxAttempts - attemptCount)
     }
 
     // Get unique tests with their latest submissions for stats
@@ -1420,7 +1451,8 @@ function AptitudeTests({ user }) {
 
                             <div style={{
                                 display: 'flex',
-                                gap: '1.5rem',
+                                flexWrap: 'wrap',
+                                gap: '1rem',
                                 marginBottom: '1.5rem',
                                 fontSize: '0.85rem',
                                 color: 'var(--text-muted)'
@@ -1433,6 +1465,30 @@ function AptitudeTests({ user }) {
                                     <Award size={16} color="#f59e0b" />
                                     <span>Pass: {test.passingScore}%</span>
                                 </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <AlertTriangle size={16} color="#ef4444" />
+                                    <span>Tab Limit: {test.maxTabSwitches || 3}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Zap size={16} color="#06b6d4" />
+                                    <span>Attempts: {getAttemptCount(test.id)}/{test.maxAttempts || 1}</span>
+                                </div>
+                                {test.deadline && (
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.5rem',
+                                        color: new Date(test.deadline) < new Date() ? '#ef4444' : 'var(--text-muted)'
+                                    }}>
+                                        <Clock size={16} color={new Date(test.deadline) < new Date() ? '#ef4444' : '#10b981'} />
+                                        <span>
+                                            {new Date(test.deadline) < new Date() 
+                                                ? 'Expired' 
+                                                : `Due: ${new Date(test.deadline).toLocaleDateString()}`
+                                            }
+                                        </span>
+                                    </div>
+                                )}
                             </div>
 
                             {completed && submission && (
@@ -1470,26 +1526,47 @@ function AptitudeTests({ user }) {
 
                             <div style={{ display: 'flex', gap: '0.75rem' }}>
                                 {!completed ? (
-                                    <button
-                                        onClick={() => startTest(test)}
-                                        style={{
-                                            flex: 1,
-                                            padding: '0.75rem',
-                                            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                                            border: 'none',
-                                            borderRadius: '10px',
-                                            color: 'white',
-                                            fontSize: '0.9rem',
-                                            fontWeight: 600,
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '0.5rem'
-                                        }}
-                                    >
-                                        <Play size={18} /> Start Test
-                                    </button>
+                                    test.deadline && new Date(test.deadline) < new Date() ? (
+                                        <div
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.75rem',
+                                                background: 'rgba(107, 114, 128, 0.2)',
+                                                border: 'none',
+                                                borderRadius: '10px',
+                                                color: '#6b7280',
+                                                fontSize: '0.9rem',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '0.5rem'
+                                            }}
+                                        >
+                                            <XCircle size={18} /> Test Expired
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => startTest(test)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.75rem',
+                                                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                                border: 'none',
+                                                borderRadius: '10px',
+                                                color: 'white',
+                                                fontSize: '0.9rem',
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '0.5rem'
+                                            }}
+                                        >
+                                            <Play size={18} /> Start Test
+                                        </button>
+                                    )
                                 ) : (
                                     <>
                                         <button
@@ -1512,24 +1589,42 @@ function AptitudeTests({ user }) {
                                         >
                                             <Eye size={18} /> View Results
                                         </button>
-                                        <button
-                                            onClick={() => startTest(test)}
-                                            style={{
+                                        {canRetryTest(test) ? (
+                                            <button
+                                                onClick={() => startTest(test)}
+                                                style={{
+                                                    padding: '0.75rem 1rem',
+                                                    background: 'rgba(139, 92, 246, 0.1)',
+                                                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                                                    borderRadius: '10px',
+                                                    color: '#8b5cf6',
+                                                    fontSize: '0.9rem',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.5rem'
+                                                }}
+                                            >
+                                                <Zap size={18} /> Retry ({getRemainingAttempts(test)} left)
+                                            </button>
+                                        ) : (
+                                            <div style={{
                                                 padding: '0.75rem 1rem',
-                                                background: 'rgba(139, 92, 246, 0.1)',
-                                                border: '1px solid rgba(139, 92, 246, 0.3)',
+                                                background: 'rgba(107, 114, 128, 0.1)',
+                                                border: '1px solid rgba(107, 114, 128, 0.3)',
                                                 borderRadius: '10px',
-                                                color: '#8b5cf6',
+                                                color: '#6b7280',
                                                 fontSize: '0.9rem',
                                                 fontWeight: 600,
-                                                cursor: 'pointer',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '0.5rem'
                                             }}
-                                        >
-                                            <Zap size={18} /> Retry
-                                        </button>
+                                            >
+                                                <XCircle size={18} /> No retries left
+                                            </div>
+                                        )}
                                     </>
                                 )}
                             </div>

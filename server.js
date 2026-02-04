@@ -455,6 +455,229 @@ app.get('/api/submissions', async (req, res) => {
     }
 });
 
+// Create submission (AI-evaluated code submission)
+app.post('/api/submissions', async (req, res) => {
+    try {
+        const { studentId, problemId, taskId, language, code, submissionType, fileName, tabSwitches } = req.body;
+        const submissionId = uuidv4();
+        const submittedAt = new Date();
+
+        // Get problem details for AI evaluation
+        let problemContext = '';
+        let problemTitle = '';
+        if (problemId) {
+            const [probs] = await pool.query('SELECT * FROM problems WHERE id = ?', [problemId]);
+            if (probs.length > 0) {
+                const p = probs[0];
+                problemTitle = p.title;
+                problemContext = `Problem: ${p.title}\nDescription: ${p.description}\nDifficulty: ${p.difficulty}\nSample Input: ${p.sample_input || 'N/A'}\nExpected Output: ${p.expected_output || 'N/A'}`;
+            }
+        }
+
+        // Check for plagiarism - get other submissions for same problem
+        let plagiarismResult = { detected: false, copiedFrom: null, copiedFromName: null, similarity: 0 };
+        if (problemId) {
+            const [otherSubs] = await pool.query(
+                `SELECT s.id, s.student_id, s.code, u.name as student_name 
+                 FROM submissions s 
+                 JOIN users u ON s.student_id = u.id 
+                 WHERE s.problem_id = ? AND s.student_id != ? 
+                 ORDER BY s.submitted_at DESC LIMIT 20`,
+                [problemId, studentId]
+            );
+
+            if (otherSubs.length > 0) {
+                // Simple similarity check using AI
+                const plagiarismPrompt = `Compare this code submission against other submissions and detect plagiarism.
+                
+Submitted Code:
+${code}
+
+Other Submissions to compare:
+${otherSubs.map((s, i) => `--- Submission ${i + 1} by ${s.student_name} ---\n${s.code}`).join('\n\n')}
+
+Respond with JSON:
+{
+    "detected": true/false,
+    "similarity": 0-100 (percentage),
+    "matchedSubmissionIndex": null or 0-based index of most similar submission,
+    "explanation": "Brief explanation"
+}
+Only mark as detected if similarity > 80% and code structure is nearly identical.`;
+
+                try {
+                    const plagiarismCheck = await groq.chat.completions.create({
+                        messages: [
+                            { role: 'system', content: 'You are a plagiarism detection system. Analyze code for copying.' },
+                            { role: 'user', content: plagiarismPrompt }
+                        ],
+                        model: 'llama-3.3-70b-versatile',
+                        temperature: 0.1,
+                        max_tokens: 300,
+                        response_format: { type: 'json_object' }
+                    });
+
+                    const pResult = JSON.parse(plagiarismCheck.choices[0]?.message?.content || '{}');
+                    if (pResult.detected && pResult.matchedSubmissionIndex !== null && pResult.matchedSubmissionIndex < otherSubs.length) {
+                        const matchedSub = otherSubs[pResult.matchedSubmissionIndex];
+                        plagiarismResult = {
+                            detected: true,
+                            copiedFrom: matchedSub.student_id,
+                            copiedFromName: matchedSub.student_name,
+                            similarity: pResult.similarity || 85
+                        };
+                    }
+                } catch (e) {
+                    console.error('Plagiarism check error:', e.message);
+                }
+            }
+        }
+
+        // AI Code Evaluation
+        const evaluationPrompt = `You are an expert code evaluator for a coding education platform.
+
+${problemContext}
+
+Language: ${language}
+Tab Switches During Test: ${tabSwitches || 0}
+
+Student's Code:
+${code}
+
+Evaluate this code submission thoroughly. Consider:
+1. Correctness: Does it solve the problem correctly?
+2. Efficiency: Time and space complexity
+3. Code Style: Readability, naming conventions, structure
+4. Best Practices: Error handling, edge cases, clean code principles
+
+Respond with JSON:
+{
+    "score": 0-100,
+    "status": "accepted" | "partial" | "rejected",
+    "feedback": "Detailed feedback for the student (2-3 sentences)",
+    "aiExplanation": "Technical explanation of the evaluation",
+    "analysis": {
+        "correctness": "Excellent/Good/Fair/Poor - brief explanation",
+        "efficiency": "Excellent/Good/Fair/Poor - time/space analysis",
+        "codeStyle": "Excellent/Good/Fair/Poor - style notes",
+        "bestPractices": "Excellent/Good/Fair/Poor - practices used"
+    }
+}
+
+Scoring Guide:
+- 90-100: Correct, efficient, clean code
+- 70-89: Mostly correct with minor issues
+- 50-69: Partially correct or has significant issues
+- 0-49: Incorrect or major problems`;
+
+        let evaluationResult = {
+            score: 0,
+            status: 'rejected',
+            feedback: 'Evaluation failed. Please try again.',
+            aiExplanation: 'Could not evaluate submission.',
+            analysis: {
+                correctness: 'Unknown',
+                efficiency: 'Unknown',
+                codeStyle: 'Unknown',
+                bestPractices: 'Unknown'
+            }
+        };
+
+        try {
+            const evaluation = await groq.chat.completions.create({
+                messages: [
+                    { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
+                    { role: 'user', content: evaluationPrompt }
+                ],
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0.2,
+                max_tokens: 800,
+                response_format: { type: 'json_object' }
+            });
+
+            evaluationResult = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
+        } catch (e) {
+            console.error('AI Evaluation error:', e.message);
+        }
+
+        // Apply penalties
+        let finalScore = evaluationResult.score || 0;
+        let integrityViolation = false;
+
+        // Penalty for tab switches (each switch = -5 points, max -25)
+        if (tabSwitches > 0) {
+            const tabPenalty = Math.min(tabSwitches * 5, 25);
+            finalScore = Math.max(0, finalScore - tabPenalty);
+            integrityViolation = tabSwitches >= 3;
+        }
+
+        // Penalty for plagiarism
+        if (plagiarismResult.detected) {
+            finalScore = Math.max(0, Math.floor(finalScore * 0.3)); // 70% penalty
+            integrityViolation = true;
+        }
+
+        // Determine final status
+        let finalStatus = evaluationResult.status || 'rejected';
+        if (finalScore >= 70) finalStatus = 'accepted';
+        else if (finalScore >= 40) finalStatus = 'partial';
+        else finalStatus = 'rejected';
+
+        // Save to database
+        await pool.query(
+            `INSERT INTO submissions (
+                id, student_id, problem_id, task_id, code, submission_type, file_name, language,
+                score, status, feedback, ai_explanation,
+                analysis_correctness, analysis_efficiency, analysis_code_style, analysis_best_practices,
+                plagiarism_detected, copied_from, copied_from_name,
+                tab_switches, integrity_violation, submitted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                submissionId, studentId, problemId || null, taskId || null, code, submissionType || 'editor', fileName || null, language,
+                finalScore, finalStatus, evaluationResult.feedback, evaluationResult.aiExplanation,
+                evaluationResult.analysis?.correctness, evaluationResult.analysis?.efficiency,
+                evaluationResult.analysis?.codeStyle, evaluationResult.analysis?.bestPractices,
+                plagiarismResult.detected ? 'true' : 'false', plagiarismResult.copiedFrom, plagiarismResult.copiedFromName,
+                tabSwitches || 0, integrityViolation ? 'true' : 'false', submittedAt
+            ]
+        );
+
+        // Mark problem as completed if score >= 70
+        if (problemId && finalScore >= 70) {
+            try {
+                await pool.query(
+                    'INSERT IGNORE INTO problem_completions (problem_id, student_id, completed_at) VALUES (?, ?, ?)',
+                    [problemId, studentId, submittedAt]
+                );
+            } catch (e) { /* Ignore if already completed */ }
+        }
+
+        // Return result to student
+        res.json({
+            id: submissionId,
+            score: finalScore,
+            status: finalStatus,
+            feedback: evaluationResult.feedback,
+            aiExplanation: evaluationResult.aiExplanation,
+            analysis: evaluationResult.analysis,
+            plagiarism: {
+                detected: plagiarismResult.detected,
+                warning: plagiarismResult.detected ? 'Similarity detected with another submission. Score reduced.' : null
+            },
+            integrity: {
+                tabSwitches: tabSwitches || 0,
+                violation: integrityViolation,
+                warning: integrityViolation ? 'Integrity violations detected. This may affect your score.' : null
+            },
+            submittedAt
+        });
+
+    } catch (error) {
+        console.error('Submission Error:', error);
+        res.status(500).json({ error: 'Failed to process submission', details: error.message });
+    }
+});
+
 // Delete submission
 app.delete('/api/submissions/:id', async (req, res) => {
     try {
@@ -681,6 +904,10 @@ app.get('/api/aptitude', async (req, res) => {
             duration: t.duration,
             totalQuestions: t.total_questions,
             passingScore: t.passing_score,
+            maxTabSwitches: t.max_tab_switches || 3,
+            maxAttempts: t.max_attempts || 1,
+            deadline: t.deadline,
+            description: t.description || '',
             status: t.status,
             createdBy: t.created_by,
             createdAt: t.created_at,
@@ -718,6 +945,10 @@ app.get('/api/aptitude/:id', async (req, res) => {
             duration: test.duration,
             totalQuestions: test.total_questions,
             passingScore: test.passing_score,
+            maxTabSwitches: test.max_tab_switches || 3,
+            maxAttempts: test.max_attempts || 1,
+            deadline: test.deadline,
+            description: test.description || '',
             status: test.status,
             createdBy: test.created_by,
             createdAt: test.created_at,
@@ -735,13 +966,13 @@ app.post('/api/aptitude', async (req, res) => {
         await connection.beginTransaction();
 
         const testId = uuidv4();
-        const { title, difficulty, duration, passingScore, status, questions, createdBy } = req.body;
+        const { title, difficulty, duration, passingScore, maxTabSwitches, maxAttempts, deadline, description, status, questions, createdBy } = req.body;
         const createdAt = new Date();
 
-        // Insert the test
+        // Insert the test (store new fields in JSON metadata column or separate columns if available)
         await connection.query(
-            'INSERT INTO aptitude_tests (id, title, type, difficulty, duration, total_questions, passing_score, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [testId, title, 'aptitude', difficulty, duration || 30, questions.length, passingScore || 60, status || 'live', createdBy, createdAt]
+            'INSERT INTO aptitude_tests (id, title, type, difficulty, duration, total_questions, passing_score, max_tab_switches, max_attempts, deadline, description, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [testId, title, 'aptitude', difficulty, duration || 30, questions.length, passingScore || 60, maxTabSwitches || 3, maxAttempts || 1, deadline || null, description || '', status || 'live', createdBy, createdAt]
         );
 
         // Insert questions
@@ -765,6 +996,10 @@ app.post('/api/aptitude', async (req, res) => {
             duration: duration || 30,
             totalQuestions: questions.length,
             passingScore: passingScore || 60,
+            maxTabSwitches: maxTabSwitches || 3,
+            maxAttempts: maxAttempts || 1,
+            deadline: deadline || null,
+            description: description || '',
             status: status || 'live',
             createdBy,
             createdAt
@@ -794,13 +1029,18 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
         let correctCount = 0;
         const questionResults = questions.map(q => {
             const userAnswer = answers[q.question_id];
-            const isCorrect = userAnswer === q.correct_answer;
+            // Get all options for this question
+            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            // Get the correct option text using the index
+            const correctOptionText = options[q.correct_answer];
+            // Compare user's answer (option text) with correct option text
+            const isCorrect = userAnswer === correctOptionText;
             if (isCorrect) correctCount++;
             return {
                 questionId: q.question_id,
                 question: q.question,
                 userAnswer: userAnswer || 'Not Answered',
-                correctAnswer: q.correct_answer,
+                correctAnswer: correctOptionText,
                 isCorrect,
                 explanation: q.explanation,
                 category: q.category

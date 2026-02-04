@@ -56,6 +56,9 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
         return () => clearInterval(timerRef.current)
     }, [result, forceExit])
 
+    // Get max tab switches from test config (default to 3)
+    const maxAllowedTabSwitches = test.maxTabSwitches || 3
+
     // Tab switch detection
     useEffect(() => {
         const handleVisibilityChange = () => {
@@ -63,9 +66,9 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
                 setTabSwitches(prev => {
                     const newCount = prev + 1
 
-                    if (newCount >= 3) {
-                        // 3rd violation - Force exit
-                        setWarningMessage(`🚫 DISQUALIFIED! You have exceeded the maximum allowed tab switches (${newCount}/3). Test terminated.`)
+                    if (newCount >= maxAllowedTabSwitches) {
+                        // Max violations reached - Force exit
+                        setWarningMessage(`🚫 DISQUALIFIED! You have exceeded the maximum allowed tab switches (${newCount}/${maxAllowedTabSwitches}). Test terminated.`)
                         setShowWarning(true)
                         setForceExit(true)
 
@@ -74,7 +77,7 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
                             handleAutoSubmit(true)
                         }, 3000)
                     } else {
-                        setWarningMessage(`⚠️ Tab switch detected! (${newCount}/3 violations) ${3 - newCount} more will disqualify you!`)
+                        setWarningMessage(`⚠️ Tab switch detected! (${newCount}/${maxAllowedTabSwitches} violations) ${maxAllowedTabSwitches - newCount} more will disqualify you!`)
                         setShowWarning(true)
                         setTimeout(() => setShowWarning(false), 4000)
                     }

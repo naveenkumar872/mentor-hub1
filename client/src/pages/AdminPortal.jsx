@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2 } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -1701,8 +1701,19 @@ function AptitudeTestsAdmin() {
         difficulty: 'Medium',
         duration: 30,
         passingScore: 60,
+        maxTabSwitches: 3,
+        maxAttempts: 1,
+        deadline: '',
+        description: '',
         status: 'live',
         questions: []
+    })
+    const [manualQuestion, setManualQuestion] = useState({
+        question: '',
+        options: ['', '', '', ''],
+        correctAnswer: 0,
+        category: 'general',
+        explanation: ''
     })
 
     useEffect(() => {
@@ -1758,6 +1769,14 @@ function AptitudeTestsAdmin() {
             alert('Please add at least one question')
             return
         }
+        // Validate all questions have content
+        const invalidQuestions = newTest.questions.filter(q => 
+            !q.question.trim() || q.options.some(opt => !opt.trim())
+        )
+        if (invalidQuestions.length > 0) {
+            alert('Please fill in all questions and options')
+            return
+        }
         try {
             await axios.post(`${API_BASE}/aptitude`, {
                 ...newTest,
@@ -1769,6 +1788,10 @@ function AptitudeTestsAdmin() {
                 difficulty: 'Medium',
                 duration: 30,
                 passingScore: 60,
+                maxTabSwitches: 3,
+                maxAttempts: 1,
+                deadline: '',
+                description: '',
                 status: 'live',
                 questions: []
             })
@@ -2026,15 +2049,59 @@ function AptitudeTestsAdmin() {
 
                         <form onSubmit={handleCreateTest} className="modal-body">
                             {/* Test Details */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                 <div className="form-group">
-                                    <label className="form-label">Test Title</label>
+                                    <label className="form-label"><span style={{ marginRight: '0.5rem' }}>H</span> Test Title</label>
                                     <input
                                         type="text"
-                                        placeholder="e.g., Quantitative Aptitude"
+                                        placeholder="Enter test title..."
                                         value={newTest.title}
                                         onChange={e => setNewTest({ ...newTest, title: e.target.value })}
                                         required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label"><Clock size={14} style={{ marginRight: '0.5rem' }} /> Duration (mins)</label>
+                                    <input
+                                        type="number"
+                                        min="5"
+                                        max="180"
+                                        value={newTest.duration}
+                                        onChange={e => setNewTest({ ...newTest, duration: parseInt(e.target.value) })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label"><RefreshCw size={14} style={{ marginRight: '0.5rem' }} /> Attempts</label>
+                                    <select
+                                        value={newTest.maxAttempts}
+                                        onChange={e => setNewTest({ ...newTest, maxAttempts: parseInt(e.target.value) })}
+                                    >
+                                        <option value={1}>1 Attempt</option>
+                                        <option value={2}>2 Attempts</option>
+                                        <option value={3}>3 Attempts</option>
+                                        <option value={5}>5 Attempts</option>
+                                        <option value={-1}>Unlimited</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label"><AlertTriangle size={14} style={{ marginRight: '0.5rem' }} /> Max Tab Switches (Violations)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="10"
+                                        value={newTest.maxTabSwitches}
+                                        onChange={e => setNewTest({ ...newTest, maxTabSwitches: parseInt(e.target.value) })}
+                                    />
+                                    <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Test auto-submits if exceeded</small>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label"><Calendar size={14} style={{ marginRight: '0.5rem' }} /> End Time (Deadline)</label>
+                                    <input
+                                        type="datetime-local"
+                                        value={newTest.deadline}
+                                        onChange={e => setNewTest({ ...newTest, deadline: e.target.value })}
                                     />
                                 </div>
                                 <div className="form-group">
@@ -2049,16 +2116,6 @@ function AptitudeTestsAdmin() {
                                     </select>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Duration (minutes)</label>
-                                    <input
-                                        type="number"
-                                        min="5"
-                                        max="180"
-                                        value={newTest.duration}
-                                        onChange={e => setNewTest({ ...newTest, duration: parseInt(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="form-group">
                                     <label className="form-label">Passing Score (%)</label>
                                     <input
                                         type="number"
@@ -2069,21 +2126,31 @@ function AptitudeTestsAdmin() {
                                     />
                                 </div>
                             </div>
+                            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                <label className="form-label"><FileText size={14} style={{ marginRight: '0.5rem' }} /> Description (Optional)</label>
+                                <textarea
+                                    placeholder="Brief description of the test..."
+                                    value={newTest.description}
+                                    onChange={e => setNewTest({ ...newTest, description: e.target.value })}
+                                    rows={3}
+                                    style={{ width: '100%', resize: 'vertical' }}
+                                />
+                            </div>
 
                             {/* AI Question Generation */}
                             <div style={{
-                                background: 'rgba(139, 92, 246, 0.1)',
-                                border: '1px solid rgba(139, 92, 246, 0.3)',
+                                background: 'var(--secondary-alpha)',
+                                border: '1px solid var(--secondary)',
                                 borderRadius: '12px',
                                 padding: '1.5rem',
                                 marginBottom: '1.5rem'
                             }}>
-                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem' }}>
-                                    <Sparkles size={18} color="#8b5cf6" /> AI Question Generator
+                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem', color: 'var(--text-primary)' }}>
+                                    <Sparkles size={18} color="var(--secondary)" /> AI Question Generator
                                 </h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
                                     <div className="form-group" style={{ margin: 0 }}>
-                                        <label className="form-label">Topic</label>
+                                        <label className="form-label">TOPIC</label>
                                         <input
                                             type="text"
                                             placeholder="e.g., Number Series, Logical Reasoning..."
@@ -2092,7 +2159,7 @@ function AptitudeTestsAdmin() {
                                         />
                                     </div>
                                     <div className="form-group" style={{ margin: 0 }}>
-                                        <label className="form-label">Difficulty</label>
+                                        <label className="form-label">DIFFICULTY</label>
                                         <select
                                             value={aiPrompt.difficulty}
                                             onChange={e => setAiPrompt({ ...aiPrompt, difficulty: e.target.value })}
@@ -2103,7 +2170,7 @@ function AptitudeTestsAdmin() {
                                         </select>
                                     </div>
                                     <div className="form-group" style={{ margin: 0 }}>
-                                        <label className="form-label">Count</label>
+                                        <label className="form-label">COUNT</label>
                                         <input
                                             type="number"
                                             min="1"
@@ -2118,7 +2185,7 @@ function AptitudeTestsAdmin() {
                                         disabled={isGenerating}
                                         style={{
                                             padding: '0.75rem 1.5rem',
-                                            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                            background: 'var(--primary)',
                                             border: 'none',
                                             borderRadius: '8px',
                                             color: 'white',
@@ -2143,7 +2210,7 @@ function AptitudeTestsAdmin() {
                                             alignItems: 'center',
                                             marginBottom: '0.5rem'
                                         }}>
-                                            <span style={{ fontSize: '0.9rem', color: '#8b5cf6', fontWeight: 600 }}>
+                                            <span style={{ fontSize: '0.9rem', color: 'var(--secondary)', fontWeight: 600 }}>
                                                 ✨ Generated {generatedQuestions.length} questions
                                             </span>
                                             <button
@@ -2151,10 +2218,10 @@ function AptitudeTestsAdmin() {
                                                 onClick={addGeneratedQuestions}
                                                 style={{
                                                     padding: '0.5rem 1rem',
-                                                    background: 'rgba(16, 185, 129, 0.2)',
-                                                    border: '1px solid #10b981',
+                                                    background: 'var(--success-alpha)',
+                                                    border: '1px solid var(--success)',
                                                     borderRadius: '6px',
-                                                    color: '#10b981',
+                                                    color: 'var(--success)',
                                                     fontSize: '0.85rem',
                                                     fontWeight: 600,
                                                     cursor: 'pointer'
@@ -2166,15 +2233,16 @@ function AptitudeTestsAdmin() {
                                         <div style={{
                                             maxHeight: '150px',
                                             overflowY: 'auto',
-                                            background: 'rgba(15, 23, 42, 0.5)',
+                                            background: 'var(--bg-tertiary)',
                                             borderRadius: '8px',
                                             padding: '0.75rem'
                                         }}>
                                             {generatedQuestions.map((q, idx) => (
                                                 <div key={idx} style={{
                                                     padding: '0.5rem',
-                                                    borderBottom: idx < generatedQuestions.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
-                                                    fontSize: '0.85rem'
+                                                    borderBottom: idx < generatedQuestions.length - 1 ? '1px solid var(--border-color)' : 'none',
+                                                    fontSize: '0.85rem',
+                                                    color: 'var(--text-primary)'
                                                 }}>
                                                     Q{idx + 1}: {q.question.substring(0, 80)}...
                                                 </div>
@@ -2184,83 +2252,313 @@ function AptitudeTestsAdmin() {
                                 )}
                             </div>
 
-                            {/* Current Questions */}
+                            {/* Questions Section */}
                             <div style={{ marginBottom: '1.5rem' }}>
-                                <h4 style={{ marginBottom: '1rem' }}>
-                                    Added Questions ({newTest.questions.length})
-                                </h4>
-                                {newTest.questions.length === 0 ? (
-                                    <div style={{
-                                        padding: '2rem',
-                                        textAlign: 'center',
-                                        background: 'rgba(15, 23, 42, 0.5)',
-                                        borderRadius: '12px',
-                                        color: 'var(--text-muted)'
+                                <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'space-between', 
+                                    marginBottom: '1.25rem',
+                                    paddingBottom: '0.75rem',
+                                    borderBottom: '1px solid var(--border-color)'
+                                }}>
+                                    <h4 style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.5rem', 
+                                        margin: 0, 
+                                        color: 'var(--text-primary)',
+                                        fontSize: '1rem',
+                                        fontWeight: 600
                                     }}>
-                                        <Target size={32} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
-                                        <p style={{ margin: 0 }}>No questions added yet. Use AI to generate questions above.</p>
-                                    </div>
-                                ) : (
-                                    <div style={{
-                                        maxHeight: '200px',
-                                        overflowY: 'auto',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '0.5rem'
+                                        <HelpCircle size={18} style={{ color: 'var(--primary)' }} /> Questions
+                                    </h4>
+                                    <span style={{ 
+                                        fontSize: '0.8rem', 
+                                        color: 'var(--primary)',
+                                        background: 'var(--primary-alpha)',
+                                        padding: '0.35rem 0.75rem',
+                                        borderRadius: '20px',
+                                        fontWeight: 500
                                     }}>
-                                        {newTest.questions.map((q, idx) => (
-                                            <div
-                                                key={idx}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    padding: '0.75rem 1rem',
-                                                    background: 'rgba(15, 23, 42, 0.5)',
-                                                    borderRadius: '8px'
-                                                }}
-                                            >
-                                                <div style={{ flex: 1 }}>
-                                                    <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                                                        Q{idx + 1}: {q.question.substring(0, 60)}...
-                                                    </span>
+                                        {newTest.questions.length} question{newTest.questions.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+
+                                {/* Questions List - Each as editable card */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                    {newTest.questions.map((q, idx) => (
+                                        <div key={idx} style={{
+                                            background: 'var(--bg-card)',
+                                            borderRadius: '16px',
+                                            padding: '1.5rem',
+                                            border: '1px solid var(--border-color)',
+                                            boxShadow: 'var(--card-shadow)',
+                                            transition: 'all 0.2s ease'
+                                        }}>
+                                            {/* Question Header */}
+                                            <div style={{ 
+                                                display: 'flex', 
+                                                justifyContent: 'space-between', 
+                                                alignItems: 'center', 
+                                                marginBottom: '1.25rem'
+                                            }}>
+                                                <div style={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    gap: '0.75rem' 
+                                                }}>
                                                     <span style={{
-                                                        marginLeft: '0.75rem',
-                                                        padding: '0.15rem 0.5rem',
-                                                        background: 'rgba(139, 92, 246, 0.2)',
-                                                        borderRadius: '12px',
+                                                        background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                                                        color: 'white',
+                                                        padding: '0.4rem 0.8rem',
+                                                        borderRadius: '8px',
                                                         fontSize: '0.75rem',
-                                                        color: '#a78bfa'
+                                                        fontWeight: 700,
+                                                        letterSpacing: '0.5px',
+                                                        textTransform: 'uppercase'
                                                     }}>
-                                                        {q.category}
+                                                        Q{idx + 1}
                                                     </span>
                                                 </div>
                                                 <button
                                                     type="button"
                                                     onClick={() => removeQuestion(idx)}
                                                     style={{
-                                                        background: 'rgba(239, 68, 68, 0.1)',
-                                                        border: 'none',
-                                                        borderRadius: '6px',
-                                                        padding: '0.4rem',
+                                                        background: 'var(--danger-alpha)',
+                                                        border: '1px solid var(--danger)',
+                                                        borderRadius: '8px',
+                                                        padding: '0.5rem',
                                                         cursor: 'pointer',
-                                                        color: '#ef4444'
+                                                        color: 'var(--danger)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    onMouseOver={e => {
+                                                        e.currentTarget.style.background = 'var(--danger)';
+                                                        e.currentTarget.style.color = 'white';
+                                                    }}
+                                                    onMouseOut={e => {
+                                                        e.currentTarget.style.background = 'var(--danger-alpha)';
+                                                        e.currentTarget.style.color = 'var(--danger)';
                                                     }}
                                                 >
-                                                    <X size={16} />
+                                                    <Trash2 size={16} />
                                                 </button>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
+
+                                            {/* Question Input */}
+                                            <div style={{ marginBottom: '1.25rem' }}>
+                                                <label style={{ 
+                                                    fontSize: '0.75rem', 
+                                                    fontWeight: 600, 
+                                                    color: 'var(--text-muted)', 
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.5px',
+                                                    marginBottom: '0.5rem',
+                                                    display: 'block'
+                                                }}>
+                                                    Question Text
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={q.question}
+                                                    onChange={e => {
+                                                        const updated = [...newTest.questions];
+                                                        updated[idx] = { ...updated[idx], question: e.target.value };
+                                                        setNewTest({ ...newTest, questions: updated });
+                                                    }}
+                                                    placeholder="Enter your question here..."
+                                                    style={{ 
+                                                        width: '100%',
+                                                        padding: '0.875rem 1rem',
+                                                        fontSize: '0.95rem',
+                                                        borderRadius: '10px',
+                                                        border: '2px solid var(--border-color)',
+                                                        background: 'var(--bg-primary)',
+                                                        color: 'var(--text-primary)',
+                                                        transition: 'border-color 0.2s'
+                                                    }}
+                                                />
+                                            </div>
+
+                                            {/* Options Grid */}
+                                            <div style={{ marginBottom: '1.25rem' }}>
+                                                <label style={{ 
+                                                    fontSize: '0.75rem', 
+                                                    fontWeight: 600, 
+                                                    color: 'var(--text-muted)', 
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.5px',
+                                                    marginBottom: '0.75rem',
+                                                    display: 'block'
+                                                }}>
+                                                    Answer Options
+                                                </label>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }}>
+                                                    {['A', 'B', 'C', 'D'].map((letter, optIdx) => (
+                                                        <div 
+                                                            key={optIdx} 
+                                                            style={{ 
+                                                                display: 'flex', 
+                                                                alignItems: 'center', 
+                                                                gap: '0.75rem',
+                                                                background: q.correctAnswer === optIdx ? 'var(--success-alpha)' : 'var(--bg-primary)',
+                                                                padding: '0.5rem',
+                                                                borderRadius: '10px',
+                                                                border: q.correctAnswer === optIdx ? '2px solid var(--success)' : '2px solid var(--border-color)',
+                                                                transition: 'all 0.2s'
+                                                            }}
+                                                        >
+                                                            <span 
+                                                                onClick={() => {
+                                                                    const updated = [...newTest.questions];
+                                                                    updated[idx] = { ...updated[idx], correctAnswer: optIdx };
+                                                                    setNewTest({ ...newTest, questions: updated });
+                                                                }}
+                                                                style={{
+                                                                    width: '32px',
+                                                                    height: '32px',
+                                                                    borderRadius: '8px',
+                                                                    background: q.correctAnswer === optIdx 
+                                                                        ? 'var(--success)' 
+                                                                        : 'var(--bg-tertiary)',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    fontWeight: 700,
+                                                                    fontSize: '0.85rem',
+                                                                    color: q.correctAnswer === optIdx ? 'white' : 'var(--text-muted)',
+                                                                    flexShrink: 0,
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.2s',
+                                                                    border: q.correctAnswer === optIdx ? 'none' : '1px solid var(--border-color)'
+                                                                }}
+                                                                title="Click to set as correct answer"
+                                                            >{letter}</span>
+                                                            <input
+                                                                type="text"
+                                                                value={q.options[optIdx] || ''}
+                                                                onChange={e => {
+                                                                    const updated = [...newTest.questions];
+                                                                    const newOptions = [...updated[idx].options];
+                                                                    newOptions[optIdx] = e.target.value;
+                                                                    updated[idx] = { ...updated[idx], options: newOptions };
+                                                                    setNewTest({ ...newTest, questions: updated });
+                                                                }}
+                                                                placeholder={`Option ${letter}`}
+                                                                style={{ 
+                                                                    flex: 1,
+                                                                    padding: '0.625rem 0.875rem',
+                                                                    borderRadius: '8px',
+                                                                    border: 'none',
+                                                                    background: 'transparent',
+                                                                    color: 'var(--text-primary)',
+                                                                    fontSize: '0.9rem'
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Correct Answer Indicator */}
+                                            <div style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '0.75rem',
+                                                padding: '0.875rem 1rem',
+                                                background: 'var(--success-alpha)',
+                                                borderRadius: '10px',
+                                                border: '1px solid var(--success)'
+                                            }}>
+                                                <CheckCircle size={18} color="var(--success)" />
+                                                <span style={{ 
+                                                    fontSize: '0.875rem', 
+                                                    fontWeight: 500, 
+                                                    color: 'var(--text-primary)' 
+                                                }}>
+                                                    Correct Answer:
+                                                </span>
+                                                <span style={{
+                                                    background: 'var(--success)',
+                                                    color: 'white',
+                                                    padding: '0.375rem 0.875rem',
+                                                    borderRadius: '6px',
+                                                    fontWeight: 600,
+                                                    fontSize: '0.85rem'
+                                                }}>
+                                                    Option {['A', 'B', 'C', 'D'][q.correctAnswer]}
+                                                </span>
+                                                <span style={{ 
+                                                    marginLeft: 'auto', 
+                                                    fontSize: '0.75rem', 
+                                                    color: 'var(--text-muted)' 
+                                                }}>
+                                                    Click any option badge to change
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {/* Add New Question Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setNewTest(prev => ({
+                                                ...prev,
+                                                questions: [...prev.questions, {
+                                                    question: '',
+                                                    options: ['', '', '', ''],
+                                                    correctAnswer: 0,
+                                                    category: 'general',
+                                                    explanation: ''
+                                                }]
+                                            }));
+                                        }}
+                                        style={{
+                                            padding: '1.25rem',
+                                            background: 'var(--bg-card)',
+                                            border: '2px dashed var(--border-color)',
+                                            borderRadius: '16px',
+                                            color: 'var(--text-muted)',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '0.75rem',
+                                            transition: 'all 0.2s',
+                                            fontSize: '0.95rem'
+                                        }}
+                                        onMouseOver={e => {
+                                            e.currentTarget.style.borderColor = 'var(--primary)';
+                                            e.currentTarget.style.color = 'var(--primary)';
+                                            e.currentTarget.style.background = 'var(--primary-alpha)';
+                                        }}
+                                        onMouseOut={e => {
+                                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                                            e.currentTarget.style.color = 'var(--text-muted)';
+                                            e.currentTarget.style.background = 'var(--bg-card)';
+                                        }}
+                                    >
+                                        <Plus size={20} /> Add New Question
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="form-actions">
+                            <div className="form-actions" style={{ 
+                                borderTop: '1px solid var(--border-color)', 
+                                paddingTop: '1.5rem',
+                                marginTop: '0.5rem'
+                            }}>
                                 <button type="button" className="btn-reset" onClick={() => setShowModal(false)}>
-                                    Cancel
+                                    <X size={16} /> Cancel
                                 </button>
                                 <button type="submit" className="btn-create-new" disabled={newTest.questions.length === 0}>
-                                    <Plus size={16} /> Create Test ({newTest.questions.length} questions)
+                                    <Save size={16} /> Create Test
                                 </button>
                             </div>
                         </form>
