@@ -1,0 +1,459 @@
+id,student_id,problem_id,task_id,code,submission_type,file_name,language,score,status,feedback,ai_explanation,analysis_correctness,analysis_efficiency,analysis_code_style,analysis_best_practices,plagiarism_detected,copied_from,copied_from_name,tab_switches,integrity_violation,submitted_at
+4397d1cf-93cb-42b9-8439-85ca3a81dfd7,student-008,prob-arr-003,,"def reverse_in_place(arr):
+    left = 0
+    right = len(arr) - 1
+    
+    while left < right:
+        # Swap elements
+        arr[left], arr[right] = arr[right], arr[left]
+        # Move pointers toward the center
+        left += 1
+        right -= 1
+    return arr
+",editor,,python,95,accepted,"Your solution is correct and efficient. However, consider adding error handling for edge cases, such as an empty array or a non-array input.","The submitted code correctly implements an in-place array reversal using a two-pointer approach. It has a time complexity of O(n/2), which simplifies to O(n), and a space complexity of O(1), as it only uses a constant amount of space. The code is well-structured and readable. To further improve, consider adding input validation to handle edge cases.",,,,,false,,,0,false,2026-02-03T08:53:10.935Z
+9ef2ef12-04e7-4fb4-9517-582595900cda,student-010,prob-arr-003,,"def reverse_in_place(arr):
+    left = 0
+    right = len(arr) - 1
+    
+    while left < right:
+        # Swap elements
+        arr[left], arr[right] = arr[right], arr[left]
+        # Move pointers toward the center
+        left += 1
+        right -= 1
+    return arr",editor,,python,95,accepted,"Your code is correct and efficient. However, consider adding error handling for edge cases, such as empty arrays or non-array inputs.","The submitted code correctly implements an in-place array reversal using a two-pointer technique. It has a time complexity of O(n) and a space complexity of O(1), making it efficient. The code is also well-structured and readable. The only suggestion for improvement is to add input validation to handle potential edge cases.",,,,,false,,,0,false,2026-02-03T09:06:01.861Z
+1a465c08-2f9e-4c20-9984-432d8996e0d7,student-008,prob-arr-004,,"def find_missing_number(nums):
+    n = len(nums)
+    # Expected sum of range [0, n]
+    expected_sum = n * (n + 1) // 2
+    # Actual sum of the given array
+    actual_sum = sum(nums)
+    
+    return expected_sum - actual_sum
+
+# Example
+nums = [3, 0, 1]
+print(find_missing_number(nums))  # Output: 2
+",editor,,python,95,accepted,"The code is correct, efficient, and well-structured. It uses the mathematical formula to find the missing number, which is a good approach.","The code calculates the expected sum of the range [0, n] using the formula n * (n + 1) / 2, and then subtracts the actual sum of the given array to find the missing number. This approach has a time complexity of O(n) and a space complexity of O(1), making it efficient for large inputs.",40/40 - The code correctly implements the mathematical formula to find the missing number.,"25/25 - The code has a time complexity of O(n) and a space complexity of O(1), making it efficient for large inputs.","20/20 - The code is well-structured, readable, and follows standard Python conventions.","10/15 - The code does not include any error handling or input validation, which could be improved.",false,,,0,false,2026-02-03T09:13:11.565Z
+b731c7dd-081b-441d-8116-4660da51210b,student-010,prob-arr-004,,"def find_missing_number(nums):
+    n = len(nums)
+    # Expected sum of range [0, n]
+    expected_sum = n * (n + 1) // 2
+    # Actual sum of the given array
+    actual_sum = sum(nums)
+    
+    return expected_sum - actual_sum
+
+# Example
+nums = [3, 0, 1]
+print(find_missing_number(nums))  # Output: 2
+",editor,,python,30,rejected,Submission rejected. Plagiarism detected! This code matches a submission from ANUSHREE.,"The code uses the mathematical formula for the sum of an arithmetic series to calculate the expected sum of the range [0, n]. It then subtracts the actual sum of the given array to find the missing number. The time complexity is O(n) due to the sum function, and the space complexity is O(1) as it only uses a constant amount of space.",40/40 - The code correctly implements the mathematical formula and calculates the missing number.,"23/25 - The code has a time complexity of O(n) due to the sum function, which is acceptable for this problem.","18/20 - The code is well-structured and readable, but could benefit from additional comments or docstrings.","14/15 - The code follows best practices, but could be improved by adding error handling for edge cases.",true,student-008,ANUSHREE,0,false,2026-02-03T09:13:50.246Z
+20ebcce0-624d-4e1c-b74f-d4d4c0376217,student-008,prob-arr-003,,"def reverse_array(arr):
+    left = 0
+    right = len(arr) - 1
+    
+    while left < right:
+        # Swap elements
+        arr[left], arr[right] = arr[right], arr[left]
+        # Move pointers
+        left += 1
+        right -= 1
+    return arr
+
+# Example usage
+input_arr = [1, 2, 3, 4, 5]
+print(reverse_array(input_arr)) # Output: [5, 4, 3, 2, 1]
+",editor,,python,95,accepted,"The code is efficient and well-structured, but could benefit from additional error handling.","The submitted code correctly implements an in-place array reversal function. It uses a two-pointer approach, swapping elements from the start and end of the array and moving towards the center. This approach has a time complexity of O(n) and a space complexity of O(1), making it efficient for large arrays.","38/40 - The code correctly reverses the array in-place, but does not handle edge cases such as an empty array or a non-list input.",25/25 - The time complexity of O(n) and space complexity of O(1) make the code efficient for large arrays.,"18/20 - The code is well-structured and readable, but could benefit from additional comments and docstrings.","14/15 - The code follows best practices, but could be improved with additional error handling and input validation.",false,,,0,false,2026-02-03T18:27:47.168Z
+8d187ece-13fa-42e1-90e2-d89f648eba59,student-008,prob-arr-003,,"-- Write your SQL query here
+SELECT * FROM table_name;",editor,,python,0,rejected,The submitted code is not a Python function and does not solve the problem. It appears to be a SQL query.,"The problem requires a Python function that reverses an array in-place without using built-in reverse functions. However, the submitted code is a SQL query that does not address the problem.",0/40 - The submitted code does not solve the problem and is not a Python function.,"0/25 - The code does not attempt to solve the problem, so efficiency cannot be evaluated.",0/20 - The code is not a Python function and does not follow any Python coding standards.,0/15 - The code does not demonstrate any best practices for solving the problem.,false,,,0,false,2026-02-03T18:44:30.291Z
+1cf77df1-63e8-4224-8f27-c0fdb3807551,student-008,,ml-task-002,"{
+ ""cells"": [
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 1,
+   ""id"": ""7cfdcfd5"",
+   ""metadata"": {},
+   ""outputs"": [
+    {
+     ""name"": ""stdout"",
+     ""output_type"": ""stream"",
+     ""text"": [
+      ""Requirement already satisfied: wfdb in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (4.3.0)\n"",
+      ""Requirement already satisfied: numpy in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (1.26.4)\n"",
+      ""Requirement already satisfied: matplotlib in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (3.9.2)\n"",
+      ""Requirement already satisfied: scipy in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (1.14.1)\n"",
+      ""Requirement already satisfied: aiohttp>=3.10.11 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (3.11.13)\n"",
+      ""Requirement already satisfied: fsspec>=2023.10.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (2024.12.0)\n"",
+      ""Requirement already satisfied: pandas>=2.2.3 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (2.2.3)\n"",
+      ""Requirement already satisfied: requests>=2.8.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (2.32.3)\n"",
+      ""Requirement already satisfied: soundfile>=0.10.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (0.13.1)\n"",
+      ""Requirement already satisfied: contourpy>=1.0.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (1.3.1)\n"",
+      ""Requirement already satisfied: cycler>=0.10 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (0.12.1)\n"",
+      ""Requirement already satisfied: fonttools>=4.22.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (4.54.1)\n"",
+      ""Requirement already satisfied: kiwisolver>=1.3.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (1.4.7)\n"",
+      ""Requirement already satisfied: packaging>=20.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (24.2)\n"",
+      ""Requirement already satisfied: pillow>=8 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (11.0.0)\n"",
+      ""Requirement already satisfied: pyparsing>=2.3.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (3.2.0)\n"",
+      ""Requirement already satisfied: python-dateutil>=2.7 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (2.9.0.post0)\n"",
+      ""Requirement already satisfied: aiohappyeyeballs>=2.3.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (2.4.6)\n"",
+      ""Requirement already satisfied: aiosignal>=1.1.2 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (1.3.2)\n"",
+      ""Requirement already satisfied: attrs>=17.3.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (24.2.0)\n"",
+      ""Requirement already satisfied: frozenlist>=1.1.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (1.5.0)\n"",
+      ""Requirement already satisfied: multidict<7.0,>=4.5 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (6.1.0)\n"",
+      ""Requirement already satisfied: propcache>=0.2.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (0.3.0)\n"",
+      ""Requirement already satisfied: yarl<2.0,>=1.17.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (1.18.3)\n"",
+      ""Requirement already satisfied: pytz>=2020.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from pandas>=2.2.3->wfdb) (2024.2)\n"",
+      ""Requirement already satisfied: tzdata>=2022.7 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from pandas>=2.2.3->wfdb) (2025.1)\n"",
+      ""Requirement already satisfied: six>=1.5 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from python-dateutil>=2.7->matplotlib) (1.16.0)\n"",
+      ""Requirement already satisfied: charset-normalizer<4,>=2 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (3.4.1)\n"",
+      ""Requirement already satisfied: idna<4,>=2.5 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (3.10)\n"",
+      ""Requirement already satisfied: urllib3<3,>=1.21.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (2.3.0)\n"",
+      ""Requirement already satisfied: certifi>=2017.4.17 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (2025.1.31)\n"",
+      ""Requirement already satisfied: cffi>=1.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from soundfile>=0.10.0->wfdb) (1.17.1)\n"",
+      ""Requirement already satisfied: pycparser in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from cffi>=1.0->soundfile>=0.10.0->wfdb) (2.22)\n"",
+      ""Note: you may need to restart the kernel to use updated packages.\n""
+     ]
+    },
+    {
+     ""name"": ""stderr"",
+     ""output_type"": ""stream"",
+     ""text"": [
+      ""\n"",
+      ""[notice] A new release of pip is available: 25.0.1 -> 25.3\n"",
+      ""[notice] To update, run: python.exe -m pip install --upgrade pip\n""
+     ]
+    }
+   ],
+   ""source"": [
+    ""pip install wfdb numpy matplotlib scipy""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 2,
+   ""id"": ""1e508421"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""import wfdb\n"",
+    ""import numpy as np\n"",
+    ""import matplotlib.pyplot as plt\n"",
+    ""from scipy.signal import butter, filtfilt\n"",
+    ""import os""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 3,
+   ""id"": ""3be7fd62"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""def bandpass_filter(signal, fs, lowcut=0.5, highcut=45, order=4):\n"",
+    ""    nyq = 0.5 * fs\n"",
+    ""    low = lowcut / nyq\n"",
+    ""    high = highcut / nyq\n"",
+    ""    b, a = butter(order, [low, high], btype='band')\n"",
+    ""    return filtfilt(b, a, signal)""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 4,
+   ""id"": ""013da21d"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""def normalize(signal):\n"",
+    ""    return (signal - np.mean(signal)) / np.std(signal)""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 5,
+   ""id"": ""6f56364e"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""def ptbxl_signal_to_image(record_path, save_path):\n"",
+    ""    # Load ECG record\n"",
+    ""    record = wfdb.rdrecord(record_path)\n"",
+    ""    ecg = record.p_signal\n"",
+    ""    fs = record.fs\n"",
+    ""\n"",
+    ""    lead_names = record.sig_name  # Lead labels\n"",
+    ""\n"",
+    ""    # Create figure with 12 subplots (6 rows × 2 columns)\n"",
+    ""    fig, axes = plt.subplots(6, 2, figsize=(12, 10))\n"",
+    ""    axes = axes.flatten()\n"",
+    ""\n"",
+    ""    for i in range(12):\n"",
+    ""        signal = ecg[:, i]\n"",
+    ""        signal = bandpass_filter(signal, fs)\n"",
+    ""        signal = normalize(signal)\n"",
+    ""\n"",
+    ""        axes[i].plot(signal, linewidth=1)\n"",
+    ""        axes[i].set_title(lead_names[i], fontsize=9)\n"",
+    ""        axes[i].axis(\""off\"")\n"",
+    ""\n"",
+    ""    plt.tight_layout()\n"",
+    ""    plt.savefig(save_path, dpi=300, bbox_inches=\""tight\"", pad_inches=0)\n"",
+    ""    plt.close()\n""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 8,
+   ""id"": ""6c49c818"",
+   ""metadata"": {},
+   ""outputs"": [
+    {
+     ""name"": ""stdout"",
+     ""output_type"": ""stream"",
+     ""text"": [
+      ""12-lead ECG image saved successfully!\n""
+     ]
+    }
+   ],
+   ""source"": [
+    ""record_path = r\""C:\\Users\\nithi\\FinalYearProject\\Dataset\\PTB\\records500\\00000\\00001_hr\""\n"",
+    ""output_dir = \""ecg_images\""\n"",
+    ""os.makedirs(output_dir, exist_ok=True)\n"",
+    ""\n"",
+    ""save_path = os.path.join(output_dir, \""00000_lr.png\"")\n"",
+    ""\n"",
+    ""ptbxl_signal_to_image(record_path, save_path)\n"",
+    ""print(\""12-lead ECG image saved successfully!\"")""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": null,
+   ""id"": ""9590d363"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": []
+  }
+ ],
+ ""metadata"": {
+  ""kernelspec"": {
+   ""display_name"": ""Python 3"",
+   ""language"": ""python"",
+   ""name"": ""python3""
+  },
+  ""language_info"": {
+   ""codemirror_mode"": {
+    ""name"": ""ipython"",
+    ""version"": 3
+   },
+   ""file_extension"": "".py"",
+   ""mimetype"": ""text/x-python"",
+   ""name"": ""python"",
+   ""nbconvert_exporter"": ""python"",
+   ""pygments_lexer"": ""ipython3"",
+   ""version"": ""3.11.8""
+  }
+ },
+ ""nbformat"": 4,
+ ""nbformat_minor"": 5
+}
+",file,image2.ipynb,python,20,rejected,"The submitted code does not address the task of Iris species classification. It appears to be related to ECG signal processing and image generation, which is not relevant to the task.","The task requires building a classifier to predict Iris species based on sepal and petal measurements. However, the submitted code does not include any data preprocessing, model training, or evaluation for this task. Instead, it focuses on ECG signal processing and image generation, which is not relevant to the task.",0/40 - The code does not address the task of Iris species classification.,0/25 - The code is not efficient for the task as it does not include any relevant operations.,"10/20 - The code is well-structured and readable, but it does not follow the task requirements.","10/15 - The code includes some best practices, such as using functions and importing necessary libraries, but it does not follow the task requirements.",false,,,0,false,2026-02-03T18:45:23.286Z
+bda6aaba-5a92-4671-a5ce-cac57bf638a9,student-010,,ml-task-002,"{
+ ""cells"": [
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 1,
+   ""id"": ""7cfdcfd5"",
+   ""metadata"": {},
+   ""outputs"": [
+    {
+     ""name"": ""stdout"",
+     ""output_type"": ""stream"",
+     ""text"": [
+      ""Requirement already satisfied: wfdb in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (4.3.0)\n"",
+      ""Requirement already satisfied: numpy in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (1.26.4)\n"",
+      ""Requirement already satisfied: matplotlib in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (3.9.2)\n"",
+      ""Requirement already satisfied: scipy in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (1.14.1)\n"",
+      ""Requirement already satisfied: aiohttp>=3.10.11 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (3.11.13)\n"",
+      ""Requirement already satisfied: fsspec>=2023.10.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (2024.12.0)\n"",
+      ""Requirement already satisfied: pandas>=2.2.3 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (2.2.3)\n"",
+      ""Requirement already satisfied: requests>=2.8.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (2.32.3)\n"",
+      ""Requirement already satisfied: soundfile>=0.10.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from wfdb) (0.13.1)\n"",
+      ""Requirement already satisfied: contourpy>=1.0.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (1.3.1)\n"",
+      ""Requirement already satisfied: cycler>=0.10 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (0.12.1)\n"",
+      ""Requirement already satisfied: fonttools>=4.22.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (4.54.1)\n"",
+      ""Requirement already satisfied: kiwisolver>=1.3.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (1.4.7)\n"",
+      ""Requirement already satisfied: packaging>=20.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (24.2)\n"",
+      ""Requirement already satisfied: pillow>=8 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (11.0.0)\n"",
+      ""Requirement already satisfied: pyparsing>=2.3.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (3.2.0)\n"",
+      ""Requirement already satisfied: python-dateutil>=2.7 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from matplotlib) (2.9.0.post0)\n"",
+      ""Requirement already satisfied: aiohappyeyeballs>=2.3.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (2.4.6)\n"",
+      ""Requirement already satisfied: aiosignal>=1.1.2 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (1.3.2)\n"",
+      ""Requirement already satisfied: attrs>=17.3.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (24.2.0)\n"",
+      ""Requirement already satisfied: frozenlist>=1.1.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (1.5.0)\n"",
+      ""Requirement already satisfied: multidict<7.0,>=4.5 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (6.1.0)\n"",
+      ""Requirement already satisfied: propcache>=0.2.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (0.3.0)\n"",
+      ""Requirement already satisfied: yarl<2.0,>=1.17.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from aiohttp>=3.10.11->wfdb) (1.18.3)\n"",
+      ""Requirement already satisfied: pytz>=2020.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from pandas>=2.2.3->wfdb) (2024.2)\n"",
+      ""Requirement already satisfied: tzdata>=2022.7 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from pandas>=2.2.3->wfdb) (2025.1)\n"",
+      ""Requirement already satisfied: six>=1.5 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from python-dateutil>=2.7->matplotlib) (1.16.0)\n"",
+      ""Requirement already satisfied: charset-normalizer<4,>=2 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (3.4.1)\n"",
+      ""Requirement already satisfied: idna<4,>=2.5 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (3.10)\n"",
+      ""Requirement already satisfied: urllib3<3,>=1.21.1 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (2.3.0)\n"",
+      ""Requirement already satisfied: certifi>=2017.4.17 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from requests>=2.8.1->wfdb) (2025.1.31)\n"",
+      ""Requirement already satisfied: cffi>=1.0 in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from soundfile>=0.10.0->wfdb) (1.17.1)\n"",
+      ""Requirement already satisfied: pycparser in c:\\users\\nithi\\appdata\\local\\programs\\python\\python311\\lib\\site-packages (from cffi>=1.0->soundfile>=0.10.0->wfdb) (2.22)\n"",
+      ""Note: you may need to restart the kernel to use updated packages.\n""
+     ]
+    },
+    {
+     ""name"": ""stderr"",
+     ""output_type"": ""stream"",
+     ""text"": [
+      ""\n"",
+      ""[notice] A new release of pip is available: 25.0.1 -> 25.3\n"",
+      ""[notice] To update, run: python.exe -m pip install --upgrade pip\n""
+     ]
+    }
+   ],
+   ""source"": [
+    ""pip install wfdb numpy matplotlib scipy""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 2,
+   ""id"": ""1e508421"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""import wfdb\n"",
+    ""import numpy as np\n"",
+    ""import matplotlib.pyplot as plt\n"",
+    ""from scipy.signal import butter, filtfilt\n"",
+    ""import os""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 3,
+   ""id"": ""3be7fd62"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""def bandpass_filter(signal, fs, lowcut=0.5, highcut=45, order=4):\n"",
+    ""    nyq = 0.5 * fs\n"",
+    ""    low = lowcut / nyq\n"",
+    ""    high = highcut / nyq\n"",
+    ""    b, a = butter(order, [low, high], btype='band')\n"",
+    ""    return filtfilt(b, a, signal)""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 4,
+   ""id"": ""013da21d"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""def normalize(signal):\n"",
+    ""    return (signal - np.mean(signal)) / np.std(signal)""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 5,
+   ""id"": ""6f56364e"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": [
+    ""def ptbxl_signal_to_image(record_path, save_path):\n"",
+    ""    # Load ECG record\n"",
+    ""    record = wfdb.rdrecord(record_path)\n"",
+    ""    ecg = record.p_signal\n"",
+    ""    fs = record.fs\n"",
+    ""\n"",
+    ""    lead_names = record.sig_name  # Lead labels\n"",
+    ""\n"",
+    ""    # Create figure with 12 subplots (6 rows × 2 columns)\n"",
+    ""    fig, axes = plt.subplots(6, 2, figsize=(12, 10))\n"",
+    ""    axes = axes.flatten()\n"",
+    ""\n"",
+    ""    for i in range(12):\n"",
+    ""        signal = ecg[:, i]\n"",
+    ""        signal = bandpass_filter(signal, fs)\n"",
+    ""        signal = normalize(signal)\n"",
+    ""\n"",
+    ""        axes[i].plot(signal, linewidth=1)\n"",
+    ""        axes[i].set_title(lead_names[i], fontsize=9)\n"",
+    ""        axes[i].axis(\""off\"")\n"",
+    ""\n"",
+    ""    plt.tight_layout()\n"",
+    ""    plt.savefig(save_path, dpi=300, bbox_inches=\""tight\"", pad_inches=0)\n"",
+    ""    plt.close()\n""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": 8,
+   ""id"": ""6c49c818"",
+   ""metadata"": {},
+   ""outputs"": [
+    {
+     ""name"": ""stdout"",
+     ""output_type"": ""stream"",
+     ""text"": [
+      ""12-lead ECG image saved successfully!\n""
+     ]
+    }
+   ],
+   ""source"": [
+    ""record_path = r\""C:\\Users\\nithi\\FinalYearProject\\Dataset\\PTB\\records500\\00000\\00001_hr\""\n"",
+    ""output_dir = \""ecg_images\""\n"",
+    ""os.makedirs(output_dir, exist_ok=True)\n"",
+    ""\n"",
+    ""save_path = os.path.join(output_dir, \""00000_lr.png\"")\n"",
+    ""\n"",
+    ""ptbxl_signal_to_image(record_path, save_path)\n"",
+    ""print(\""12-lead ECG image saved successfully!\"")""
+   ]
+  },
+  {
+   ""cell_type"": ""code"",
+   ""execution_count"": null,
+   ""id"": ""9590d363"",
+   ""metadata"": {},
+   ""outputs"": [],
+   ""source"": []
+  }
+ ],
+ ""metadata"": {
+  ""kernelspec"": {
+   ""display_name"": ""Python 3"",
+   ""language"": ""python"",
+   ""name"": ""python3""
+  },
+  ""language_info"": {
+   ""codemirror_mode"": {
+    ""name"": ""ipython"",
+    ""version"": 3
+   },
+   ""file_extension"": "".py"",
+   ""mimetype"": ""text/x-python"",
+   ""name"": ""python"",
+   ""nbconvert_exporter"": ""python"",
+   ""pygments_lexer"": ""ipython3"",
+   ""version"": ""3.11.8""
+  }
+ },
+ ""nbformat"": 4,
+ ""nbformat_minor"": 5
+}
+",file,image2.ipynb,python,20,rejected,Submission rejected. Plagiarism detected! This code matches a submission from ANUSHREE.,"The task requires building a classifier to predict Iris species based on sepal and petal measurements. However, the submitted code focuses on ECG signal processing, filtering, and image generation, which is not related to the task. The code does not include any data preprocessing, model training, or evaluation for the Iris dataset.",0/40 - The code does not address the task of Iris species classification.,"5/25 - The code is not efficient for the task, as it is not relevant to the problem.","10/20 - The code is well-structured, but it is not relevant to the task.","5/15 - The code does not follow best practices for the task, as it does not include any data preprocessing, model training, or evaluation for the Iris dataset.",true,student-008,ANUSHREE,0,false,2026-02-03T18:48:54.268Z
+ce8bc529-f743-4717-9e2c-91ead1c7d557,student-008,prob-arr-003,,"# Write your Python code here
+
+def solution():
+    print(hello)
+
+# Call your solution
+solution()",editor,,python,0,rejected,Submission appears to be empty or just a template. Please implement the actual solution logic before submitting.,No meaningful code implementation detected. The submission contains only template/boilerplate code without actual logic.,0/40 - No logic implemented,0/25 - Cannot evaluate without code,0/20 - Template only,0/15 - N/A,false,,,1,false,2026-02-04T03:57:55.114Z
