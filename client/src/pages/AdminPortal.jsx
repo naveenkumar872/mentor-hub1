@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -9,7 +9,7 @@ import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -372,6 +372,16 @@ function StudentLeaderboard() {
         return <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>#{rank}</span>
     }
 
+    const getTotalViolations = (student) => {
+        if (!student.violations) return 0
+        return (student.violations.tabSwitches || 0) + 
+               (student.violations.copyPaste || 0) +
+               (student.violations.cameraBlocked || 0) +
+               (student.violations.phoneDetection || 0) +
+               (student.violations.integrityViolations || 0) + 
+               (student.violations.plagiarism || 0)
+    }
+
     return (
         <div className="card animate-fadeIn" style={{ padding: '0', overflow: 'hidden' }}>
             <div style={{ padding: '2rem' }}>
@@ -391,34 +401,119 @@ function StudentLeaderboard() {
                                 <th>Student Name</th>
                                 <th>Submissions</th>
                                 <th>Avg. Score</th>
-                                <th>Completion</th>
+                                <th>Violations</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {leaders.map((student, i) => (
-                                <tr key={student.studentId}>
-                                    <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            {getRankIcon(i + 1)}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                            <div className="avatar-circle">{student.name.charAt(0)}</div>
-                                            <span>{student.name}</span>
-                                        </div>
-                                    </td>
-                                    <td>{student.totalSubmissions}</td>
-                                    <td>
-                                        <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{student.avgScore}%</span>
-                                    </td>
-                                    <td>
-                                        <div style={{ width: '100px', height: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '10px', overflow: 'hidden' }}>
-                                            <div style={{ width: `${student.avgScore}%`, height: '100%', background: 'var(--primary)' }}></div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {leaders.map((student, i) => {
+                                const totalViolations = getTotalViolations(student)
+                                const hasIssues = totalViolations > 0 || student.violations?.plagiarism > 0
+                                
+                                return (
+                                    <tr key={student.studentId}>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {getRankIcon(i + 1)}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                <div className="avatar-circle">{student.name.charAt(0)}</div>
+                                                <span>{student.name}</span>
+                                            </div>
+                                        </td>
+                                        <td>{student.totalSubmissions}</td>
+                                        <td>
+                                            <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{student.avgScore}%</span>
+                                        </td>
+                                        <td>
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                {student.violations?.tabSwitches > 0 && (
+                                                    <span style={{ 
+                                                        fontSize: '0.7rem', 
+                                                        padding: '2px 8px', 
+                                                        borderRadius: '4px', 
+                                                        background: 'rgba(245, 158, 11, 0.15)', 
+                                                        color: '#f59e0b',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }} title="Tab Switches">
+                                                        <Eye size={10} /> {student.violations.tabSwitches}
+                                                    </span>
+                                                )}
+                                                {student.violations?.cameraBlocked > 0 && (
+                                                    <span style={{ 
+                                                        fontSize: '0.7rem', 
+                                                        padding: '2px 8px', 
+                                                        borderRadius: '4px', 
+                                                        background: 'rgba(239, 68, 68, 0.15)', 
+                                                        color: '#ef4444',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }} title="Camera Blocked">
+                                                        📷 {student.violations.cameraBlocked}
+                                                    </span>
+                                                )}
+                                                {student.violations?.phoneDetection > 0 && (
+                                                    <span style={{ 
+                                                        fontSize: '0.7rem', 
+                                                        padding: '2px 8px', 
+                                                        borderRadius: '4px', 
+                                                        background: 'rgba(239, 68, 68, 0.15)', 
+                                                        color: '#ef4444',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }} title="Phone Detected">
+                                                        📱 {student.violations.phoneDetection}
+                                                    </span>
+                                                )}
+                                                {student.violations?.copyPaste > 0 && (
+                                                    <span style={{ 
+                                                        fontSize: '0.7rem', 
+                                                        padding: '2px 8px', 
+                                                        borderRadius: '4px', 
+                                                        background: 'rgba(245, 158, 11, 0.15)', 
+                                                        color: '#f59e0b',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }} title="Copy/Paste Attempts">
+                                                        📋 {student.violations.copyPaste}
+                                                    </span>
+                                                )}
+                                                {student.violations?.plagiarism > 0 && (
+                                                    <span style={{ 
+                                                        fontSize: '0.7rem', 
+                                                        padding: '2px 8px', 
+                                                        borderRadius: '4px', 
+                                                        background: 'rgba(239, 68, 68, 0.15)', 
+                                                        color: '#ef4444',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }} title="Plagiarism">
+                                                        <AlertTriangle size={10} /> {student.violations.plagiarism}
+                                                    </span>
+                                                )}
+                                                {!hasIssues && (
+                                                    <span style={{ fontSize: '0.75rem', color: '#10b981' }}>
+                                                        <CheckCircle size={14} />
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style={{ width: '100px', height: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '10px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${student.avgScore}%`, height: '100%', background: hasIssues ? 'var(--warning)' : 'var(--primary)' }}></div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -811,6 +906,59 @@ function AdminSubmissionReportModal({ submission, onClose }) {
                                     This code matches a submission from {submission.plagiarism.copiedFromName}
                                 </p>
                             </div>
+                        </div>
+                    )}
+
+                    {/* Proctoring Violations Section */}
+                    {(submission.tab_switches > 0 || submission.copy_paste_attempts > 0 || submission.camera_blocked_count > 0 || submission.phone_detection_count > 0) && (
+                        <div style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f59e0b' }}>
+                                <AlertTriangle size={18} /> Proctoring Violations
+                            </h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+                                {submission.tab_switches > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <Eye size={18} color="#f59e0b" />
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.tab_switches} Tab Switches</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.tab_switches * 5, 25)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.copy_paste_attempts > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📋</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.copy_paste_attempts} Copy/Paste</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.copy_paste_attempts * 3, 15)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.camera_blocked_count > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📷</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.camera_blocked_count} Camera Blocked</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.camera_blocked_count * 10, 30)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.phone_detection_count > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📱</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.phone_detection_count} Phone Detected</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.phone_detection_count * 15, 45)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            {submission.proctoring_video && (
+                                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '1rem' }}>🎥</span>
+                                    <span style={{ fontSize: '0.85rem', color: '#3b82f6' }}>Proctoring video recorded: {submission.proctoring_video}</span>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1276,7 +1424,12 @@ function GlobalProblems() {
         sampleInput: '',
         expectedOutput: '',
         deadline: '',
-        status: 'live'
+        status: 'live',
+        enableProctoring: false,
+        enableVideoAudio: false,
+        disableCopyPaste: false,
+        trackTabSwitches: false,
+        maxTabSwitches: 3
     })
 
     // AI Chatbot handler - auto-fills the form
@@ -1290,7 +1443,12 @@ function GlobalProblems() {
             sampleInput: generated.sampleInput || '',
             expectedOutput: generated.expectedOutput || '',
             deadline: problem.deadline,
-            status: generated.status || 'live'
+            status: generated.status || 'live',
+            enableProctoring: problem.enableProctoring,
+            enableVideoAudio: problem.enableVideoAudio,
+            disableCopyPaste: problem.disableCopyPaste,
+            trackTabSwitches: problem.trackTabSwitches,
+            maxTabSwitches: problem.maxTabSwitches
         })
         setShowAIChat(false)
         setShowModal(true)
@@ -1316,7 +1474,8 @@ function GlobalProblems() {
             setShowModal(false)
             setProblem({
                 title: '', type: 'Coding', language: 'Python', difficulty: 'Medium',
-                description: '', sampleInput: '', expectedOutput: '', deadline: '', status: 'live'
+                description: '', sampleInput: '', expectedOutput: '', deadline: '', status: 'live',
+                enableProctoring: false, enableVideoAudio: false, disableCopyPaste: false, trackTabSwitches: false, maxTabSwitches: 3
             })
             fetchProblems()
         } catch (error) {
@@ -1453,7 +1612,7 @@ function GlobalProblems() {
                             border: '1px solid var(--border-color)'
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{
                                         fontSize: '0.65rem',
                                         padding: '3px 8px',
@@ -1464,6 +1623,21 @@ function GlobalProblems() {
                                     }}>GLOBAL</span>
                                     <span className="problem-badge">{p.type?.toUpperCase()}</span>
                                     <span className={`status-badge ${p.status || 'live'}`} style={{ fontSize: '0.65rem' }}>{p.status || 'Active'}</span>
+                                    {p.proctoring?.enabled && (
+                                        <span style={{ 
+                                            fontSize: '0.6rem', 
+                                            padding: '3px 8px', 
+                                            borderRadius: '4px', 
+                                            background: 'rgba(239, 68, 68, 0.15)', 
+                                            color: '#ef4444', 
+                                            fontWeight: 700,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}>
+                                            <Shield size={10} /> PROCTORED
+                                        </span>
+                                    )}
                                 </div>
                                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(59, 130, 246, 0.1)', padding: '2px 8px', borderRadius: '4px' }}>{p.language}</span>
                             </div>
@@ -1623,6 +1797,120 @@ function GlobalProblems() {
                                         value={problem.deadline}
                                         onChange={(e) => setProblem({ ...problem, deadline: e.target.value })}
                                     />
+                                </div>
+
+                                {/* Proctoring Settings Section */}
+                                <div style={{ 
+                                    marginBottom: '1.5rem', 
+                                    padding: '1.25rem', 
+                                    background: 'rgba(239, 68, 68, 0.05)', 
+                                    borderRadius: '1rem', 
+                                    border: '1px solid rgba(239, 68, 68, 0.15)' 
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                                        <Eye size={20} color="#ef4444" />
+                                        <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#ef4444' }}>
+                                            Proctoring Settings
+                                        </h4>
+                                    </div>
+                                    
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+                                        <label style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '0.75rem', 
+                                            cursor: 'pointer',
+                                            padding: '0.75rem',
+                                            background: problem.enableProctoring ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={problem.enableProctoring}
+                                                onChange={(e) => setProblem({ ...problem, enableProctoring: e.target.checked })}
+                                                style={{ width: '18px', height: '18px', accentColor: '#ef4444' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>Enable Proctoring</span>
+                                        </label>
+                                        
+                                        <label style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '0.75rem', 
+                                            cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
+                                            opacity: problem.enableProctoring ? 1 : 0.5,
+                                            padding: '0.75rem',
+                                            background: problem.enableVideoAudio ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={problem.enableVideoAudio}
+                                                onChange={(e) => setProblem({ ...problem, enableVideoAudio: e.target.checked })}
+                                                disabled={!problem.enableProctoring}
+                                                style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>📹 Video/Audio Monitoring</span>
+                                        </label>
+                                        
+                                        <label style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '0.75rem', 
+                                            cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
+                                            opacity: problem.enableProctoring ? 1 : 0.5,
+                                            padding: '0.75rem',
+                                            background: problem.disableCopyPaste ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={problem.disableCopyPaste}
+                                                onChange={(e) => setProblem({ ...problem, disableCopyPaste: e.target.checked })}
+                                                disabled={!problem.enableProctoring}
+                                                style={{ width: '18px', height: '18px', accentColor: '#f59e0b' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>📋 Disable Copy/Paste</span>
+                                        </label>
+                                        
+                                        <label style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '0.75rem', 
+                                            cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
+                                            opacity: problem.enableProctoring ? 1 : 0.5,
+                                            padding: '0.75rem',
+                                            background: problem.trackTabSwitches ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={problem.trackTabSwitches}
+                                                onChange={(e) => setProblem({ ...problem, trackTabSwitches: e.target.checked })}
+                                                disabled={!problem.enableProctoring}
+                                                style={{ width: '18px', height: '18px', accentColor: '#10b981' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>🔒 Track Tab Switches</span>
+                                        </label>
+                                    </div>
+                                    
+                                    {problem.enableProctoring && problem.trackTabSwitches && (
+                                        <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Max Tab Switches:</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="10"
+                                                value={problem.maxTabSwitches}
+                                                onChange={(e) => setProblem({ ...problem, maxTabSwitches: parseInt(e.target.value) || 3 })}
+                                                style={{ width: '80px', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)', background: 'var(--bg-dark)', color: 'var(--text-main)' }}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="form-actions">

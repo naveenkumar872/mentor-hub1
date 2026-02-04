@@ -2,14 +2,42 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const Groq = require('groq-sdk');
 const mysql = require('mysql2/promise');
 const { URL } = require('url');
+const multer = require('multer');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Setup multer for video uploads
+const uploadDir = path.join(__dirname, 'uploads', 'proctoring');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`)
+});
+
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('video/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only video files are allowed'));
+        }
+    }
+});
 
 // Initialize Groq SDK
 const groq = new Groq({
@@ -318,7 +346,14 @@ app.get('/api/problems', async (req, res) => {
                 sampleInput: p.sample_input,
                 expectedOutput: p.expected_output,
                 createdAt: p.created_at,
-                completedBy: completions.map(c => c.student_id)
+                completedBy: completions.map(c => c.student_id),
+                proctoring: {
+                    enabled: p.enable_proctoring === 'true',
+                    videoAudio: p.enable_video_audio === 'true',
+                    disableCopyPaste: p.disable_copy_paste === 'true',
+                    trackTabSwitches: p.track_tab_switches === 'true',
+                    maxTabSwitches: p.max_tab_switches || 3
+                }
             };
         }));
 
@@ -350,7 +385,14 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
                 sampleInput: p.sample_input,
                 expectedOutput: p.expected_output,
                 createdAt: p.created_at,
-                completedBy: completions.map(c => c.student_id)
+                completedBy: completions.map(c => c.student_id),
+                proctoring: {
+                    enabled: p.enable_proctoring === 'true',
+                    videoAudio: p.enable_video_audio === 'true',
+                    disableCopyPaste: p.disable_copy_paste === 'true',
+                    trackTabSwitches: p.track_tab_switches === 'true',
+                    maxTabSwitches: p.max_tab_switches || 3
+                }
             };
         }));
 
@@ -364,12 +406,18 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
 app.post('/api/problems', async (req, res) => {
     try {
         const problemId = uuidv4();
-        const { mentorId, title, description, sampleInput, expectedOutput, difficulty, type, language, status, deadline } = req.body;
+        const { 
+            mentorId, title, description, sampleInput, expectedOutput, 
+            difficulty, type, language, status, deadline,
+            // Proctoring settings
+            enableProctoring, enableVideoAudio, disableCopyPaste, 
+            trackTabSwitches, maxTabSwitches
+        } = req.body;
         const createdAt = new Date();
 
         await pool.query(
-            'INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, difficulty, type, language, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', difficulty, type, language, status || 'live', createdAt]
+            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3]
         );
 
         res.json({
@@ -446,6 +494,11 @@ app.get('/api/submissions', async (req, res) => {
                 tabSwitches: s.tab_switches,
                 integrityViolation: s.integrity_violation === 'true'
             },
+            tab_switches: s.tab_switches || 0,
+            copy_paste_attempts: s.copy_paste_attempts || 0,
+            camera_blocked_count: s.camera_blocked_count || 0,
+            phone_detection_count: s.phone_detection_count || 0,
+            proctoring_video: s.proctoring_video,
             submittedAt: s.submitted_at
         }));
 
@@ -674,6 +727,189 @@ Scoring Guide:
 
     } catch (error) {
         console.error('Submission Error:', error);
+        res.status(500).json({ error: 'Failed to process submission', details: error.message });
+    }
+});
+
+// Proctored submission with video upload
+app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (req, res) => {
+    try {
+        const { studentId, problemId, language, code, submissionType, tabSwitches, copyPasteAttempts, cameraBlockedCount, phoneDetectionCount, timeSpent } = req.body;
+        const submissionId = uuidv4();
+        const submittedAt = new Date();
+        
+        // Get video file info if uploaded and convert to MP4
+        let videoFilename = null;
+        if (req.file) {
+            const webmPath = req.file.path;
+            const webmFilename = req.file.filename;
+            const mp4Filename = webmFilename.replace('.webm', '.mp4');
+            const mp4Path = path.join(uploadDir, mp4Filename);
+            
+            try {
+                // Convert WebM to MP4 using ffmpeg
+                console.log(`🔄 Converting video to MP4: ${webmFilename} -> ${mp4Filename}`);
+                await execPromise(`ffmpeg -i "${webmPath}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart "${mp4Path}" -y`);
+                
+                // Delete original WebM file after successful conversion
+                fs.unlinkSync(webmPath);
+                videoFilename = mp4Filename;
+                console.log(`📹 Proctoring video saved as MP4: ${mp4Filename}`);
+            } catch (ffmpegError) {
+                console.error('⚠️ FFmpeg conversion failed, keeping WebM:', ffmpegError.message);
+                // Keep the original WebM if conversion fails
+                videoFilename = webmFilename;
+            }
+        }
+
+        // Get problem details for AI evaluation
+        let problemDetails = null;
+        if (problemId) {
+            const [problems] = await pool.query('SELECT * FROM problems WHERE id = ?', [problemId]);
+            if (problems.length > 0) problemDetails = problems[0];
+        }
+
+        // AI Evaluation (same as regular submission)
+        let evaluationResult = { score: 0, status: 'rejected', feedback: 'Unable to evaluate', analysis: {} };
+        try {
+            const evaluationPrompt = `You are an expert code evaluator. Analyze this ${language} code submission for a coding problem.
+
+Problem: ${problemDetails?.title || 'Unknown'}
+Description: ${problemDetails?.description || 'No description'}
+Expected Output: ${problemDetails?.expected_output || 'Not specified'}
+
+Student's Code:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Evaluate this code on:
+1. Correctness (0-40 points): Does it solve the problem correctly?
+2. Efficiency (0-25 points): Is the algorithm efficient?
+3. Code Style (0-20 points): Is it readable and well-structured?
+4. Best Practices (0-15 points): Does it follow ${language} best practices?
+
+Respond in this exact JSON format:
+{
+  "score": <total score 0-100>,
+  "status": "<accepted if score>=70, partial if score>=40, else rejected>",
+  "feedback": "<2-3 sentence feedback for the student>",
+  "analysis": {
+    "correctness": <0-40>,
+    "efficiency": <0-25>,
+    "codeStyle": <0-20>,
+    "bestPractices": <0-15>
+  }
+}`;
+
+            const aiResponse = await groq.chat.completions.create({
+                model: 'llama-3.3-70b-versatile',
+                messages: [{ role: 'user', content: evaluationPrompt }],
+                temperature: 0.3,
+                max_tokens: 1000,
+            });
+
+            const responseText = aiResponse.choices[0]?.message?.content || '';
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                evaluationResult = JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            console.error('AI Evaluation error:', e.message);
+        }
+
+        // Apply penalties for proctoring violations
+        let finalScore = evaluationResult.score || 0;
+        let integrityViolation = false;
+        const tabSwitchCount = parseInt(tabSwitches) || 0;
+        const copyPasteCount = parseInt(copyPasteAttempts) || 0;
+        const cameraBlockCount = parseInt(cameraBlockedCount) || 0;
+        const phoneCount = parseInt(phoneDetectionCount) || 0;
+
+        // Penalty for tab switches (each switch = -5 points, max -25)
+        if (tabSwitchCount > 0) {
+            const tabPenalty = Math.min(tabSwitchCount * 5, 25);
+            finalScore = Math.max(0, finalScore - tabPenalty);
+            integrityViolation = tabSwitchCount >= 3;
+        }
+
+        // Penalty for copy/paste attempts (each attempt = -3 points, max -15)
+        if (copyPasteCount > 0) {
+            const copyPenalty = Math.min(copyPasteCount * 3, 15);
+            finalScore = Math.max(0, finalScore - copyPenalty);
+        }
+
+        // Penalty for camera obstruction (each block = -10 points, max -30)
+        // This is a serious violation as it indicates attempt to hide from proctoring
+        if (cameraBlockCount > 0) {
+            const cameraPenalty = Math.min(cameraBlockCount * 10, 30);
+            finalScore = Math.max(0, finalScore - cameraPenalty);
+            if (cameraBlockCount >= 2) integrityViolation = true;
+        }
+
+        // Penalty for phone detection (each detection = -15 points, max -45)
+        // Using a phone is a severe cheating attempt
+        if (phoneCount > 0) {
+            const phonePenalty = Math.min(phoneCount * 15, 45);
+            finalScore = Math.max(0, finalScore - phonePenalty);
+            integrityViolation = true; // Any phone detection is an integrity violation
+            console.log(`📱 Phone detected ${phoneCount} times, penalty: -${phonePenalty} points`);
+        }
+
+        // Determine final status
+        let finalStatus = evaluationResult.status || 'rejected';
+        if (finalScore >= 70) finalStatus = 'accepted';
+        else if (finalScore >= 40) finalStatus = 'partial';
+        else finalStatus = 'rejected';
+
+        // Save to database
+        await pool.query(
+            `INSERT INTO submissions (
+                id, student_id, problem_id, code, submission_type, language,
+                score, status, feedback, ai_explanation,
+                analysis_correctness, analysis_efficiency, analysis_code_style, analysis_best_practices,
+                tab_switches, copy_paste_attempts, camera_blocked_count, phone_detection_count,
+                integrity_violation, proctoring_video, submitted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                submissionId, studentId, problemId, code, submissionType || 'editor', language,
+                finalScore, finalStatus, evaluationResult.feedback, evaluationResult.aiExplanation || '',
+                evaluationResult.analysis?.correctness, evaluationResult.analysis?.efficiency,
+                evaluationResult.analysis?.codeStyle, evaluationResult.analysis?.bestPractices,
+                tabSwitchCount, copyPasteCount, cameraBlockCount, phoneCount,
+                integrityViolation ? 'true' : 'false', videoFilename, submittedAt
+            ]
+        );
+
+        // Mark problem as completed if score >= 70
+        if (problemId && finalScore >= 70) {
+            try {
+                await pool.query(
+                    'INSERT IGNORE INTO problem_completions (problem_id, student_id, completed_at) VALUES (?, ?, ?)',
+                    [problemId, studentId, submittedAt]
+                );
+            } catch (e) { /* Ignore if already completed */ }
+        }
+
+        res.json({
+            id: submissionId,
+            score: finalScore,
+            status: finalStatus,
+            feedback: evaluationResult.feedback,
+            analysis: evaluationResult.analysis,
+            integrity: {
+                tabSwitches: tabSwitchCount,
+                copyPasteAttempts: copyPasteCount,
+                cameraBlockedCount: cameraBlockCount,
+                phoneDetectionCount: phoneCount,
+                violation: integrityViolation,
+                videoRecorded: !!videoFilename
+            },
+            submittedAt
+        });
+
+    } catch (error) {
+        console.error('Proctored Submission Error:', error);
         res.status(500).json({ error: 'Failed to process submission', details: error.message });
     }
 });
@@ -1567,7 +1803,13 @@ app.get('/api/leaderboard', async (req, res) => {
         const [rows] = await pool.query(`
             SELECT u.id as studentId, u.name, 
             COUNT(s.id) as totalSubmissions, 
-            AVG(s.score) as avgScore
+            AVG(s.score) as avgScore,
+            SUM(COALESCE(s.tab_switches, 0)) as totalTabSwitches,
+            SUM(COALESCE(s.copy_paste_attempts, 0)) as totalCopyPaste,
+            SUM(COALESCE(s.camera_blocked_count, 0)) as totalCameraBlocked,
+            SUM(COALESCE(s.phone_detection_count, 0)) as totalPhoneDetection,
+            SUM(CASE WHEN s.integrity_violation = 'true' THEN 1 ELSE 0 END) as integrityViolations,
+            SUM(CASE WHEN s.plagiarism_detected = 'true' THEN 1 ELSE 0 END) as plagiarismCount
             FROM users u
             JOIN submissions s ON u.id = s.student_id
             WHERE u.role = 'student'
@@ -1580,7 +1822,15 @@ app.get('/api/leaderboard', async (req, res) => {
             studentId: r.studentId,
             name: r.name,
             totalSubmissions: r.totalSubmissions,
-            avgScore: Math.round(r.avgScore)
+            avgScore: Math.round(r.avgScore),
+            violations: {
+                tabSwitches: parseInt(r.totalTabSwitches) || 0,
+                copyPaste: parseInt(r.totalCopyPaste) || 0,
+                cameraBlocked: parseInt(r.totalCameraBlocked) || 0,
+                phoneDetection: parseInt(r.totalPhoneDetection) || 0,
+                integrityViolations: parseInt(r.integrityViolations) || 0,
+                plagiarism: parseInt(r.plagiarismCount) || 0
+            }
         }));
 
         res.json(leaderboard);

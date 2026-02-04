@@ -9,7 +9,7 @@ import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 function MentorPortal() {
@@ -496,7 +496,13 @@ function UploadProblems({ user }) {
         testInput: '',
         expectedOutput: '',
         deadline: '',
-        status: 'live'
+        status: 'live',
+        // Proctoring settings
+        enableProctoring: false,
+        enableVideoAudio: false,
+        disableCopyPaste: false,
+        trackTabSwitches: false,
+        maxTabSwitches: 3
     })
 
     // AI Chatbot handler - auto-fills the problem form
@@ -510,7 +516,12 @@ function UploadProblems({ user }) {
             testInput: generated.sampleInput || '',
             expectedOutput: generated.expectedOutput || '',
             deadline: problem.deadline,
-            status: generated.status || 'live'
+            status: generated.status || 'live',
+            enableProctoring: problem.enableProctoring,
+            enableVideoAudio: problem.enableVideoAudio,
+            disableCopyPaste: problem.disableCopyPaste,
+            trackTabSwitches: problem.trackTabSwitches,
+            maxTabSwitches: problem.maxTabSwitches
         })
         setShowAIChat(false)
         setShowModal(true)
@@ -541,7 +552,9 @@ function UploadProblems({ user }) {
             setShowModal(false)
             setProblem({
                 title: '', type: 'Coding', language: 'Python', difficulty: 'Medium',
-                description: '', testInput: '', expectedOutput: '', deadline: '', status: 'live'
+                description: '', testInput: '', expectedOutput: '', deadline: '', status: 'live',
+                enableProctoring: false, enableVideoAudio: false, disableCopyPaste: false,
+                trackTabSwitches: false, maxTabSwitches: 3
             })
             fetchData()
         } catch (error) {
@@ -625,7 +638,26 @@ function UploadProblems({ user }) {
                         <tbody>
                             {problems.map(p => (
                                 <tr key={p.id}>
-                                    <td style={{ fontWeight: 600 }}>{p.title}</td>
+                                    <td style={{ fontWeight: 600 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            {p.title}
+                                            {p.proctoring?.enabled && (
+                                                <span style={{ 
+                                                    fontSize: '0.6rem', 
+                                                    padding: '2px 6px', 
+                                                    borderRadius: '4px', 
+                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                    color: '#ef4444', 
+                                                    fontWeight: 700,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
+                                                }}>
+                                                    <Eye size={10} /> Proctored
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td>
                                         <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
                                             {p.type?.toUpperCase()}
@@ -755,6 +787,88 @@ function UploadProblems({ user }) {
                                     <input type="date" value={problem.deadline} onChange={(e) => setProblem({ ...problem, deadline: e.target.value })} />
                                 </div>
 
+                                {/* Proctoring Settings */}
+                                <div style={{ 
+                                    padding: '1.25rem', 
+                                    background: 'rgba(139, 92, 246, 0.05)', 
+                                    borderRadius: '12px', 
+                                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                                    marginBottom: '1.5rem'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                                        <Eye size={18} color="#8b5cf6" />
+                                        <span style={{ fontWeight: 600, color: '#8b5cf6' }}>Proctoring Settings</span>
+                                    </div>
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="enableProctoring" 
+                                            checked={problem.enableProctoring} 
+                                            onChange={(e) => setProblem({ ...problem, enableProctoring: e.target.checked })}
+                                            style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                                        />
+                                        <label htmlFor="enableProctoring" style={{ cursor: 'pointer', fontSize: '0.9rem' }}>Enable Proctoring Mode</label>
+                                    </div>
+
+                                    {problem.enableProctoring && (
+                                        <div style={{ marginLeft: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    id="enableVideoAudio" 
+                                                    checked={problem.enableVideoAudio} 
+                                                    onChange={(e) => setProblem({ ...problem, enableVideoAudio: e.target.checked })}
+                                                    style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
+                                                />
+                                                <label htmlFor="enableVideoAudio" style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                    📹 Enable Video & Audio Monitoring
+                                                </label>
+                                            </div>
+                                            
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    id="disableCopyPaste" 
+                                                    checked={problem.disableCopyPaste} 
+                                                    onChange={(e) => setProblem({ ...problem, disableCopyPaste: e.target.checked })}
+                                                    style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
+                                                />
+                                                <label htmlFor="disableCopyPaste" style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                    🚫 Disable Copy/Paste
+                                                </label>
+                                            </div>
+                                            
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    id="trackTabSwitches" 
+                                                    checked={problem.trackTabSwitches} 
+                                                    onChange={(e) => setProblem({ ...problem, trackTabSwitches: e.target.checked })}
+                                                    style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
+                                                />
+                                                <label htmlFor="trackTabSwitches" style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                    👁️ Track Tab Switches
+                                                </label>
+                                            </div>
+
+                                            {problem.trackTabSwitches && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '1.5rem' }}>
+                                                    <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Max Tab Switches:</label>
+                                                    <input 
+                                                        type="number" 
+                                                        min="1" 
+                                                        max="10" 
+                                                        value={problem.maxTabSwitches} 
+                                                        onChange={(e) => setProblem({ ...problem, maxTabSwitches: parseInt(e.target.value) || 3 })}
+                                                        style={{ width: '60px', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'white', textAlign: 'center' }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="form-actions">
                                     <button type="button" className="btn-reset" onClick={() => setShowModal(false)}>Cancel</button>
                                     <button type="submit" className="btn-create-new"><Plus size={16} /> Create Problem</button>
@@ -806,6 +920,16 @@ function Leaderboard({ user }) {
         return <span style={{ fontWeight: 600, fontSize: '1.1rem', width: '24px', textAlign: 'center', display: 'inline-block' }}>#{rank}</span>
     }
 
+    const getTotalViolations = (student) => {
+        if (!student.violations) return 0
+        return (student.violations.tabSwitches || 0) + 
+               (student.violations.copyPaste || 0) +
+               (student.violations.cameraBlocked || 0) +
+               (student.violations.phoneDetection || 0) +
+               (student.violations.integrityViolations || 0) + 
+               (student.violations.plagiarism || 0)
+    }
+
     return (
         <div className="card animate-slideUp glass" style={{ padding: '0 0 1rem 0', overflow: 'hidden' }}>
             <div style={{ padding: '2rem 2rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -824,47 +948,132 @@ function Leaderboard({ user }) {
                             <th>Student</th>
                             <th>Total Score</th>
                             <th>Submissions</th>
-                            <th style={{ textAlign: 'center' }}>Completion Rate</th>
+                            <th>Violations</th>
+                            <th style={{ textAlign: 'center' }}>Status</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {leaders.map((student, i) => (
-                            <tr key={student.studentId} className="leaderboard-row" style={{
-                                backgroundColor: i < 3 ? 'var(--bg-dark)' : 'transparent',
-                                transition: 'transform 0.2s',
-                            }}>
-                                <td style={{ paddingLeft: '2rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', ...getRankStyle(i + 1) }}>
-                                        {getRankIcon(i + 1)}
-                                    </div>
-                                </td>
-                                <td>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <div className="avatar-circle">
-                                            {student.name.charAt(0).toUpperCase()}
+                        {leaders.map((student, i) => {
+                            const totalViolations = getTotalViolations(student)
+                            const hasIssues = totalViolations > 0 || student.violations?.plagiarism > 0
+                            
+                            return (
+                                <tr key={student.studentId} className="leaderboard-row" style={{
+                                    backgroundColor: i < 3 ? 'var(--bg-dark)' : 'transparent',
+                                    transition: 'transform 0.2s',
+                                }}>
+                                    <td style={{ paddingLeft: '2rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', ...getRankStyle(i + 1) }}>
+                                            {getRankIcon(i + 1)}
                                         </div>
-                                        <div>
-                                            <div style={{ fontWeight: 600, fontSize: '1rem' }}>{student.name}</div>
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <div className="avatar-circle">
+                                                {student.name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <div style={{ fontWeight: 600, fontSize: '1rem' }}>{student.name}</div>
+                                            </div>
                                         </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '1.1rem', color: 'var(--primary)' }}>
-                                        {student.avgScore} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}>pts</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div className="status-badge live" style={{ width: 'fit-content' }}>
-                                        {student.acceptedSubmissions} Accepted
-                                    </div>
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                    <div style={{ width: '100px', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '10px', margin: '0 auto', overflow: 'hidden' }}>
-                                        <div style={{ width: `${Math.min(student.avgScore, 100)}%`, height: '100%', backgroundColor: i === 0 ? '#fbbf24' : 'var(--primary)' }}></div>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '1.1rem', color: 'var(--primary)' }}>
+                                            {student.avgScore} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}>pts</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div className="status-badge live" style={{ width: 'fit-content' }}>
+                                            {student.acceptedSubmissions || student.totalSubmissions} Submitted
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                            {student.violations?.tabSwitches > 0 && (
+                                                <span style={{ 
+                                                    fontSize: '0.65rem', 
+                                                    padding: '2px 6px', 
+                                                    borderRadius: '4px', 
+                                                    background: 'rgba(245, 158, 11, 0.15)', 
+                                                    color: '#f59e0b',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
+                                                }} title="Tab Switches">
+                                                    <Eye size={10} /> {student.violations.tabSwitches}
+                                                </span>
+                                            )}
+                                            {student.violations?.cameraBlocked > 0 && (
+                                                <span style={{ 
+                                                    fontSize: '0.65rem', 
+                                                    padding: '2px 6px', 
+                                                    borderRadius: '4px', 
+                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                    color: '#ef4444',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
+                                                }} title="Camera Blocked">
+                                                    📷 {student.violations.cameraBlocked}
+                                                </span>
+                                            )}
+                                            {student.violations?.phoneDetection > 0 && (
+                                                <span style={{ 
+                                                    fontSize: '0.65rem', 
+                                                    padding: '2px 6px', 
+                                                    borderRadius: '4px', 
+                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                    color: '#ef4444',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
+                                                }} title="Phone Detected">
+                                                    📱 {student.violations.phoneDetection}
+                                                </span>
+                                            )}
+                                            {student.violations?.copyPaste > 0 && (
+                                                <span style={{ 
+                                                    fontSize: '0.65rem', 
+                                                    padding: '2px 6px', 
+                                                    borderRadius: '4px', 
+                                                    background: 'rgba(245, 158, 11, 0.15)', 
+                                                    color: '#f59e0b',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
+                                                }} title="Copy/Paste">
+                                                    📋 {student.violations.copyPaste}
+                                                </span>
+                                            )}
+                                            {student.violations?.plagiarism > 0 && (
+                                                <span style={{ 
+                                                    fontSize: '0.65rem', 
+                                                    padding: '2px 6px', 
+                                                    borderRadius: '4px', 
+                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                    color: '#ef4444',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
+                                                }} title="Plagiarism">
+                                                    <AlertTriangle size={10} /> {student.violations.plagiarism}
+                                                </span>
+                                            )}
+                                            {!hasIssues && (
+                                                <span style={{ color: '#10b981' }}>
+                                                    <CheckCircle size={14} />
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <div style={{ width: '100px', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '10px', margin: '0 auto', overflow: 'hidden' }}>
+                                            <div style={{ width: `${Math.min(student.avgScore, 100)}%`, height: '100%', backgroundColor: hasIssues ? '#f59e0b' : (i === 0 ? '#fbbf24' : 'var(--primary)') }}></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -1155,6 +1364,59 @@ function SubmissionReportModal({ submission, onClose }) {
                                     This code matches a submission from {submission.plagiarism.copiedFromName}
                                 </p>
                             </div>
+                        </div>
+                    )}
+
+                    {/* Proctoring Violations Section */}
+                    {(submission.tab_switches > 0 || submission.copy_paste_attempts > 0 || submission.camera_blocked_count > 0 || submission.phone_detection_count > 0) && (
+                        <div style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f59e0b' }}>
+                                <AlertTriangle size={18} /> Proctoring Violations
+                            </h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+                                {submission.tab_switches > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <Eye size={18} color="#f59e0b" />
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.tab_switches} Tab Switches</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.tab_switches * 5, 25)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.copy_paste_attempts > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📋</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.copy_paste_attempts} Copy/Paste</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.copy_paste_attempts * 3, 15)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.camera_blocked_count > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📷</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.camera_blocked_count} Camera Blocked</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.camera_blocked_count * 10, 30)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.phone_detection_count > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📱</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.phone_detection_count} Phone Detected</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.phone_detection_count * 15, 45)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            {submission.proctoring_video && (
+                                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '1rem' }}>🎥</span>
+                                    <span style={{ fontSize: '0.85rem', color: '#3b82f6' }}>Proctoring video recorded: {submission.proctoring_video}</span>
+                                </div>
+                            )}
                         </div>
                     )}
 

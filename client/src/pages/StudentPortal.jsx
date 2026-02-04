@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
 import AptitudeReportModal from '../components/AptitudeReportModal'
+import ProctoredCodeEditor from '../components/ProctoredCodeEditor'
 import { useAuth } from '../App'
 import axios from 'axios'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -312,6 +313,7 @@ function Assignments({ user }) {
     const [problems, setProblems] = useState([])
     const [loading, setLoading] = useState(true)
     const [activeProblem, setActiveProblem] = useState(null)
+    const [useProctoredEditor, setUseProctoredEditor] = useState(false)
 
     useEffect(() => {
         axios.get(`${API_BASE}/students/${user.id}/problems`)
@@ -321,6 +323,17 @@ function Assignments({ user }) {
             })
             .catch(err => setLoading(false))
     }, [user.id])
+
+    const handleSolve = (problem) => {
+        setActiveProblem(problem)
+        // Check if this problem has proctoring enabled
+        setUseProctoredEditor(problem.proctoring?.enabled === true)
+    }
+
+    const handleClose = () => {
+        setActiveProblem(null)
+        setUseProctoredEditor(false)
+    }
 
     if (loading) return <div className="loading-spinner"></div>
 
@@ -337,23 +350,74 @@ function Assignments({ user }) {
                     problems.map(problem => (
                         <div key={problem.id} className="item-card glass">
                             <div className="item-card-header">
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'var(--primary-alpha)', color: 'var(--primary)', fontWeight: 700 }}>{problem.type?.toUpperCase()}</span>
                                     <span className={`status-badge ${problem.status || 'live'}`} style={{ fontSize: '0.65rem' }}>{problem.status || 'Active'}</span>
+                                    {problem.proctoring?.enabled && (
+                                        <span style={{ 
+                                            fontSize: '0.6rem', 
+                                            padding: '3px 8px', 
+                                            borderRadius: '4px', 
+                                            background: 'rgba(239, 68, 68, 0.15)', 
+                                            color: '#ef4444', 
+                                            fontWeight: 700,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}>
+                                            <Shield size={10} /> PROCTORED
+                                        </span>
+                                    )}
                                 </div>
                                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-dark)', padding: '2px 8px', borderRadius: '4px' }}>{problem.language}</span>
                             </div>
                             <h3 style={{ margin: '0.75rem 0', fontSize: '1.2rem' }}>{problem.title}</h3>
                             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '1rem' }}>{problem.description}</p>
+                            
+                            {/* Proctoring Info */}
+                            {problem.proctoring?.enabled && (
+                                <div style={{ 
+                                    padding: '0.5rem 0.75rem', 
+                                    background: 'rgba(239, 68, 68, 0.08)', 
+                                    borderRadius: '8px', 
+                                    marginBottom: '0.75rem',
+                                    border: '1px solid rgba(239, 68, 68, 0.15)'
+                                }}>
+                                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <Eye size={12} /> Proctoring Enabled:
+                                        {problem.proctoring.videoAudio && <span style={{ marginLeft: '4px' }}>📹 Video</span>}
+                                        {problem.proctoring.disableCopyPaste && <span style={{ marginLeft: '4px' }}>📋 No Copy</span>}
+                                        {problem.proctoring.trackTabSwitches && <span style={{ marginLeft: '4px' }}>🔒 Tab Track</span>}
+                                    </p>
+                                </div>
+                            )}
+                            
                             <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
                                 <span className={`difficulty-badge ${problem.difficulty?.toLowerCase()}`}>{problem.difficulty}</span>
-                                <button onClick={() => setActiveProblem(problem)} className="btn-create-new" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}><Play size={16} /> Solve</button>
+                                <button onClick={() => handleSolve(problem)} className="btn-create-new" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}><Play size={16} /> Solve</button>
                             </div>
                         </div>
                     ))
                 )}
             </div>
-            {activeProblem && <CodeEditorModal problem={activeProblem} user={user} onClose={() => setActiveProblem(null)} />}
+            
+            {/* Use Proctored Editor if proctoring is enabled, otherwise use regular modal */}
+            {activeProblem && useProctoredEditor && (
+                <ProctoredCodeEditor 
+                    problem={activeProblem} 
+                    user={user} 
+                    onClose={handleClose}
+                    onSubmitSuccess={() => {
+                        // Refresh problems after successful submission
+                        axios.get(`${API_BASE}/students/${user.id}/problems`)
+                            .then(res => setProblems(res.data))
+                    }}
+                />
+            )}
+            
+            {activeProblem && !useProctoredEditor && (
+                <CodeEditorModal problem={activeProblem} user={user} onClose={handleClose} />
+            )}
         </>
     )
 }
@@ -1081,6 +1145,53 @@ function SubmissionReportModal({ submission, user, onClose }) {
                             <div>
                                 <strong style={{ color: '#f59e0b' }}>Integrity Violation</strong>
                                 <p style={{ margin: '0.25rem 0 0', color: 'var(--text-muted)' }}>Tab switches detected: {submission.integrity.tabSwitches}. Score was capped due to academic integrity concerns.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Proctoring Violations Section */}
+                    {(submission.tab_switches > 0 || submission.copy_paste_attempts > 0 || submission.camera_blocked_count > 0 || submission.phone_detection_count > 0) && (
+                        <div style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'var(--bg-dark)', borderRadius: '1rem', border: '1px solid var(--border-color)' }}>
+                            <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f59e0b' }}>
+                                <AlertTriangle size={18} /> Proctoring Violations
+                            </h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+                                {submission.tab_switches > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <Eye size={18} color="#f59e0b" />
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.tab_switches} Tab Switches</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.tab_switches * 5, 25)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.copy_paste_attempts > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📋</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.copy_paste_attempts} Copy/Paste</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.copy_paste_attempts * 3, 15)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.camera_blocked_count > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📷</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.camera_blocked_count} Camera Blocked</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.camera_blocked_count * 10, 30)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {submission.phone_detection_count > 0 && (
+                                    <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>📱</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.phone_detection_count} Phone Detected</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.phone_detection_count * 15, 45)} pts</div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
