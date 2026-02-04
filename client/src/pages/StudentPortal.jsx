@@ -8,7 +8,7 @@ import axios from 'axios'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'http://127.0.0.1:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {

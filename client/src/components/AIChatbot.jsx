@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, Send, Sparkles, X, Bot, User, Wand2, Loader, ChevronDown, ChevronUp, Copy, Check, Lightbulb } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'http://127.0.0.1:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // ==================== AI CHATBOT COMPONENT ====================
 function AIChatbot({ context = 'problem', onGenerate, isOpen, onClose }) {

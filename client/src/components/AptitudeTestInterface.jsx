@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Clock, CheckCircle, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Send, Eye, Brain, Target, Award, Sparkles } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'http://127.0.0.1:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // ==================== APTITUDE TEST INTERFACE (PROCTORED) ====================
 function AptitudeTestInterface({ test, user, onClose, onComplete }) {
