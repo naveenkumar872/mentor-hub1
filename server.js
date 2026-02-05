@@ -76,8 +76,34 @@ pool.getConnection()
         }
     });
 
-// Middleware
-app.use(cors());
+// Middleware - CORS configuration for production
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    /\.onrender\.com$/  // Allow all Render subdomains
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, etc)
+        if (!origin) return callback(null, true);
+        
+        // Check if origin is allowed
+        const isAllowed = allowedOrigins.some(allowed => {
+            if (allowed instanceof RegExp) return allowed.test(origin);
+            return allowed === origin;
+        });
+        
+        if (isAllowed) {
+            callback(null, true);
+        } else {
+            callback(null, true); // Allow all for now during deployment
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 

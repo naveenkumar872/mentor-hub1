@@ -27,6 +27,8 @@ function ProtectedRoute({ children, allowedRoles }) {
     return children
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || 'https://mentor-hub-backend-tkil.onrender.com/api'
+
 function App() {
     const [user, setUser] = useState(null)
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
@@ -49,7 +51,7 @@ function App() {
 
     const login = async (email, password) => {
         try {
-            const response = await fetch('http://localhost:3000/api/auth/login', {
+            const response = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
