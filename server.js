@@ -4,7 +4,6 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const Groq = require('groq-sdk');
 const mysql = require('mysql2/promise');
 const { URL } = require('url');
 const multer = require('multer');
@@ -39,10 +38,34 @@ const upload = multer({
     }
 });
 
-// Initialize Groq SDK
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY || '',
-});
+// Initialize Cerebras API helper
+const CEREBRAS_API_URL = 'https://api.cerebras.ai/v1/chat/completions';
+const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || process.env.cereberas_api_key || '';
+
+// Cerebras chat completion helper function
+async function cerebrasChat(messages, options = {}) {
+    const response = await fetch(CEREBRAS_API_URL, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model: options.model || 'llama-3.3-70b',
+            messages: messages,
+            temperature: options.temperature || 0.7,
+            max_tokens: options.max_tokens || 1024,
+            ...(options.response_format && { response_format: options.response_format })
+        })
+    });
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Cerebras API error: ${response.status} - ${errorText}`);
+    }
+    
+    return await response.json();
+}
 
 // Database Connection
 const dbUrl = new URL(process.env.DATABASE_URL);
@@ -609,12 +632,11 @@ Respond with JSON:
 Only mark as detected if similarity > 80% and code structure is nearly identical.`;
 
                 try {
-                    const plagiarismCheck = await groq.chat.completions.create({
-                        messages: [
-                            { role: 'system', content: 'You are a plagiarism detection system. Analyze code for copying.' },
-                            { role: 'user', content: plagiarismPrompt }
-                        ],
-                        model: 'llama-3.3-70b-versatile',
+                    const plagiarismCheck = await cerebrasChat([
+                        { role: 'system', content: 'You are a plagiarism detection system. Analyze code for copying.' },
+                        { role: 'user', content: plagiarismPrompt }
+                    ], {
+                        model: 'llama-3.3-70b',
                         temperature: 0.1,
                         max_tokens: 300,
                         response_format: { type: 'json_object' }
@@ -687,12 +709,11 @@ Scoring Guide:
         };
 
         try {
-            const evaluation = await groq.chat.completions.create({
-                messages: [
-                    { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
-                    { role: 'user', content: evaluationPrompt }
-                ],
-                model: 'llama-3.3-70b-versatile',
+            const evaluation = await cerebrasChat([
+                { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
+                { role: 'user', content: evaluationPrompt }
+            ], {
+                model: 'llama-3.3-70b',
                 temperature: 0.2,
                 max_tokens: 800,
                 response_format: { type: 'json_object' }
@@ -852,11 +873,12 @@ Respond in this exact JSON format:
   }
 }`;
 
-            const aiResponse = await groq.chat.completions.create({
-                model: 'llama-3.3-70b-versatile',
-                messages: [{ role: 'user', content: evaluationPrompt }],
+            const aiResponse = await cerebrasChat([
+                { role: 'user', content: evaluationPrompt }
+            ], {
+                model: 'llama-3.3-70b',
                 temperature: 0.3,
-                max_tokens: 1000,
+                max_tokens: 1000
             });
 
             const responseText = aiResponse.choices[0]?.message?.content || '';
@@ -1028,12 +1050,11 @@ app.post('/api/run', async (req, res) => {
             "explanation": "Brief technical explanation"
         }`;
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `${problemContext}\n\nLanguage: ${language}\n\nCode to execute:\n${code}` }
-            ],
-            model: 'llama-3.3-70b-versatile',
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `${problemContext}\n\nLanguage: ${language}\n\nCode to execute:\n${code}` }
+        ], {
+            model: 'llama-3.3-70b',
             temperature: 0.1,
             max_tokens: 512,
             response_format: { type: 'json_object' }
@@ -1067,12 +1088,11 @@ app.post('/api/hints', async (req, res) => {
         const systemPrompt = `You are a helpful coding tutor. Provide 2-3 helpful hints without giving the solution.
         Respond in JSON: { "hints": [], "encouragement": "", "conceptsToReview": [], "commonMistakes": "" }`;
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `${problemContext}\n\nCode (${language}):\n${code}` }
-            ],
-            model: 'llama-3.3-70b-versatile',
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `${problemContext}\n\nCode (${language}):\n${code}` }
+        ], {
+            model: 'llama-3.3-70b',
             temperature: 0.7,
             max_tokens: 800,
             response_format: { type: 'json_object' }
@@ -1098,12 +1118,11 @@ app.post('/api/ai/generate-problem', async (req, res) => {
             ? `Generate coding problem JSON ({title, description, sampleInput, expectedOutput, difficulty, type="Coding", language="${language || 'Python'}", status="live"}) based on request.`
             : `Generate ML task JSON ({title, description, requirements (as a string with items separated by newlines), difficulty, type="machine_learning", status="live"}) based on request. The requirements field MUST be a string, not an array.`;
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: prompt }
-            ],
-            model: 'llama-3.3-70b-versatile',
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+        ], {
+            model: 'llama-3.3-70b',
             response_format: { type: 'json_object' }
         });
 
@@ -1127,12 +1146,11 @@ app.post('/api/ai/chat', async (req, res) => {
             ? `You are an AI assistant helping create ML/AI tasks for an educational platform. Help users brainstorm, refine, and create machine learning project ideas. Be helpful and suggest improvements. Keep responses concise but informative.`
             : `You are an AI assistant helping create coding problems for an educational platform. Help users brainstorm, refine, and create programming challenges. Be helpful and suggest improvements. Keep responses concise but informative.`;
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemPrompt },
-                ...messages
-            ],
-            model: 'llama-3.3-70b-versatile'
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            ...messages
+        ], {
+            model: 'llama-3.3-70b'
         });
 
         const response = chatCompletion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
@@ -1169,12 +1187,11 @@ Rules:
 - Questions should test logical reasoning, analytical skills, or topic knowledge
 - Make questions challenging but fair for the ${difficulty} level`;
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Generate ${numQuestions} aptitude questions about: ${topic || 'logical reasoning, number series, verbal ability'}` }
-            ],
-            model: 'llama-3.3-70b-versatile',
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Generate ${numQuestions} aptitude questions about: ${topic || 'logical reasoning, number series, verbal ability'}` }
+        ], {
+            model: 'llama-3.3-70b',
             response_format: { type: 'json_object' }
         });
 
