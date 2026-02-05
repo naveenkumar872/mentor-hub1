@@ -18,8 +18,9 @@
     --bg-secondary: #f1f5f9;
     --bg-tertiary: #e2e8f0;
     --bg-card: #ffffff;
-    --bg-dark: #f8fafc;
+    --bg-dark: #f1f5f9;
 
+    --text: #0f172a;
     --text-main: #0f172a;
     --text-primary: #1e3a8a;
     --text-secondary: #334155;
@@ -67,14 +68,15 @@
     --bg-secondary: #020617;
     /* Deepest Blue/Black */
     --bg-tertiary: #1e293b;
-    --bg-card: #0f172a;
-    /* Slate 900 */
-    --bg-dark: #020617;
+    --bg-card: #1e293b;
+    /* Slate 800 for better card contrast */
+    --bg-dark: #0f172a;
+    --text: #f8fafc;
     --text-main: #f8fafc;
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
-    --border-color: #1e293b;
+    --border-color: #334155;
 
     /* Table colors for dark mode */
     --table-header-bg: #1e293b;

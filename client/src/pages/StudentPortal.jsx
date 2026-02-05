@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3 } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
 import AptitudeReportModal from '../components/AptitudeReportModal'
@@ -90,38 +90,220 @@ function Dashboard({ user }) {
             })
     }, [user.id])
 
+    // Format time ago
+    const formatTimeAgo = (dateString) => {
+        const date = new Date(dateString)
+        const now = new Date()
+        const diffMs = now - date
+        const diffMins = Math.floor(diffMs / 60000)
+        const diffHours = Math.floor(diffMs / 3600000)
+        const diffDays = Math.floor(diffMs / 86400000)
+
+        if (diffMins < 1) return 'Just now'
+        if (diffMins < 60) return `${diffMins} min ago`
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+        if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+        return date.toLocaleDateString()
+    }
+
     if (loading) return <div className="loading-spinner"></div>
     if (!stats) return <div>Error loading stats</div>
 
     return (
-        <div className="animate-fadeIn">
-            <div className="stats-grid">
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'var(--warning-alpha)', color: 'var(--warning)' }}><Trophy size={24} /></div>
-                    <div className="stat-info">
-                        <span className="stat-label">Average Score</span>
-                        <span className="stat-value">{stats.avgScore}%</span>
+        <div className="dashboard-container animate-fadeIn">
+            {/* Top Stats Row - 5 Cards */}
+            <div className="dashboard-stats-grid">
+                {/* Tasks Completed */}
+                <div className="dashboard-stat-card stat-card-blue">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
+                            <ClipboardList size={24} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.completedTasks}</div>
+                            <div className="stat-label-text">Tasks Completed</div>
+                        </div>
                     </div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'var(--primary-alpha)', color: 'var(--primary)' }}><Send size={24} /></div>
-                    <div className="stat-info">
-                        <span className="stat-label">Total Submissions</span>
-                        <span className="stat-value">{stats.totalSubmissions}</span>
+
+                {/* Problems Solved */}
+                <div className="dashboard-stat-card stat-card-green">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #047857, #10b981)' }}>
+                            <Code size={24} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.completedProblems}</div>
+                            <div className="stat-label-text">Problems Solved</div>
+                        </div>
                     </div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'var(--success-alpha)', color: 'var(--success)' }}><ClipboardList size={24} /></div>
-                    <div className="stat-info">
-                        <span className="stat-label">ML Tasks Completed</span>
-                        <span className="stat-value">{stats.completedTasks}/{stats.totalTasks}</span>
+
+                {/* Avg Task Score */}
+                <div className="dashboard-stat-card stat-card-pink">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #be185d, #ec4899)' }}>
+                            <Award size={24} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.avgTaskScore}%</div>
+                            <div className="stat-label-text">Avg Task Score</div>
+                        </div>
                     </div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'var(--secondary-alpha)', color: 'var(--secondary)' }}><Code size={24} /></div>
-                    <div className="stat-info">
-                        <span className="stat-label">Problems Solved</span>
-                        <span className="stat-value">{stats.completedProblems}/{stats.totalProblems}</span>
+
+                {/* Avg Problem Score */}
+                <div className="dashboard-stat-card stat-card-emerald">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #059669, #34d399)' }}>
+                            <Target size={24} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.avgProblemScore}%</div>
+                            <div className="stat-label-text">Avg Problem Score</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Aptitude Taken */}
+                <div className="dashboard-stat-card stat-card-purple">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #6d28d9, #8b5cf6)' }}>
+                            <Brain size={24} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.completedAptitude}</div>
+                            <div className="stat-label-text">Aptitude Taken</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Three Column Layout */}
+            <div className="dashboard-main-grid">
+                {/* My Skill Profile */}
+                <div className="dashboard-panel">
+                    <h3 className="panel-title">
+                        <BarChart3 size={18} color="#8b5cf6" /> My Skill Profile
+                    </h3>
+                    
+                    <div className="skill-progress-container">
+                        {/* Task Skills */}
+                        <div className="skill-item">
+                            <div className="skill-header">
+                                <span className="skill-name">ML Tasks</span>
+                                <span className="skill-count" style={{ color: '#3b82f6' }}>{stats.completedTasks}/{stats.totalTasks}</span>
+                            </div>
+                            <div className="skill-bar" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>
+                                <div className="skill-fill" style={{ 
+                                    width: `${stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0}%`,
+                                    background: 'linear-gradient(90deg, #2563eb, #3b82f6)'
+                                }} />
+                            </div>
+                        </div>
+                        
+                        {/* Coding Skills */}
+                        <div className="skill-item">
+                            <div className="skill-header">
+                                <span className="skill-name">Coding Problems</span>
+                                <span className="skill-count" style={{ color: '#10b981' }}>{stats.completedProblems}/{stats.totalProblems}</span>
+                            </div>
+                            <div className="skill-bar" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>
+                                <div className="skill-fill" style={{ 
+                                    width: `${stats.totalProblems > 0 ? (stats.completedProblems / stats.totalProblems) * 100 : 0}%`,
+                                    background: 'linear-gradient(90deg, #059669, #10b981)'
+                                }} />
+                            </div>
+                        </div>
+                        
+                        {/* Aptitude Skills */}
+                        <div className="skill-item">
+                            <div className="skill-header">
+                                <span className="skill-name">Aptitude Tests</span>
+                                <span className="skill-count" style={{ color: '#8b5cf6' }}>{stats.completedAptitude}/{stats.totalAptitude}</span>
+                            </div>
+                            <div className="skill-bar" style={{ background: 'rgba(139, 92, 246, 0.15)' }}>
+                                <div className="skill-fill" style={{ 
+                                    width: `${stats.totalAptitude > 0 ? (stats.completedAptitude / stats.totalAptitude) * 100 : 0}%`,
+                                    background: 'linear-gradient(90deg, #7c3aed, #8b5cf6)'
+                                }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Recent Submissions */}
+                <div className="dashboard-panel">
+                    <div className="panel-header">
+                        <h3 className="panel-title" style={{ margin: 0 }}>
+                            <Clock size={18} color="#3b82f6" /> Recent Submissions
+                        </h3>
+                        <button 
+                            onClick={() => window.location.href = '/student/submissions'}
+                            className="view-all-btn"
+                        >
+                            View All →
+                        </button>
+                    </div>
+                    
+                    <div className="submissions-list">
+                        {stats.recentSubmissions && stats.recentSubmissions.length > 0 ? (
+                            stats.recentSubmissions.map((sub, idx) => (
+                                <div key={idx} className="submission-item">
+                                    <div className="submission-icon">
+                                        <Code size={20} color="#3b82f6" />
+                                    </div>
+                                    <div className="submission-info">
+                                        <div className="submission-title">{sub.title}</div>
+                                        <div className="submission-meta">
+                                            {formatTimeAgo(sub.time)} • Score: {sub.score}/100
+                                        </div>
+                                    </div>
+                                    <span className={`submission-status ${sub.status}`}>
+                                        {sub.status}
+                                    </span>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="empty-state-small">
+                                <Code size={32} color="var(--text-muted)" />
+                                No submissions yet
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Leaderboard */}
+                <div className="dashboard-panel">
+                    <h3 className="panel-title">
+                        <Trophy size={18} color="#fbbf24" /> Leaderboard
+                    </h3>
+                    
+                    <div className="leaderboard-list">
+                        {stats.leaderboard && stats.leaderboard.length > 0 ? (
+                            stats.leaderboard.slice(0, 5).map((student, idx) => (
+                                <div key={idx} className={`leaderboard-item ${student.studentId === user.id ? 'current-user' : ''}`}>
+                                    <div className={`rank-badge rank-${idx + 1}`}>
+                                        {student.rank}
+                                    </div>
+                                    <div className="leaderboard-info">
+                                        <div className="leaderboard-name">{student.name}</div>
+                                        <div className="leaderboard-stats">
+                                            {student.taskCount} tasks • {student.codeCount} code • {student.aptitudeCount} aptitude
+                                        </div>
+                                    </div>
+                                    <div className={`leaderboard-score rank-${idx + 1}-score`}>
+                                        {student.avgScore}%
+                                        <span className="score-label">Avg Score</span>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="empty-state-small">
+                                <Trophy size={32} color="var(--text-muted)" />
+                                No leaderboard data
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

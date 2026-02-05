@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles, Brain, Target, XCircle, Search } from 'lucide-react'
+import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles, Brain, Target, XCircle, Search, Mail, Calendar, BookOpen } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -77,75 +77,134 @@ function Dashboard({ user }) {
             .catch(err => setLoading(false))
     }, [user.id])
 
+    const formatTimeAgo = (dateStr) => {
+        if (!dateStr) return 'Never'
+        const date = new Date(dateStr)
+        const now = new Date()
+        const diffMs = now - date
+        const diffMins = Math.floor(diffMs / 60000)
+        const diffHours = Math.floor(diffMins / 60)
+        const diffDays = Math.floor(diffHours / 24)
+        
+        if (diffMins < 1) return 'Just now'
+        if (diffMins < 60) return `${diffMins}m ago`
+        if (diffHours < 24) return `${diffHours}h ago`
+        if (diffDays < 7) return `${diffDays}d ago`
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+
     if (loading) return <div className="loading-spinner"></div>
     if (!stats) return <div>Error loading stats</div>
 
     return (
-        <div className="animate-fadeIn dashboard-container">
-            {/* Main Stats Banner */}
-            <div className="stats-grid">
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
-                        <Users size={24} />
-                    </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Your Students</span>
-                        <span className="stat-value">{stats.totalStudents}</span>
-                    </div>
-                </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6' }}>
-                        <Activity size={24} />
-                    </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Submissions</span>
-                        <span className="stat-value">{stats.totalSubmissions}</span>
+        <div className="dashboard-container animate-fadeIn">
+            {/* Top Stats Row - 6 Cards */}
+            <div className="dashboard-stats-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+                {/* Your Students */}
+                <div className="dashboard-stat-card stat-card-blue">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
+                            <Users size={22} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.totalStudents}</div>
+                            <div className="stat-label-text">Students</div>
+                        </div>
                     </div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
-                        <CheckCircle size={24} />
-                    </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Group Score</span>
-                        <span className="stat-value">{stats.avgScore}%</span>
-                    </div>
-                    <div className="stat-progress">
-                        <div className="progress-fill" style={{ width: `${stats.avgScore}%` }}></div>
+
+                {/* Task Submissions */}
+                <div className="dashboard-stat-card stat-card-purple">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #6d28d9, #8b5cf6)' }}>
+                            <FileText size={22} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.taskSubmissions || 0}</div>
+                            <div className="stat-label-text">Task Subs</div>
+                        </div>
                     </div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
-                        <TrendingUp size={24} />
+
+                {/* Code Submissions */}
+                <div className="dashboard-stat-card stat-card-emerald">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}>
+                            <Code size={22} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.codeSubmissions || 0}</div>
+                            <div className="stat-label-text">Code Subs</div>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Total Content</span>
-                        <span className="stat-value">{stats.totalTasks + stats.totalProblems}</span>
+                </div>
+
+                {/* Aptitude Submissions */}
+                <div className="dashboard-stat-card stat-card-pink">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #be185d, #ec4899)' }}>
+                            <Brain size={22} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.aptitudeSubmissions || 0}</div>
+                            <div className="stat-label-text">Aptitude</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Group Score */}
+                <div className="dashboard-stat-card stat-card-green">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #047857, #10b981)' }}>
+                            <CheckCircle size={22} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.avgScore}%</div>
+                            <div className="stat-label-text">Avg Score</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Total Content */}
+                <div className="dashboard-stat-card stat-card-orange">
+                    <div className="stat-card-inner">
+                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #c2410c, #f97316)' }}>
+                            <TrendingUp size={22} color="#fff" />
+                        </div>
+                        <div className="stat-content">
+                            <div className="stat-number">{stats.totalTasks + stats.totalProblems}</div>
+                            <div className="stat-label-text">Content</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Charts Section */}
-            <div className="charts-container">
-                <div className="chart-wrapper glass large">
+            <div className="mentor-charts-grid">
+                <div className="dashboard-panel mentor-chart-large">
                     <div className="chart-header">
-                        <h3>Group Submission Trends</h3>
-                        <p>Last 7 days mentee activity</p>
+                        <div>
+                            <h3 className="panel-title" style={{ marginBottom: '0.25rem' }}>
+                                <BarChart2 size={18} color="#8b5cf6" /> Group Submission Trends
+                            </h3>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Last 7 days mentee activity</p>
+                        </div>
                     </div>
-                    <div style={{ width: '100%', height: '300px' }}>
+                    <div style={{ width: '100%', height: '280px', marginTop: '1rem' }}>
                         <ResponsiveContainer>
                             <AreaChart data={stats.submissionTrends}>
                                 <defs>
                                     <linearGradient id="colorCountMentor" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
                                         <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
                                 <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={12} axisLine={false} tickLine={false} />
                                 <YAxis stroke="var(--text-muted)" fontSize={12} axisLine={false} tickLine={false} />
                                 <Tooltip
-                                    contentStyle={{ background: '#0f172a', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}
                                     itemStyle={{ color: '#8b5cf6' }}
+                                    labelStyle={{ color: 'var(--text)' }}
                                 />
                                 <Area type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorCountMentor)" />
                             </AreaChart>
@@ -153,73 +212,154 @@ function Dashboard({ user }) {
                     </div>
                 </div>
 
-                <div className="chart-wrapper glass small">
+                <div className="dashboard-panel mentor-chart-small">
                     <div className="chart-header">
-                        <h3>Language Usage</h3>
-                        <p>Mentee preference</p>
+                        <div>
+                            <h3 className="panel-title" style={{ marginBottom: '0.25rem' }}>
+                                <Code size={18} color="#3b82f6" /> Language Usage
+                            </h3>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Mentee preference</p>
+                        </div>
                     </div>
-                    <div style={{ width: '100%', height: '300px' }}>
+                    <div style={{ width: '100%', height: '280px', marginTop: '1rem' }}>
                         <ResponsiveContainer>
                             <PieChart>
                                 <Pie
                                     data={stats.languageStats}
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={60}
-                                    outerRadius={80}
-                                    paddingAngle={5}
+                                    innerRadius={65}
+                                    outerRadius={90}
+                                    paddingAngle={4}
                                     dataKey="value"
+                                    stroke="none"
                                 >
                                     {stats.languageStats.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <Tooltip />
+                                <Tooltip 
+                                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px' }}
+                                    itemStyle={{ color: 'var(--text)' }}
+                                />
                             </PieChart>
                         </ResponsiveContainer>
+                        <div className="language-legend">
+                            {stats.languageStats.slice(0, 4).map((lang, idx) => (
+                                <div key={lang.name} className="legend-item">
+                                    <span className="legend-dot" style={{ background: COLORS[idx] }}></span>
+                                    <span className="legend-text">{lang.name}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Footer Grid */}
-            <div className="dashboard-footer-grid">
-                <div className="activity-card glass">
-                    <div className="card-header">
-                        <h3>Recent Mentee Activity</h3>
-                        <Activity size={18} style={{ opacity: 0.5 }} />
+            {/* Three Column Bottom Section */}
+            <div className="mentor-bottom-grid">
+                {/* Allocated Students */}
+                <div className="dashboard-panel">
+                    <div className="panel-header">
+                        <h3 className="panel-title" style={{ margin: 0 }}>
+                            <Users size={18} color="#3b82f6" /> My Students
+                        </h3>
+                        <span className="student-count-badge">{stats.allocatedStudents?.length || 0}</span>
                     </div>
-                    <div className="activity-list">
-                        {stats.recentActivity.map(sub => (
-                            <div key={sub.id} className="activity-item">
-                                <div className={`status-icon ${sub.status}`}></div>
-                                <div className="activity-details">
-                                    <p><strong>{sub.studentName}</strong> submitted work</p>
-                                    <span className="time"><Clock size={12} /> {new Date(sub.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div className="students-list">
+                        {stats.allocatedStudents && stats.allocatedStudents.length > 0 ? (
+                            stats.allocatedStudents.map((student, idx) => (
+                                <div key={student.id} className="student-item">
+                                    <div className="student-avatar" style={{ background: `linear-gradient(135deg, ${COLORS[idx % COLORS.length]}, ${COLORS[(idx + 1) % COLORS.length]})` }}>
+                                        {student.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="student-info">
+                                        <div className="student-name">{student.name}</div>
+                                        <div className="student-meta">
+                                            <span><BookOpen size={12} /> {student.tasksCompleted} tasks</span>
+                                            <span><Code size={12} /> {student.problemsCompleted} problems</span>
+                                        </div>
+                                    </div>
+                                    <div className="student-score-badge" style={{ 
+                                        background: student.avgScore >= 70 ? 'rgba(16, 185, 129, 0.15)' : student.avgScore >= 40 ? 'rgba(251, 191, 36, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                        color: student.avgScore >= 70 ? '#10b981' : student.avgScore >= 40 ? '#fbbf24' : '#ef4444'
+                                    }}>
+                                        {student.avgScore}%
+                                    </div>
                                 </div>
-                                <div className="activity-score" style={{ color: sub.status === 'accepted' ? '#10b981' : '#ef4444' }}>
-                                    {sub.score}%
-                                </div>
+                            ))
+                        ) : (
+                            <div className="empty-state-small">
+                                <Users size={32} color="var(--text-muted)" />
+                                No students allocated
                             </div>
-                        ))}
+                        )}
                     </div>
                 </div>
 
-                <div className="performer-card glass">
-                    <div className="card-header">
-                        <h3>Group Top Performers</h3>
-                        <Trophy size={18} style={{ opacity: 0.5, color: '#f59e0b' }} />
+                {/* Recent Mentee Activity */}
+                <div className="dashboard-panel">
+                    <div className="panel-header">
+                        <h3 className="panel-title" style={{ margin: 0 }}>
+                            <Activity size={18} color="#8b5cf6" /> Recent Activity
+                        </h3>
                     </div>
-                    <div className="performer-list">
-                        {stats.menteePerformance.map((student, i) => (
-                            <div key={student.name} className="performer-item">
-                                <div className="rank">#{i + 1}</div>
-                                <div className="performer-name">
-                                    <p>{student.name}</p>
-                                    <span>{student.count} submissions</span>
+                    <div className="submissions-list">
+                        {stats.recentActivity && stats.recentActivity.length > 0 ? (
+                            stats.recentActivity.map((sub, idx) => (
+                                <div key={sub.id} className="submission-item">
+                                    <div className={`activity-status-dot ${sub.status}`}></div>
+                                    <div className="submission-info">
+                                        <div className="submission-title">{sub.studentName}</div>
+                                        <div className="submission-meta">
+                                            <Clock size={12} /> {formatTimeAgo(sub.time)}
+                                        </div>
+                                    </div>
+                                    <span className={`submission-status ${sub.status}`}>
+                                        {sub.score}%
+                                    </span>
                                 </div>
-                                <div className="performer-score">{student.score}%</div>
+                            ))
+                        ) : (
+                            <div className="empty-state-small">
+                                <Activity size={32} color="var(--text-muted)" />
+                                No recent activity
                             </div>
-                        ))}
+                        )}
+                    </div>
+                </div>
+
+                {/* Top Performers */}
+                <div className="dashboard-panel">
+                    <div className="panel-header">
+                        <h3 className="panel-title" style={{ margin: 0 }}>
+                            <Trophy size={18} color="#fbbf24" /> Top Performers
+                        </h3>
+                    </div>
+                    <div className="leaderboard-list">
+                        {stats.menteePerformance && stats.menteePerformance.length > 0 ? (
+                            stats.menteePerformance.map((student, idx) => (
+                                <div key={idx} className="leaderboard-item">
+                                    <div className={`rank-badge rank-${idx + 1}`}>
+                                        {idx + 1}
+                                    </div>
+                                    <div className="leaderboard-info">
+                                        <div className="leaderboard-name">{student.name}</div>
+                                        <div className="leaderboard-stats">
+                                            {student.count} submissions
+                                        </div>
+                                    </div>
+                                    <div className={`leaderboard-score rank-${idx + 1}-score`}>
+                                        {student.score}%
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="empty-state-small">
+                                <Trophy size={32} color="var(--text-muted)" />
+                                No performers yet
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

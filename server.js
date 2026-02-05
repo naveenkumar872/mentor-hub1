@@ -1567,9 +1567,15 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
         }
         const mentorId = studentRows[0].mentor_id;
 
-        // Average score from submissions
-        const [[{ avgScore }]] = await pool.query(
-            'SELECT COALESCE(AVG(score), 0) as avgScore FROM submissions WHERE student_id = ?',
+        // Average problem score from submissions (code problems only)
+        const [[{ avgProblemScore }]] = await pool.query(
+            'SELECT COALESCE(AVG(score), 0) as avgProblemScore FROM submissions WHERE student_id = ? AND problem_id IS NOT NULL',
+            [studentId]
+        );
+
+        // Average task score from submissions (ML tasks only)
+        const [[{ avgTaskScore }]] = await pool.query(
+            'SELECT COALESCE(AVG(score), 0) as avgTaskScore FROM submissions WHERE student_id = ? AND task_id IS NOT NULL',
             [studentId]
         );
 
@@ -1620,24 +1626,57 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             count: t.count
         }));
 
-        // Recent submissions by this student
+        // Recent submissions by this student with problem/task title
         const [recentSubs] = await pool.query(`
-            SELECT id, score, status, language, submitted_at as time
-            FROM submissions
-            WHERE student_id = ?
-            ORDER BY submitted_at DESC LIMIT 5
+            SELECT s.id, s.score, s.status, s.language, s.submitted_at as time,
+                   p.title as problemTitle, t.title as taskTitle
+            FROM submissions s
+            LEFT JOIN problems p ON s.problem_id = p.id
+            LEFT JOIN tasks t ON s.task_id = t.id
+            WHERE s.student_id = ?
+            ORDER BY s.submitted_at DESC LIMIT 5
         `, [studentId]);
 
         const recentSubmissions = recentSubs.map(r => ({
             id: r.id,
+            title: r.problemTitle || r.taskTitle || 'Unknown',
             score: r.score,
             status: r.status,
             language: r.language,
             time: r.time
         }));
 
+        // Get leaderboard data for student dashboard
+        const [leaderboardRows] = await pool.query(`
+            SELECT u.id as studentId, u.name, 
+            COUNT(DISTINCT tc.task_id) as taskCount,
+            COUNT(DISTINCT pc.problem_id) as codeCount,
+            COUNT(DISTINCT sca.aptitude_test_id) as aptitudeCount,
+            COALESCE(AVG(sub.score), 0) as avgScore
+            FROM users u
+            LEFT JOIN task_completions tc ON u.id = tc.student_id
+            LEFT JOIN problem_completions pc ON u.id = pc.student_id
+            LEFT JOIN student_completed_aptitude sca ON u.id = sca.student_id
+            LEFT JOIN submissions sub ON u.id = sub.student_id
+            WHERE u.role = 'student'
+            GROUP BY u.id
+            ORDER BY avgScore DESC, (taskCount + codeCount + aptitudeCount) DESC
+            LIMIT 10
+        `);
+
+        const leaderboard = leaderboardRows.map((r, idx) => ({
+            rank: idx + 1,
+            studentId: r.studentId,
+            name: r.name,
+            taskCount: parseInt(r.taskCount) || 0,
+            codeCount: parseInt(r.codeCount) || 0,
+            aptitudeCount: parseInt(r.aptitudeCount) || 0,
+            avgScore: Math.round(r.avgScore) || 0
+        }));
+
         res.json({
-            avgScore: Math.round(avgScore),
+            avgProblemScore: Math.round(avgProblemScore),
+            avgTaskScore: Math.round(avgTaskScore),
             totalSubmissions,
             totalTasks,
             completedTasks,
@@ -1646,7 +1685,8 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             totalAptitude,
             completedAptitude,
             submissionTrends,
-            recentSubmissions
+            recentSubmissions,
+            leaderboard
         });
 
     } catch (error) {
@@ -1660,9 +1700,32 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
     try {
         const mentorId = req.params.mentorId;
 
-        // Get allocated student IDs for this mentor
-        const [allocations] = await pool.query('SELECT student_id FROM mentor_student_allocations WHERE mentor_id = ?', [mentorId]);
-        const studentIds = allocations.map(a => a.student_id);
+        // Get allocated student IDs for this mentor with their details
+        const [allocations] = await pool.query(`
+            SELECT u.id, u.name, u.email, u.created_at,
+                   (SELECT COUNT(*) FROM submissions WHERE student_id = u.id) as submissionCount,
+                   (SELECT AVG(score) FROM submissions WHERE student_id = u.id) as avgScore,
+                   (SELECT COUNT(*) FROM task_completions WHERE student_id = u.id) as tasksCompleted,
+                   (SELECT COUNT(*) FROM problem_completions WHERE student_id = u.id) as problemsCompleted,
+                   (SELECT submitted_at FROM submissions WHERE student_id = u.id ORDER BY submitted_at DESC LIMIT 1) as lastActive
+            FROM users u
+            JOIN mentor_student_allocations msa ON u.id = msa.student_id
+            WHERE msa.mentor_id = ?
+            ORDER BY u.name ASC
+        `, [mentorId]);
+        
+        const studentIds = allocations.map(a => a.id);
+        const allocatedStudents = allocations.map(s => ({
+            id: s.id,
+            name: s.name,
+            email: s.email,
+            submissionCount: s.submissionCount || 0,
+            avgScore: Math.round(s.avgScore || 0),
+            tasksCompleted: s.tasksCompleted || 0,
+            problemsCompleted: s.problemsCompleted || 0,
+            lastActive: s.lastActive,
+            joinedAt: s.created_at
+        }));
 
         if (studentIds.length === 0) {
             return res.json({
@@ -1674,17 +1737,23 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
                 submissionTrends: [],
                 languageStats: [],
                 recentActivity: [],
-                studentPerformance: []
+                studentPerformance: [],
+                allocatedStudents: []
             });
         }
 
         // Total students
         const totalStudents = studentIds.length;
 
-        // Total submissions from mentor's students
+        // Total submissions from mentor's students - broken down by type
+        const [taskSubs] = await pool.query('SELECT COUNT(*) as count FROM task_completions WHERE student_id IN (?)', [studentIds]);
         const [codeSubs] = await pool.query('SELECT COUNT(*) as count FROM submissions WHERE student_id IN (?)', [studentIds]);
-        const [aptSubs] = await pool.query('SELECT COUNT(*) as count FROM aptitude_submissions WHERE student_id IN (?)', [studentIds]);
-        const totalSubmissions = (codeSubs[0]?.count || 0) + (aptSubs[0]?.count || 0);
+        const [aptSubs] = await pool.query('SELECT COUNT(*) as count FROM student_completed_aptitude WHERE student_id IN (?)', [studentIds]);
+        
+        const taskSubmissions = taskSubs[0]?.count || 0;
+        const codeSubmissions = codeSubs[0]?.count || 0;
+        const aptitudeSubmissions = aptSubs[0]?.count || 0;
+        const totalSubmissions = taskSubmissions + codeSubmissions + aptitudeSubmissions;
 
         // Average score
         const [avgResult] = await pool.query('SELECT AVG(score) as avg FROM submissions WHERE student_id IN (?)', [studentIds]);
@@ -1749,13 +1818,17 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
         res.json({
             totalStudents,
             totalSubmissions,
+            taskSubmissions,
+            codeSubmissions,
+            aptitudeSubmissions,
             avgScore,
             totalTasks: taskCount,
             totalProblems: probCount,
             submissionTrends,
             languageStats,
             recentActivity,
-            menteePerformance: studentPerformance
+            menteePerformance: studentPerformance,
+            allocatedStudents
         });
 
     } catch (error) {
