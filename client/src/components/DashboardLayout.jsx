@@ -4,7 +4,7 @@ import { Sun, Moon, LogOut, Menu, X, Brain, User } from 'lucide-react'
 import { useState } from 'react'
 import './DashboardLayout.css'
 
-function DashboardLayout({ children, navItems, title, subtitle }) {
+function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
     const { user, logout } = useAuth()
     const { theme, toggleTheme } = useTheme()
     const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -73,7 +73,19 @@ function DashboardLayout({ children, navItems, title, subtitle }) {
                             <p>{subtitle}</p>
                         </div>
                     </div>
-                    {/* Search and Bell removed */}
+                    <div className="header-right">
+                        {mentorInfo && (
+                            <div className="mentor-badge-nav">
+                                <div className="mentor-avatar-nav">
+                                    {mentorInfo.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="mentor-details-nav">
+                                    <span className="mentor-label-nav">My Mentor</span>
+                                    <span className="mentor-name-nav">{mentorInfo.name}</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </header>
 
                 <div className="content-body">

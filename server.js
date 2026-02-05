@@ -1560,12 +1560,22 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
     try {
         const studentId = req.params.studentId;
 
-        // Get student's mentor
-        const [studentRows] = await pool.query('SELECT mentor_id FROM users WHERE id = ?', [studentId]);
-        if (studentRows.length === 0) {
-            return res.status(404).json({ error: 'Student not found' });
-        }
-        const mentorId = studentRows[0].mentor_id;
+        // Get student's mentor from allocation table
+        const [allocationRows] = await pool.query(`
+            SELECT m.id as mentor_id, m.name as mentor_name, m.email as mentor_email
+            FROM mentor_student_allocations msa
+            JOIN users m ON msa.mentor_id = m.id
+            WHERE msa.student_id = ?
+            LIMIT 1
+        `, [studentId]);
+        
+        const mentorInfo = allocationRows.length > 0 ? {
+            id: allocationRows[0].mentor_id,
+            name: allocationRows[0].mentor_name,
+            email: allocationRows[0].mentor_email
+        } : null;
+        
+        const mentorId = mentorInfo?.id || null;
 
         // Average problem score from submissions (code problems only)
         const [[{ avgProblemScore }]] = await pool.query(
@@ -1675,6 +1685,7 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
         }));
 
         res.json({
+            mentorInfo,
             avgProblemScore: Math.round(avgProblemScore),
             avgTaskScore: Math.round(avgTaskScore),
             totalSubmissions,

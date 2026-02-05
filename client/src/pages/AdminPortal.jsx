@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -619,6 +619,72 @@ function AllSubmissions() {
         fetchSubmissions()
     }, [])
 
+    // Download CSV functionality
+    const downloadCSV = () => {
+        const dataToExport = getFilteredSubmissions()
+        
+        if (dataToExport.length === 0) {
+            alert('No submissions to download')
+            return
+        }
+
+        // CSV headers
+        const headers = [
+            'Student Name',
+            'Student Email',
+            'Type',
+            'Problem/Test Title',
+            'Language',
+            'Score',
+            'Status',
+            'Tab Switches',
+            'Camera Blocked',
+            'Phone Detected',
+            'Plagiarism Detected',
+            'Submitted At'
+        ]
+
+        // Convert data to CSV rows
+        const rows = dataToExport.map(sub => [
+            sub.studentName || '',
+            sub.studentEmail || '',
+            sub.subType === 'aptitude' ? 'Aptitude' : 'Code',
+            sub.itemTitle || sub.testTitle || '',
+            sub.subType === 'aptitude' ? 'N/A' : (sub.language || 'N/A'),
+            sub.score || 0,
+            sub.status || '',
+            sub.integrity?.tabSwitches || sub.tabSwitches || 0,
+            sub.cameraBlockedCount || 0,
+            sub.phoneDetectionCount || 0,
+            sub.plagiarism?.detected ? 'Yes' : 'No',
+            sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : ''
+        ])
+
+        // Create CSV content
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => {
+                // Escape quotes and wrap in quotes if contains comma or quotes
+                const cellStr = String(cell)
+                if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+                    return `"${cellStr.replace(/"/g, '""')}"`
+                }
+                return cellStr
+            }).join(','))
+        ].join('\n')
+
+        // Create and trigger download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const link = document.createElement('a')
+        const url = URL.createObjectURL(blob)
+        link.setAttribute('href', url)
+        link.setAttribute('download', `submissions_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`)
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+    }
+
     const handleResetAllSubmissions = async () => {
         const confirmReset = window.confirm(
             '⚠️ WARNING: This will permanently delete ALL submissions from ALL students!\n\n' +
@@ -729,6 +795,36 @@ function AllSubmissions() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
+                    <button
+                        onClick={downloadCSV}
+                        disabled={filteredSubmissions.length === 0}
+                        style={{
+                            padding: '0.6rem 1rem',
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: '8px',
+                            color: '#10b981',
+                            cursor: filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            opacity: filteredSubmissions.length === 0 ? 0.5 : 1,
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (filteredSubmissions.length > 0) {
+                                e.target.style.background = 'rgba(16, 185, 129, 0.2)'
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.background = 'rgba(16, 185, 129, 0.1)'
+                        }}
+                    >
+                        <Download size={16} />
+                        Download CSV
+                    </button>
                     <button
                         onClick={handleResetAllSubmissions}
                         disabled={resetting || allSubmissions.length === 0}

@@ -272,6 +272,59 @@
     gap: 1.5rem;
 }
 
+/* Mentor Badge in Navbar */
+.mentor-badge-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.6rem 1.25rem 0.6rem 0.6rem;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.15));
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 50px;
+    transition: all 0.3s ease;
+}
+
+.mentor-badge-nav:hover {
+    border-color: rgba(139, 92, 246, 0.6);
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25);
+}
+
+.mentor-avatar-nav {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: white;
+    text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+}
+
+.mentor-details-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.mentor-label-nav {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.mentor-name-nav {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+
 .search-bar {
     display: flex;
     align-items: center;

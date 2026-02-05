@@ -571,6 +571,54 @@
     margin-bottom: 0.5rem;
 }
 
+/* Mentor Info Inline (inside panel) */
+.mentor-info-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.05));
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 10px;
+    margin-bottom: 1.25rem;
+}
+
+.mentor-avatar-small {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: white;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.mentor-details-inline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.mentor-label-small {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.mentor-name-small {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+}
+
 /* Stat Card Color Variants */
 .stat-card-blue { --stat-accent: #3b82f6; --stat-glow: rgba(59, 130, 246, 0.15); }
 .stat-card-green { --stat-accent: #10b981; --stat-glow: rgba(16, 185, 129, 0.15); }
