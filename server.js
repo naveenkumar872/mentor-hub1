@@ -779,7 +779,7 @@ Scoring Guide:
                     'INSERT IGNORE INTO problem_completions (problem_id, student_id, completed_at) VALUES (?, ?, ?)',
                     [problemId, studentId, submittedAt]
                 );
-                
+
                 // Log activity and update streak for successful problem completion
                 try {
                     await updateUserStreak(studentId, { problemsSolved: 1, submissionsCount: 1 });
@@ -1073,7 +1073,7 @@ app.post('/api/run', async (req, res) => {
         let codeToExecute = code;
         if (language === 'SQL') {
             let schemaToUse = sqlSchema;
-            
+
             // If no schema passed, try to get from database
             if (!schemaToUse && problemId) {
                 const [probs] = await pool.query('SELECT sql_schema FROM problems WHERE id = ?', [problemId]);
@@ -1081,7 +1081,7 @@ app.post('/api/run', async (req, res) => {
                     schemaToUse = probs[0].sql_schema;
                 }
             }
-            
+
             // Prepend schema to user's query
             if (schemaToUse) {
                 codeToExecute = `${schemaToUse}\n\n${code}`;
@@ -1165,7 +1165,7 @@ app.post('/api/ai/generate-problem', async (req, res) => {
         const isSQL = language === 'SQL' || prompt.toLowerCase().includes('sql');
 
         const systemPrompt = isProblem
-            ? isSQL 
+            ? isSQL
                 ? `Generate SQL problem JSON ({title, description, sqlSchema (CREATE TABLE and INSERT statements), expectedQueryResult (the expected query output), difficulty, type="SQL", language="SQL", status="live"}) based on request. The sqlSchema should include table creation and sample data. The expectedQueryResult should show what the correct query should return.`
                 : `Generate coding problem JSON ({title, description, sampleInput, expectedOutput, difficulty, type="Coding", language="${language || 'Python'}", status="live"}) based on request.`
             : `Generate ML task JSON ({title, description, requirements (as a string with items separated by newlines), difficulty, type="machine_learning", status="live"}) based on request. The requirements field MUST be a string, not an array.`;
@@ -2375,6 +2375,98 @@ app.post('/api/sql/execute-visualize', async (req, res) => {
             executionTime: data.run?.time || 0,
             error: isError ? output : null
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Parse SQL schema into structured JSON for visualization
+app.post('/api/sql/parse-schema', async (req, res) => {
+    try {
+        const { schema } = req.body;
+
+        const systemPrompt = `You are a Database Architect. Parse the provided SQL schema and return a structured JSON representation.
+Identify:
+1. Tables
+2. Columns (with types)
+3. Primary Keys
+4. Foreign Keys and their relationships (references)
+
+Respond in JSON format:
+{
+    "tables": [
+        {
+            "name": "string",
+            "columns": [
+                {
+                    "name": "string",
+                    "type": "string",
+                    "isPrimaryKey": boolean,
+                    "isForeignKey": boolean,
+                    "references": { "table": "string", "column": "string" } | null
+                }
+            ]
+        }
+    ]
+}`;
+
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Schema:\n${schema}` }
+        ], {
+            model: 'llama-3.3-70b',
+            temperature: 0.1,
+            max_tokens: 1500,
+            response_format: { type: 'json_object' }
+        });
+
+        const result = JSON.parse(chatCompletion.choices[0]?.message?.content || '{}');
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Break down SQL query into logical debugging steps
+app.post('/api/sql/debug-steps', async (req, res) => {
+    try {
+        const { query, schema } = req.body;
+
+        const systemPrompt = `You are a SQL Execution Engine analyzer. Break down the provided SELECT query into logical execution steps (Relational Algebra steps).
+For each step, provide a modified SQL query that represents the state of data at that point.
+
+Step sequence:
+1. FROM / JOIN (Base Dataset)
+2. WHERE (Filter)
+3. GROUP BY / HAVING (Aggregation)
+4. SELECT (Projection)
+5. ORDER BY / LIMIT (Final Sort)
+
+Respond in JSON format:
+{
+    "steps": [
+        {
+            "stepName": "string",
+            "description": "string",
+            "query": "string"
+        }
+    ]
+}`;
+
+        const userPrompt = `Schema:\n${schema}\n\nQuery:\n${query}`;
+
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ], {
+            model: 'llama-3.3-70b',
+            temperature: 0.2,
+            max_tokens: 1500,
+            response_format: { type: 'json_object' }
+        });
+
+        const result = JSON.parse(chatCompletion.choices[0]?.message?.content || '{"steps":[]}');
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

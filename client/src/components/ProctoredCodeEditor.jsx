@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone } from 'lucide-react'
+import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone, Database, Layers, Shield } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
 import * as cocoSsd from '@tensorflow-models/coco-ssd'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 // Language configurations
 const LANGUAGE_CONFIG = {
@@ -531,7 +531,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                     <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
                     <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
                         {problem.description}
-                        
+
                         {/* Show SQL-specific fields or regular input/output */}
                         {(problem.type === 'SQL' || problem.language === 'SQL') ? (
                             <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
@@ -541,11 +541,11 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                             <span style={{ color: '#06b6d4' }}>🗄️</span>
                                             <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
                                         </div>
-                                        <pre style={{ 
-                                            color: '#93c5fd', 
-                                            background: '#0f172a', 
-                                            padding: '1rem', 
-                                            borderRadius: '6px', 
+                                        <pre style={{
+                                            color: '#93c5fd',
+                                            background: '#0f172a',
+                                            padding: '1rem',
+                                            borderRadius: '6px',
                                             marginBottom: '1rem',
                                             fontSize: '0.8rem',
                                             overflowX: 'auto',
@@ -560,10 +560,10 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                             <span style={{ color: '#10b981' }}>📊</span>
                                             <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
                                         </div>
-                                        <pre style={{ 
-                                            color: '#4ade80', 
-                                            background: '#0f172a', 
-                                            padding: '1rem', 
+                                        <pre style={{
+                                            color: '#4ade80',
+                                            background: '#0f172a',
+                                            padding: '1rem',
                                             borderRadius: '6px',
                                             fontSize: '0.8rem',
                                             overflowX: 'auto',

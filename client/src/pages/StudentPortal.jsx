@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
 import AptitudeReportModal from '../components/AptitudeReportModal'
 import ProctoredCodeEditor from '../components/ProctoredCodeEditor'
 import CodeOutputPreview from '../components/CodeOutputPreview'
 import SQLValidator from '../components/SQLValidator'
+import SQLVisualizer from '../components/SQLVisualizer'
+import SQLDebugger from '../components/SQLDebugger'
 import { useAuth } from '../App'
 import axios from 'axios'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -596,9 +598,9 @@ function Assignments({ user }) {
     return (
         <>
             {/* Tab Buttons */}
-            <div style={{ 
-                display: 'flex', 
-                gap: '1rem', 
+            <div style={{
+                display: 'flex',
+                gap: '1rem',
                 marginBottom: '1.5rem',
                 padding: '0.5rem',
                 background: 'var(--bg-card)',
@@ -714,7 +716,8 @@ function Assignments({ user }) {
 function CodeEditorModal({ problem, user, onClose }) {
     const langConfig = LANGUAGE_CONFIG[problem.language] || LANGUAGE_CONFIG['Python']
     const [code, setCode] = useState(langConfig.defaultCode)
-    const [selectedLang, setSelectedLang] = useState(problem.language)
+    const [selectedLang, setSelectedLang] = useState(problem.language || 'Python')
+    const [sqlTool, setSqlTool] = useState('validator') // 'validator', 'visualizer', 'debugger'
     const [output, setOutput] = useState('')
     const [status, setStatus] = useState('idle')
     const [result, setResult] = useState(null)
@@ -829,15 +832,15 @@ function CodeEditorModal({ problem, user, onClose }) {
         setOutput('Running code...\n')
         try {
             // First run the code normally
-            const res = await axios.post(`${API_BASE}/run`, { 
-                code, 
-                language: selectedLang, 
+            const res = await axios.post(`${API_BASE}/run`, {
+                code,
+                language: selectedLang,
                 problemId: problem.id,
                 sqlSchema: problem.sqlSchema  // Pass SQL schema for execution
             })
             setOutput(res.data.output)
             setStatus(res.data.status === 'error' ? 'error' : 'success')
-            
+
             // Also run test cases in background
             try {
                 const testRes = await axios.post(`${API_BASE}/run-with-tests`, {
@@ -952,7 +955,7 @@ function CodeEditorModal({ problem, user, onClose }) {
                     <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
                     <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
                         {problem.description}
-                        
+
                         {/* Show SQL-specific fields or regular input/output */}
                         {(problem.type === 'SQL' || problem.language === 'SQL') ? (
                             <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
@@ -962,11 +965,11 @@ function CodeEditorModal({ problem, user, onClose }) {
                                             <span style={{ color: '#06b6d4' }}>🗄️</span>
                                             <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
                                         </div>
-                                        <pre style={{ 
-                                            color: '#93c5fd', 
-                                            background: '#0f172a', 
-                                            padding: '1rem', 
-                                            borderRadius: '6px', 
+                                        <pre style={{
+                                            color: '#93c5fd',
+                                            background: '#0f172a',
+                                            padding: '1rem',
+                                            borderRadius: '6px',
                                             marginBottom: '1rem',
                                             fontSize: '0.8rem',
                                             overflowX: 'auto',
@@ -981,10 +984,10 @@ function CodeEditorModal({ problem, user, onClose }) {
                                             <span style={{ color: '#10b981' }}>📊</span>
                                             <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
                                         </div>
-                                        <pre style={{ 
-                                            color: '#4ade80', 
-                                            background: '#0f172a', 
-                                            padding: '1rem', 
+                                        <pre style={{
+                                            color: '#4ade80',
+                                            background: '#0f172a',
+                                            padding: '1rem',
                                             borderRadius: '6px',
                                             fontSize: '0.8rem',
                                             overflowX: 'auto',
@@ -1229,18 +1232,18 @@ function CodeEditorModal({ problem, user, onClose }) {
                                     )}
                                 </button>
                             </div>
-                            
+
                             {/* Console Output Tab */}
                             {!showTestResults && (
                                 <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflowY: 'auto' }}>
                                     {output || 'No output yet. Run your code to see results.'}
                                 </div>
                             )}
-                            
+
                             {/* Test Cases Tab */}
                             {showTestResults && (
                                 <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-                                    <CodeOutputPreview 
+                                    <CodeOutputPreview
                                         problemId={problem.id}
                                         code={code}
                                         language={selectedLang}
@@ -1258,15 +1261,61 @@ function CodeEditorModal({ problem, user, onClose }) {
                             )}
                         </div>
                     )}
-                    
-                    {/* SQL Validator for SQL problems */}
+
+                    {/* SQL Tools Suite for SQL problems */}
                     {(problem.type === 'SQL' || problem.language === 'SQL') && !result && (
-                        <div style={{ borderTop: '1px solid #334155', padding: '1rem', background: '#0f172a' }}>
-                            <SQLValidator 
-                                query={code}
-                                onQueryChange={setCode}
-                                schemaContext={problem.sqlSchema}
-                            />
+                        <div style={{ borderTop: '1px solid #334155', padding: '1.25rem', background: '#0f172a' }}>
+                            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', padding: '4px', background: '#020617', borderRadius: '10px', width: 'fit-content' }}>
+                                <button
+                                    onClick={() => setSqlTool('validator')}
+                                    style={{
+                                        padding: '0.6rem 1.25rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                        background: sqlTool === 'validator' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                                        color: sqlTool === 'validator' ? '#60a5fa' : '#64748b',
+                                        fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                    }}
+                                >
+                                    <Shield size={16} /> Validator
+                                </button>
+                                <button
+                                    onClick={() => setSqlTool('visualizer')}
+                                    style={{
+                                        padding: '0.6rem 1.25rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                        background: sqlTool === 'visualizer' ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                                        color: sqlTool === 'visualizer' ? '#a78bfa' : '#64748b',
+                                        fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                    }}
+                                >
+                                    <Database size={16} /> ER Diagram
+                                </button>
+                                <button
+                                    onClick={() => setSqlTool('debugger')}
+                                    style={{
+                                        padding: '0.6rem 1.25rem', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                        background: sqlTool === 'debugger' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                                        color: sqlTool === 'debugger' ? '#4ade80' : '#64748b',
+                                        fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                    }}
+                                >
+                                    <Layers size={16} /> Debugger
+                                </button>
+                            </div>
+
+                            <div className="sql-tool-container animate-fadeIn">
+                                {sqlTool === 'validator' && (
+                                    <SQLValidator
+                                        query={code}
+                                        onQueryChange={setCode}
+                                        schemaContext={problem.sqlSchema}
+                                    />
+                                )}
+                                {sqlTool === 'visualizer' && (
+                                    <SQLVisualizer schema={problem.sqlSchema} />
+                                )}
+                                {sqlTool === 'debugger' && (
+                                    <SQLDebugger query={code} schema={problem.sqlSchema} />
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
