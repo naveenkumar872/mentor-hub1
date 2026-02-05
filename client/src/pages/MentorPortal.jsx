@@ -9,7 +9,7 @@ import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 function MentorPortal() {
@@ -85,7 +85,7 @@ function Dashboard({ user }) {
         const diffMins = Math.floor(diffMs / 60000)
         const diffHours = Math.floor(diffMins / 60)
         const diffDays = Math.floor(diffHours / 24)
-        
+
         if (diffMins < 1) return 'Just now'
         if (diffMins < 60) return `${diffMins}m ago`
         if (diffHours < 24) return `${diffHours}h ago`
@@ -238,7 +238,7 @@ function Dashboard({ user }) {
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <Tooltip 
+                                <Tooltip
                                     contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px' }}
                                     itemStyle={{ color: 'var(--text)' }}
                                 />
@@ -280,7 +280,7 @@ function Dashboard({ user }) {
                                             <span><Code size={12} /> {student.problemsCompleted} problems</span>
                                         </div>
                                     </div>
-                                    <div className="student-score-badge" style={{ 
+                                    <div className="student-score-badge" style={{
                                         background: student.avgScore >= 70 ? 'rgba(16, 185, 129, 0.15)' : student.avgScore >= 40 ? 'rgba(251, 191, 36, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                                         color: student.avgScore >= 70 ? '#10b981' : student.avgScore >= 40 ? '#fbbf24' : '#ef4444'
                                     }}>
@@ -782,12 +782,12 @@ function UploadProblems({ user }) {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                             {p.title}
                                             {p.proctoring?.enabled && (
-                                                <span style={{ 
-                                                    fontSize: '0.6rem', 
-                                                    padding: '2px 6px', 
-                                                    borderRadius: '4px', 
-                                                    background: 'rgba(239, 68, 68, 0.15)', 
-                                                    color: '#ef4444', 
+                                                <span style={{
+                                                    fontSize: '0.6rem',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'rgba(239, 68, 68, 0.15)',
+                                                    color: '#ef4444',
                                                     fontWeight: 700,
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -928,10 +928,10 @@ function UploadProblems({ user }) {
                                 </div>
 
                                 {/* Proctoring Settings */}
-                                <div style={{ 
-                                    padding: '1.25rem', 
-                                    background: 'rgba(139, 92, 246, 0.05)', 
-                                    borderRadius: '12px', 
+                                <div style={{
+                                    padding: '1.25rem',
+                                    background: 'rgba(139, 92, 246, 0.05)',
+                                    borderRadius: '12px',
                                     border: '1px solid rgba(139, 92, 246, 0.2)',
                                     marginBottom: '1.5rem'
                                 }}>
@@ -939,12 +939,12 @@ function UploadProblems({ user }) {
                                         <Eye size={18} color="#8b5cf6" />
                                         <span style={{ fontWeight: 600, color: '#8b5cf6' }}>Proctoring Settings</span>
                                     </div>
-                                    
+
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            id="enableProctoring" 
-                                            checked={problem.enableProctoring} 
+                                        <input
+                                            type="checkbox"
+                                            id="enableProctoring"
+                                            checked={problem.enableProctoring}
                                             onChange={(e) => setProblem({ ...problem, enableProctoring: e.target.checked })}
                                             style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
                                         />
@@ -954,10 +954,10 @@ function UploadProblems({ user }) {
                                     {problem.enableProctoring && (
                                         <div style={{ marginLeft: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                <input 
-                                                    type="checkbox" 
-                                                    id="enableVideoAudio" 
-                                                    checked={problem.enableVideoAudio} 
+                                                <input
+                                                    type="checkbox"
+                                                    id="enableVideoAudio"
+                                                    checked={problem.enableVideoAudio}
                                                     onChange={(e) => setProblem({ ...problem, enableVideoAudio: e.target.checked })}
                                                     style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
                                                 />
@@ -965,12 +965,12 @@ function UploadProblems({ user }) {
                                                     📹 Enable Video & Audio Monitoring
                                                 </label>
                                             </div>
-                                            
+
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                <input 
-                                                    type="checkbox" 
-                                                    id="disableCopyPaste" 
-                                                    checked={problem.disableCopyPaste} 
+                                                <input
+                                                    type="checkbox"
+                                                    id="disableCopyPaste"
+                                                    checked={problem.disableCopyPaste}
                                                     onChange={(e) => setProblem({ ...problem, disableCopyPaste: e.target.checked })}
                                                     style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
                                                 />
@@ -978,12 +978,12 @@ function UploadProblems({ user }) {
                                                     🚫 Disable Copy/Paste
                                                 </label>
                                             </div>
-                                            
+
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                <input 
-                                                    type="checkbox" 
-                                                    id="trackTabSwitches" 
-                                                    checked={problem.trackTabSwitches} 
+                                                <input
+                                                    type="checkbox"
+                                                    id="trackTabSwitches"
+                                                    checked={problem.trackTabSwitches}
                                                     onChange={(e) => setProblem({ ...problem, trackTabSwitches: e.target.checked })}
                                                     style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
                                                 />
@@ -995,11 +995,11 @@ function UploadProblems({ user }) {
                                             {problem.trackTabSwitches && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '1.5rem' }}>
                                                     <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Max Tab Switches:</label>
-                                                    <input 
-                                                        type="number" 
-                                                        min="1" 
-                                                        max="10" 
-                                                        value={problem.maxTabSwitches} 
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="10"
+                                                        value={problem.maxTabSwitches}
                                                         onChange={(e) => setProblem({ ...problem, maxTabSwitches: parseInt(e.target.value) || 3 })}
                                                         style={{ width: '60px', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'white', textAlign: 'center' }}
                                                     />
@@ -1062,12 +1062,12 @@ function Leaderboard({ user }) {
 
     const getTotalViolations = (student) => {
         if (!student.violations) return 0
-        return (student.violations.tabSwitches || 0) + 
-               (student.violations.copyPaste || 0) +
-               (student.violations.cameraBlocked || 0) +
-               (student.violations.phoneDetection || 0) +
-               (student.violations.integrityViolations || 0) + 
-               (student.violations.plagiarism || 0)
+        return (student.violations.tabSwitches || 0) +
+            (student.violations.copyPaste || 0) +
+            (student.violations.cameraBlocked || 0) +
+            (student.violations.phoneDetection || 0) +
+            (student.violations.integrityViolations || 0) +
+            (student.violations.plagiarism || 0)
     }
 
     return (
@@ -1096,7 +1096,7 @@ function Leaderboard({ user }) {
                         {leaders.map((student, i) => {
                             const totalViolations = getTotalViolations(student)
                             const hasIssues = totalViolations > 0 || student.violations?.plagiarism > 0
-                            
+
                             return (
                                 <tr key={student.studentId} className="leaderboard-row" style={{
                                     backgroundColor: i < 3 ? 'var(--bg-dark)' : 'transparent',
@@ -1130,11 +1130,11 @@ function Leaderboard({ user }) {
                                     <td>
                                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             {student.violations?.tabSwitches > 0 && (
-                                                <span style={{ 
-                                                    fontSize: '0.65rem', 
-                                                    padding: '2px 6px', 
-                                                    borderRadius: '4px', 
-                                                    background: 'rgba(245, 158, 11, 0.15)', 
+                                                <span style={{
+                                                    fontSize: '0.65rem',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'rgba(245, 158, 11, 0.15)',
                                                     color: '#f59e0b',
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -1144,11 +1144,11 @@ function Leaderboard({ user }) {
                                                 </span>
                                             )}
                                             {student.violations?.cameraBlocked > 0 && (
-                                                <span style={{ 
-                                                    fontSize: '0.65rem', 
-                                                    padding: '2px 6px', 
-                                                    borderRadius: '4px', 
-                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                <span style={{
+                                                    fontSize: '0.65rem',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'rgba(239, 68, 68, 0.15)',
                                                     color: '#ef4444',
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -1158,11 +1158,11 @@ function Leaderboard({ user }) {
                                                 </span>
                                             )}
                                             {student.violations?.phoneDetection > 0 && (
-                                                <span style={{ 
-                                                    fontSize: '0.65rem', 
-                                                    padding: '2px 6px', 
-                                                    borderRadius: '4px', 
-                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                <span style={{
+                                                    fontSize: '0.65rem',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'rgba(239, 68, 68, 0.15)',
                                                     color: '#ef4444',
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -1172,11 +1172,11 @@ function Leaderboard({ user }) {
                                                 </span>
                                             )}
                                             {student.violations?.copyPaste > 0 && (
-                                                <span style={{ 
-                                                    fontSize: '0.65rem', 
-                                                    padding: '2px 6px', 
-                                                    borderRadius: '4px', 
-                                                    background: 'rgba(245, 158, 11, 0.15)', 
+                                                <span style={{
+                                                    fontSize: '0.65rem',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'rgba(245, 158, 11, 0.15)',
                                                     color: '#f59e0b',
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -1186,11 +1186,11 @@ function Leaderboard({ user }) {
                                                 </span>
                                             )}
                                             {student.violations?.plagiarism > 0 && (
-                                                <span style={{ 
-                                                    fontSize: '0.65rem', 
-                                                    padding: '2px 6px', 
-                                                    borderRadius: '4px', 
-                                                    background: 'rgba(239, 68, 68, 0.15)', 
+                                                <span style={{
+                                                    fontSize: '0.65rem',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    background: 'rgba(239, 68, 68, 0.15)',
                                                     color: '#ef4444',
                                                     display: 'flex',
                                                     alignItems: 'center',

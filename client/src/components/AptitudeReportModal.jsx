@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Brain, Target, CheckCircle, XCircle, X, AlertTriangle, Clock, Award } from 'lucide-react'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 function AptitudeReportModal({ submission, onClose, isStudentView = false }) {
     const [loading, setLoading] = useState(true)
@@ -30,15 +30,15 @@ function AptitudeReportModal({ submission, onClose, isStudentView = false }) {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div 
-                className="modal-content" 
-                onClick={e => e.stopPropagation()} 
-                style={{ 
-                    maxWidth: '950px', 
-                    maxHeight: '90vh', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    overflow: 'hidden' 
+            <div
+                className="modal-content"
+                onClick={e => e.stopPropagation()}
+                style={{
+                    maxWidth: '950px',
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
                 }}
             >
                 {/* Header */}
@@ -186,10 +186,10 @@ function AptitudeReportModal({ submission, onClose, isStudentView = false }) {
                                     border: '1px solid rgba(245, 158, 11, 0.2)',
                                     textAlign: 'center'
                                 }}>
-                                    <div style={{ 
-                                        fontSize: '1.75rem', 
-                                        fontWeight: 800, 
-                                        color: (data.tabSwitches || 0) > 0 ? '#f59e0b' : '#10b981' 
+                                    <div style={{
+                                        fontSize: '1.75rem',
+                                        fontWeight: 800,
+                                        color: (data.tabSwitches || 0) > 0 ? '#f59e0b' : '#10b981'
                                     }}>
                                         {data.tabSwitches || 0}
                                     </div>

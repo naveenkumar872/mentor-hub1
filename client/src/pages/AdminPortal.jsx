@@ -9,7 +9,7 @@ import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -88,6 +88,7 @@ function AdminPortal() {
 function Dashboard() {
     const [stats, setStats] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [selectedPeriod, setSelectedPeriod] = useState('7d')
 
     useEffect(() => {
         axios.get(`${API_BASE}/analytics/admin`)
@@ -101,155 +102,642 @@ function Dashboard() {
     if (loading) return <div className="loading-spinner"></div>
     if (!stats) return <div>Error loading stats</div>
 
+    // Calculate additional metrics
+    const avgSubmissionsPerStudent = stats.totalStudents > 0 
+        ? Math.round(stats.totalSubmissions / stats.totalStudents * 10) / 10 
+        : 0
+    const totalMentors = stats.mentorCount || Math.ceil(stats.totalStudents / 15)
+    const activeToday = stats.recentSubmissions?.length || 0
+
     return (
-        <div className="animate-fadeIn dashboard-container">
-            {/* Main Stats Banner */}
-            <div className="stats-grid">
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' }}>
-                        <Users size={24} />
+        <div className="animate-fadeIn">
+            {/* Welcome Header */}
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 50%, rgba(6, 182, 212, 0.05) 100%)',
+                borderRadius: '20px',
+                padding: '2rem 2.5rem',
+                marginBottom: '2rem',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                position: 'relative',
+                overflow: 'hidden'
+            }}>
+                <div style={{
+                    position: 'absolute',
+                    top: '-50%',
+                    right: '-10%',
+                    width: '400px',
+                    height: '400px',
+                    background: 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%)',
+                    pointerEvents: 'none'
+                }} />
+                <div style={{ position: 'relative', zIndex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '14px',
+                            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)'
+                        }}>
+                            <Shield size={24} color="white" />
+                        </div>
+                        <div>
+                            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, background: 'linear-gradient(135deg, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                                Admin Control Center
+                            </h1>
+                            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                                Monitor performance, manage content, and track platform health
+                            </p>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Total Students</span>
-                        <span className="stat-value">{stats.totalStudents}</span>
-                    </div>
-                    <div className="stat-badge positive">+12%</div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6' }}>
-                        <Activity size={24} />
+            </div>
+
+            {/* Main Stats Grid - 6 Cards */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(6, 1fr)',
+                gap: '1rem',
+                marginBottom: '2rem'
+            }}>
+                {/* Total Students */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    transition: 'all 0.3s ease'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '80px',
+                        height: '80px',
+                        background: 'radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 70%)'
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                        }}>
+                            <Users size={22} color="white" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.totalStudents}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Students</div>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Submissions</span>
-                        <span className="stat-value">{stats.totalSubmissions}</span>
+                    <div style={{
+                        marginTop: '1rem',
+                        padding: '0.35rem 0.75rem',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        borderRadius: '20px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#10b981'
+                    }}>
+                        <TrendingUp size={12} /> +12% this month
                     </div>
-                    <div className="stat-badge neutral">Stable</div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
-                        <CheckCircle size={24} />
+
+                {/* Total Mentors */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '80px',
+                        height: '80px',
+                        background: 'radial-gradient(circle at top right, rgba(139, 92, 246, 0.15), transparent 70%)'
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #6d28d9, #8b5cf6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+                        }}>
+                            <Award size={22} color="white" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{totalMentors}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active Mentors</div>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Success Rate</span>
-                        <span className="stat-value">{stats.successRate}%</span>
-                    </div>
-                    <div className="stat-progress">
-                        <div className="progress-fill" style={{ width: `${stats.successRate}%` }}></div>
+                    <div style={{
+                        marginTop: '1rem',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-muted)'
+                    }}>
+                        ~{Math.round(stats.totalStudents / totalMentors)} students/mentor
                     </div>
                 </div>
-                <div className="stat-card glass">
-                    <div className="stat-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
-                        <TrendingUp size={24} />
+
+                {/* Submissions */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '80px',
+                        height: '80px',
+                        background: 'radial-gradient(circle at top right, rgba(6, 182, 212, 0.15), transparent 70%)'
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #0891b2, #06b6d4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(6, 182, 212, 0.3)'
+                        }}>
+                            <Send size={22} color="white" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.totalSubmissions}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Submissions</div>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <span className="stat-label">Total Content</span>
-                        <span className="stat-value">{stats.totalContent}</span>
+                    <div style={{
+                        marginTop: '1rem',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-muted)'
+                    }}>
+                        {avgSubmissionsPerStudent} avg per student
+                    </div>
+                </div>
+
+                {/* Success Rate */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '80px',
+                        height: '80px',
+                        background: 'radial-gradient(circle at top right, rgba(16, 185, 129, 0.15), transparent 70%)'
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #047857, #10b981)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                        }}>
+                            <CheckCircle size={22} color="white" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.successRate}%</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Success Rate</div>
+                        </div>
+                    </div>
+                    <div style={{
+                        marginTop: '1rem',
+                        height: '6px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        borderRadius: '3px',
+                        overflow: 'hidden'
+                    }}>
+                        <div style={{
+                            height: '100%',
+                            width: `${stats.successRate}%`,
+                            background: 'linear-gradient(90deg, #10b981, #06b6d4)',
+                            borderRadius: '3px',
+                            transition: 'width 1s ease'
+                        }} />
+                    </div>
+                </div>
+
+                {/* Total Content */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '80px',
+                        height: '80px',
+                        background: 'radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 70%)'
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #d97706, #f59e0b)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)'
+                        }}>
+                            <FileCode size={22} color="white" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{stats.totalContent}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Content</div>
+                        </div>
+                    </div>
+                    <div style={{
+                        marginTop: '1rem',
+                        fontSize: '0.75rem',
+                        color: 'var(--text-muted)'
+                    }}>
+                        Tasks, Problems & Tests
+                    </div>
+                </div>
+
+                {/* Active Today */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '80px',
+                        height: '80px',
+                        background: 'radial-gradient(circle at top right, rgba(236, 72, 153, 0.15), transparent 70%)'
+                    }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #be185d, #ec4899)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(236, 72, 153, 0.3)'
+                        }}>
+                            <Zap size={22} color="white" />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text)' }}>{activeToday}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active Today</div>
+                        </div>
+                    </div>
+                    <div style={{
+                        marginTop: '1rem',
+                        padding: '0.35rem 0.75rem',
+                        background: 'rgba(236, 72, 153, 0.1)',
+                        borderRadius: '20px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#ec4899'
+                    }}>
+                        <Activity size={12} /> Live
                     </div>
                 </div>
             </div>
 
             {/* Charts Section */}
-            <div className="charts-container">
-                <div className="chart-wrapper glass large">
-                    <div className="chart-header">
-                        <h3>Submission Trends</h3>
-                        <p>Last 7 days activity</p>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1fr',
+                gap: '1.5rem',
+                marginBottom: '2rem'
+            }}>
+                {/* Submission Trends Chart */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '20px',
+                    padding: '1.5rem',
+                    position: 'relative'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Submission Trends</h3>
+                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Platform activity over time</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {['7d', '30d', '90d'].map(period => (
+                                <button
+                                    key={period}
+                                    onClick={() => setSelectedPeriod(period)}
+                                    style={{
+                                        padding: '0.4rem 0.8rem',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        background: selectedPeriod === period ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'var(--bg-tertiary)',
+                                        color: selectedPeriod === period ? 'white' : 'var(--text-muted)',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    {period}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                    <div style={{ width: '100%', height: '300px' }}>
+                    <div style={{ width: '100%', height: '280px' }}>
                         <ResponsiveContainer>
                             <AreaChart data={stats.submissionTrends}>
                                 <defs>
-                                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                    <linearGradient id="colorCountAdmin" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
                                         <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={12} axisLine={false} tickLine={false} />
-                                <YAxis stroke="var(--text-muted)" fontSize={12} axisLine={false} tickLine={false} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                                <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={11} axisLine={false} tickLine={false} />
+                                <YAxis stroke="var(--text-muted)" fontSize={11} axisLine={false} tickLine={false} />
                                 <Tooltip
-                                    contentStyle={{ background: '#0f172a', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                                    contentStyle={{
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: '12px',
+                                        boxShadow: '0 10px 40px rgba(0,0,0,0.3)'
+                                    }}
+                                    labelStyle={{ color: 'var(--text)', fontWeight: 600 }}
                                     itemStyle={{ color: '#3b82f6' }}
                                 />
-                                <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                                <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorCountAdmin)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                <div className="chart-wrapper glass small">
-                    <div className="chart-header">
-                        <h3>Language Split</h3>
-                        <p>Usage distribution</p>
+                {/* Language Distribution */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '20px',
+                    padding: '1.5rem'
+                }}>
+                    <div style={{ marginBottom: '1rem' }}>
+                        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Language Distribution</h3>
+                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Code submissions by language</p>
                     </div>
-                    <div style={{ width: '100%', height: '300px' }}>
+                    <div style={{ width: '100%', height: '200px' }}>
                         <ResponsiveContainer>
                             <PieChart>
                                 <Pie
                                     data={stats.languageStats}
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={60}
+                                    innerRadius={55}
                                     outerRadius={80}
-                                    paddingAngle={5}
+                                    paddingAngle={4}
                                     dataKey="value"
                                 >
                                     {stats.languageStats.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <Tooltip />
+                                <Tooltip
+                                    contentStyle={{
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: '8px'
+                                    }}
+                                />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
-                    <div className="pie-legend">
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: '0.75rem',
+                        marginTop: '1rem'
+                    }}>
                         {stats.languageStats.map((entry, index) => (
-                            <div key={entry.name} className="legend-item">
-                                <span className="dot" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
-                                <span>{entry.name}</span>
+                            <div key={entry.name} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                fontSize: '0.8rem'
+                            }}>
+                                <div style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '3px',
+                                    background: COLORS[index % COLORS.length]
+                                }} />
+                                <span style={{ color: 'var(--text-muted)' }}>{entry.name}</span>
+                                <span style={{ marginLeft: 'auto', fontWeight: 600 }}>{entry.value}</span>
                             </div>
                         ))}
                     </div>
                 </div>
             </div>
 
-            {/* Platform Activity & Leaderboard */}
-            <div className="dashboard-footer-grid">
-                <div className="activity-card glass">
-                    <div className="card-header">
-                        <h3>Recent Platform Activity</h3>
-                        <Activity size={18} style={{ opacity: 0.5 }} />
+            {/* Bottom Section - Activity & Leaderboard */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1.5fr 1fr',
+                gap: '1.5rem'
+            }}>
+                {/* Recent Activity */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '20px',
+                    padding: '1.5rem',
+                    maxHeight: '420px',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '10px',
+                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}>
+                                <Activity size={18} color="white" />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Recent Activity</h3>
+                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Live platform submissions</p>
+                            </div>
+                        </div>
+                        <button style={{
+                            padding: '0.5rem 1rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: 'var(--bg-tertiary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem'
+                        }}>
+                            <RefreshCw size={12} /> Refresh
+                        </button>
                     </div>
-                    <div className="activity-list">
-                        {stats.recentSubmissions.map(sub => (
-                            <div key={sub.id} className="activity-item">
-                                <div className={`status-icon ${sub.status}`}></div>
-                                <div className="activity-details">
-                                    <p><strong>{sub.studentName}</strong> submitted a solution</p>
-                                    <span className="time"><Clock size={12} /> {new Date(sub.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {stats.recentSubmissions.map((sub, index) => (
+                            <div key={sub.id} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '1rem',
+                                padding: '1rem',
+                                background: 'var(--bg-tertiary)',
+                                borderRadius: '12px',
+                                border: '1px solid var(--border-color)',
+                                transition: 'all 0.2s ease'
+                            }}>
+                                <div style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    background: sub.status === 'accepted' ? '#10b981' : '#ef4444',
+                                    boxShadow: `0 0 12px ${sub.status === 'accepted' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`
+                                }} />
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{sub.studentName}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                        <Clock size={11} />
+                                        {new Date(sub.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        <span style={{ opacity: 0.5 }}>•</span>
+                                        <span>submitted a solution</span>
+                                    </div>
                                 </div>
-                                <div className="activity-score" style={{ color: sub.status === 'accepted' ? '#10b981' : '#ef4444' }}>
+                                <div style={{
+                                    padding: '0.4rem 0.8rem',
+                                    borderRadius: '8px',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 700,
+                                    background: sub.status === 'accepted' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                    color: sub.status === 'accepted' ? '#10b981' : '#ef4444'
+                                }}>
                                     {sub.score}%
                                 </div>
                             </div>
                         ))}
                     </div>
-                    <button className="view-all-btn">View All History</button>
                 </div>
 
-                <div className="performer-card glass">
-                    <div className="card-header">
-                        <h3>Top Performers</h3>
-                        <Trophy size={18} style={{ opacity: 0.5, color: '#f59e0b' }} />
+                {/* Top Performers */}
+                <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '20px',
+                    padding: '1.5rem'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                        <div style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            background: 'linear-gradient(135deg, #f59e0b, #fbbf24)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <Trophy size={18} color="white" />
+                        </div>
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Top Performers</h3>
+                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Leading students</p>
+                        </div>
                     </div>
-                    <div className="performer-list">
-                        {stats.studentPerformance.map((student, i) => (
-                            <div key={student.name} className="performer-item">
-                                <div className="rank">#{i + 1}</div>
-                                <div className="performer-name">
-                                    <p>{student.name}</p>
-                                    <span>{student.count} submissions</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {stats.studentPerformance.slice(0, 5).map((student, i) => (
+                            <div key={student.name} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '1rem',
+                                padding: '1rem',
+                                background: i === 0 ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.05))' : 'var(--bg-tertiary)',
+                                borderRadius: '12px',
+                                border: `1px solid ${i === 0 ? 'rgba(251, 191, 36, 0.3)' : 'var(--border-color)'}`
+                            }}>
+                                <div style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '8px',
+                                    background: i === 0 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : i === 1 ? 'linear-gradient(135deg, #94a3b8, #64748b)' : i === 2 ? 'linear-gradient(135deg, #d97706, #b45309)' : 'var(--bg-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    color: i < 3 ? 'white' : 'var(--text-muted)'
+                                }}>
+                                    {i < 3 ? <Trophy size={14} /> : `#${i + 1}`}
                                 </div>
-                                <div className="performer-score">{student.score}%</div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{student.name}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{student.count} submissions</div>
+                                </div>
+                                <div style={{
+                                    fontSize: '1rem',
+                                    fontWeight: 700,
+                                    color: student.score >= 80 ? '#10b981' : student.score >= 60 ? '#f59e0b' : '#ef4444'
+                                }}>
+                                    {student.score}%
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -374,12 +862,12 @@ function StudentLeaderboard() {
 
     const getTotalViolations = (student) => {
         if (!student.violations) return 0
-        return (student.violations.tabSwitches || 0) + 
-               (student.violations.copyPaste || 0) +
-               (student.violations.cameraBlocked || 0) +
-               (student.violations.phoneDetection || 0) +
-               (student.violations.integrityViolations || 0) + 
-               (student.violations.plagiarism || 0)
+        return (student.violations.tabSwitches || 0) +
+            (student.violations.copyPaste || 0) +
+            (student.violations.cameraBlocked || 0) +
+            (student.violations.phoneDetection || 0) +
+            (student.violations.integrityViolations || 0) +
+            (student.violations.plagiarism || 0)
     }
 
     return (
@@ -409,7 +897,7 @@ function StudentLeaderboard() {
                             {leaders.map((student, i) => {
                                 const totalViolations = getTotalViolations(student)
                                 const hasIssues = totalViolations > 0 || student.violations?.plagiarism > 0
-                                
+
                                 return (
                                     <tr key={student.studentId}>
                                         <td>
@@ -430,11 +918,11 @@ function StudentLeaderboard() {
                                         <td>
                                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
                                                 {student.violations?.tabSwitches > 0 && (
-                                                    <span style={{ 
-                                                        fontSize: '0.7rem', 
-                                                        padding: '2px 8px', 
-                                                        borderRadius: '4px', 
-                                                        background: 'rgba(245, 158, 11, 0.15)', 
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px',
+                                                        background: 'rgba(245, 158, 11, 0.15)',
                                                         color: '#f59e0b',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -444,11 +932,11 @@ function StudentLeaderboard() {
                                                     </span>
                                                 )}
                                                 {student.violations?.cameraBlocked > 0 && (
-                                                    <span style={{ 
-                                                        fontSize: '0.7rem', 
-                                                        padding: '2px 8px', 
-                                                        borderRadius: '4px', 
-                                                        background: 'rgba(239, 68, 68, 0.15)', 
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px',
+                                                        background: 'rgba(239, 68, 68, 0.15)',
                                                         color: '#ef4444',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -458,11 +946,11 @@ function StudentLeaderboard() {
                                                     </span>
                                                 )}
                                                 {student.violations?.phoneDetection > 0 && (
-                                                    <span style={{ 
-                                                        fontSize: '0.7rem', 
-                                                        padding: '2px 8px', 
-                                                        borderRadius: '4px', 
-                                                        background: 'rgba(239, 68, 68, 0.15)', 
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px',
+                                                        background: 'rgba(239, 68, 68, 0.15)',
                                                         color: '#ef4444',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -472,11 +960,11 @@ function StudentLeaderboard() {
                                                     </span>
                                                 )}
                                                 {student.violations?.copyPaste > 0 && (
-                                                    <span style={{ 
-                                                        fontSize: '0.7rem', 
-                                                        padding: '2px 8px', 
-                                                        borderRadius: '4px', 
-                                                        background: 'rgba(245, 158, 11, 0.15)', 
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px',
+                                                        background: 'rgba(245, 158, 11, 0.15)',
                                                         color: '#f59e0b',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -486,11 +974,11 @@ function StudentLeaderboard() {
                                                     </span>
                                                 )}
                                                 {student.violations?.plagiarism > 0 && (
-                                                    <span style={{ 
-                                                        fontSize: '0.7rem', 
-                                                        padding: '2px 8px', 
-                                                        borderRadius: '4px', 
-                                                        background: 'rgba(239, 68, 68, 0.15)', 
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px',
+                                                        background: 'rgba(239, 68, 68, 0.15)',
                                                         color: '#ef4444',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -622,7 +1110,7 @@ function AllSubmissions() {
     // Download CSV functionality
     const downloadCSV = () => {
         const dataToExport = getFilteredSubmissions()
-        
+
         if (dataToExport.length === 0) {
             alert('No submissions to download')
             return
@@ -695,18 +1183,18 @@ function AllSubmissions() {
             '• All task completions\n\n' +
             'This action CANNOT be undone. Are you sure?'
         )
-        
+
         if (!confirmReset) return
-        
+
         // Double confirmation for safety
         const doubleConfirm = window.confirm(
             '🚨 FINAL CONFIRMATION 🚨\n\n' +
             'You are about to delete ALL submissions permanently.\n\n' +
             'Type OK to proceed.'
         )
-        
+
         if (!doubleConfirm) return
-        
+
         setResetting(true)
         try {
             const response = await axios.delete(`${API_BASE}/submissions`)
@@ -1824,12 +2312,12 @@ function GlobalProblems() {
                                     <span className="problem-badge">{p.type?.toUpperCase()}</span>
                                     <span className={`status-badge ${p.status || 'live'}`} style={{ fontSize: '0.65rem' }}>{p.status || 'Active'}</span>
                                     {p.proctoring?.enabled && (
-                                        <span style={{ 
-                                            fontSize: '0.6rem', 
-                                            padding: '3px 8px', 
-                                            borderRadius: '4px', 
-                                            background: 'rgba(239, 68, 68, 0.15)', 
-                                            color: '#ef4444', 
+                                        <span style={{
+                                            fontSize: '0.6rem',
+                                            padding: '3px 8px',
+                                            borderRadius: '4px',
+                                            background: 'rgba(239, 68, 68, 0.15)',
+                                            color: '#ef4444',
                                             fontWeight: 700,
                                             display: 'flex',
                                             alignItems: 'center',
@@ -2000,12 +2488,12 @@ function GlobalProblems() {
                                 </div>
 
                                 {/* Proctoring Settings Section */}
-                                <div style={{ 
-                                    marginBottom: '1.5rem', 
-                                    padding: '1.25rem', 
-                                    background: 'rgba(239, 68, 68, 0.05)', 
-                                    borderRadius: '1rem', 
-                                    border: '1px solid rgba(239, 68, 68, 0.15)' 
+                                <div style={{
+                                    marginBottom: '1.5rem',
+                                    padding: '1.25rem',
+                                    background: 'rgba(239, 68, 68, 0.05)',
+                                    borderRadius: '1rem',
+                                    border: '1px solid rgba(239, 68, 68, 0.15)'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
                                         <Eye size={20} color="#ef4444" />
@@ -2013,31 +2501,31 @@ function GlobalProblems() {
                                             Proctoring Settings
                                         </h4>
                                     </div>
-                                    
+
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-                                        <label style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '0.75rem', 
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
                                             cursor: 'pointer',
                                             padding: '0.75rem',
                                             background: problem.enableProctoring ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
                                             borderRadius: '0.75rem',
                                             transition: 'all 0.2s'
                                         }}>
-                                            <input 
-                                                type="checkbox" 
+                                            <input
+                                                type="checkbox"
                                                 checked={problem.enableProctoring}
                                                 onChange={(e) => setProblem({ ...problem, enableProctoring: e.target.checked })}
                                                 style={{ width: '18px', height: '18px', accentColor: '#ef4444' }}
                                             />
                                             <span style={{ fontSize: '0.9rem' }}>Enable Proctoring</span>
                                         </label>
-                                        
-                                        <label style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '0.75rem', 
+
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
                                             cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
                                             opacity: problem.enableProctoring ? 1 : 0.5,
                                             padding: '0.75rem',
@@ -2045,8 +2533,8 @@ function GlobalProblems() {
                                             borderRadius: '0.75rem',
                                             transition: 'all 0.2s'
                                         }}>
-                                            <input 
-                                                type="checkbox" 
+                                            <input
+                                                type="checkbox"
                                                 checked={problem.enableVideoAudio}
                                                 onChange={(e) => setProblem({ ...problem, enableVideoAudio: e.target.checked })}
                                                 disabled={!problem.enableProctoring}
@@ -2054,11 +2542,11 @@ function GlobalProblems() {
                                             />
                                             <span style={{ fontSize: '0.9rem' }}>📹 Video/Audio Monitoring</span>
                                         </label>
-                                        
-                                        <label style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '0.75rem', 
+
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
                                             cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
                                             opacity: problem.enableProctoring ? 1 : 0.5,
                                             padding: '0.75rem',
@@ -2066,8 +2554,8 @@ function GlobalProblems() {
                                             borderRadius: '0.75rem',
                                             transition: 'all 0.2s'
                                         }}>
-                                            <input 
-                                                type="checkbox" 
+                                            <input
+                                                type="checkbox"
                                                 checked={problem.disableCopyPaste}
                                                 onChange={(e) => setProblem({ ...problem, disableCopyPaste: e.target.checked })}
                                                 disabled={!problem.enableProctoring}
@@ -2075,11 +2563,11 @@ function GlobalProblems() {
                                             />
                                             <span style={{ fontSize: '0.9rem' }}>📋 Disable Copy/Paste</span>
                                         </label>
-                                        
-                                        <label style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '0.75rem', 
+
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
                                             cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
                                             opacity: problem.enableProctoring ? 1 : 0.5,
                                             padding: '0.75rem',
@@ -2087,8 +2575,8 @@ function GlobalProblems() {
                                             borderRadius: '0.75rem',
                                             transition: 'all 0.2s'
                                         }}>
-                                            <input 
-                                                type="checkbox" 
+                                            <input
+                                                type="checkbox"
                                                 checked={problem.trackTabSwitches}
                                                 onChange={(e) => setProblem({ ...problem, trackTabSwitches: e.target.checked })}
                                                 disabled={!problem.enableProctoring}
@@ -2097,7 +2585,7 @@ function GlobalProblems() {
                                             <span style={{ fontSize: '0.9rem' }}>🔒 Track Tab Switches</span>
                                         </label>
                                     </div>
-                                    
+
                                     {problem.enableProctoring && problem.trackTabSwitches && (
                                         <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                             <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Max Tab Switches:</label>
@@ -2222,7 +2710,7 @@ function AptitudeTestsAdmin() {
             return
         }
         // Validate all questions have content
-        const invalidQuestions = newTest.questions.filter(q => 
+        const invalidQuestions = newTest.questions.filter(q =>
             !q.question.trim() || q.options.some(opt => !opt.trim())
         )
         if (invalidQuestions.length > 0) {
@@ -2706,27 +3194,27 @@ function AptitudeTestsAdmin() {
 
                             {/* Questions Section */}
                             <div style={{ marginBottom: '1.5rem' }}>
-                                <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'space-between', 
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
                                     marginBottom: '1.25rem',
                                     paddingBottom: '0.75rem',
                                     borderBottom: '1px solid var(--border-color)'
                                 }}>
-                                    <h4 style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '0.5rem', 
-                                        margin: 0, 
+                                    <h4 style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        margin: 0,
                                         color: 'var(--text-primary)',
                                         fontSize: '1rem',
                                         fontWeight: 600
                                     }}>
                                         <HelpCircle size={18} style={{ color: 'var(--primary)' }} /> Questions
                                     </h4>
-                                    <span style={{ 
-                                        fontSize: '0.8rem', 
+                                    <span style={{
+                                        fontSize: '0.8rem',
                                         color: 'var(--primary)',
                                         background: 'var(--primary-alpha)',
                                         padding: '0.35rem 0.75rem',
@@ -2749,16 +3237,16 @@ function AptitudeTestsAdmin() {
                                             transition: 'all 0.2s ease'
                                         }}>
                                             {/* Question Header */}
-                                            <div style={{ 
-                                                display: 'flex', 
-                                                justifyContent: 'space-between', 
-                                                alignItems: 'center', 
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
                                                 marginBottom: '1.25rem'
                                             }}>
-                                                <div style={{ 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    gap: '0.75rem' 
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.75rem'
                                                 }}>
                                                     <span style={{
                                                         background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
@@ -2803,10 +3291,10 @@ function AptitudeTestsAdmin() {
 
                                             {/* Question Input */}
                                             <div style={{ marginBottom: '1.25rem' }}>
-                                                <label style={{ 
-                                                    fontSize: '0.75rem', 
-                                                    fontWeight: 600, 
-                                                    color: 'var(--text-muted)', 
+                                                <label style={{
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    color: 'var(--text-muted)',
                                                     textTransform: 'uppercase',
                                                     letterSpacing: '0.5px',
                                                     marginBottom: '0.5rem',
@@ -2823,7 +3311,7 @@ function AptitudeTestsAdmin() {
                                                         setNewTest({ ...newTest, questions: updated });
                                                     }}
                                                     placeholder="Enter your question here..."
-                                                    style={{ 
+                                                    style={{
                                                         width: '100%',
                                                         padding: '0.875rem 1rem',
                                                         fontSize: '0.95rem',
@@ -2838,10 +3326,10 @@ function AptitudeTestsAdmin() {
 
                                             {/* Options Grid */}
                                             <div style={{ marginBottom: '1.25rem' }}>
-                                                <label style={{ 
-                                                    fontSize: '0.75rem', 
-                                                    fontWeight: 600, 
-                                                    color: 'var(--text-muted)', 
+                                                <label style={{
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    color: 'var(--text-muted)',
                                                     textTransform: 'uppercase',
                                                     letterSpacing: '0.5px',
                                                     marginBottom: '0.75rem',
@@ -2851,11 +3339,11 @@ function AptitudeTestsAdmin() {
                                                 </label>
                                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }}>
                                                     {['A', 'B', 'C', 'D'].map((letter, optIdx) => (
-                                                        <div 
-                                                            key={optIdx} 
-                                                            style={{ 
-                                                                display: 'flex', 
-                                                                alignItems: 'center', 
+                                                        <div
+                                                            key={optIdx}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
                                                                 gap: '0.75rem',
                                                                 background: q.correctAnswer === optIdx ? 'var(--success-alpha)' : 'var(--bg-primary)',
                                                                 padding: '0.5rem',
@@ -2864,7 +3352,7 @@ function AptitudeTestsAdmin() {
                                                                 transition: 'all 0.2s'
                                                             }}
                                                         >
-                                                            <span 
+                                                            <span
                                                                 onClick={() => {
                                                                     const updated = [...newTest.questions];
                                                                     updated[idx] = { ...updated[idx], correctAnswer: optIdx };
@@ -2874,8 +3362,8 @@ function AptitudeTestsAdmin() {
                                                                     width: '32px',
                                                                     height: '32px',
                                                                     borderRadius: '8px',
-                                                                    background: q.correctAnswer === optIdx 
-                                                                        ? 'var(--success)' 
+                                                                    background: q.correctAnswer === optIdx
+                                                                        ? 'var(--success)'
                                                                         : 'var(--bg-tertiary)',
                                                                     display: 'flex',
                                                                     alignItems: 'center',
@@ -2901,7 +3389,7 @@ function AptitudeTestsAdmin() {
                                                                     setNewTest({ ...newTest, questions: updated });
                                                                 }}
                                                                 placeholder={`Option ${letter}`}
-                                                                style={{ 
+                                                                style={{
                                                                     flex: 1,
                                                                     padding: '0.625rem 0.875rem',
                                                                     borderRadius: '8px',
@@ -2917,9 +3405,9 @@ function AptitudeTestsAdmin() {
                                             </div>
 
                                             {/* Correct Answer Indicator */}
-                                            <div style={{ 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
                                                 gap: '0.75rem',
                                                 padding: '0.875rem 1rem',
                                                 background: 'var(--success-alpha)',
@@ -2927,10 +3415,10 @@ function AptitudeTestsAdmin() {
                                                 border: '1px solid var(--success)'
                                             }}>
                                                 <CheckCircle size={18} color="var(--success)" />
-                                                <span style={{ 
-                                                    fontSize: '0.875rem', 
-                                                    fontWeight: 500, 
-                                                    color: 'var(--text-primary)' 
+                                                <span style={{
+                                                    fontSize: '0.875rem',
+                                                    fontWeight: 500,
+                                                    color: 'var(--text-primary)'
                                                 }}>
                                                     Correct Answer:
                                                 </span>
@@ -2944,10 +3432,10 @@ function AptitudeTestsAdmin() {
                                                 }}>
                                                     Option {['A', 'B', 'C', 'D'][q.correctAnswer]}
                                                 </span>
-                                                <span style={{ 
-                                                    marginLeft: 'auto', 
-                                                    fontSize: '0.75rem', 
-                                                    color: 'var(--text-muted)' 
+                                                <span style={{
+                                                    marginLeft: 'auto',
+                                                    fontSize: '0.75rem',
+                                                    color: 'var(--text-muted)'
                                                 }}>
                                                     Click any option badge to change
                                                 </span>
@@ -3001,8 +3489,8 @@ function AptitudeTestsAdmin() {
                                 </div>
                             </div>
 
-                            <div className="form-actions" style={{ 
-                                borderTop: '1px solid var(--border-color)', 
+                            <div className="form-actions" style={{
+                                borderTop: '1px solid var(--border-color)',
                                 paddingTop: '1.5rem',
                                 marginTop: '0.5rem'
                             }}>

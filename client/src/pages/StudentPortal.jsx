@@ -10,7 +10,7 @@ import axios from 'axios'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -209,13 +209,13 @@ function Dashboard({ user }) {
                                 <span className="skill-count" style={{ color: '#3b82f6' }}>{stats.completedTasks}/{stats.totalTasks}</span>
                             </div>
                             <div className="skill-bar" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>
-                                <div className="skill-fill" style={{ 
+                                <div className="skill-fill" style={{
                                     width: `${stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0}%`,
                                     background: 'linear-gradient(90deg, #2563eb, #3b82f6)'
                                 }} />
                             </div>
                         </div>
-                        
+
                         {/* Coding Skills */}
                         <div className="skill-item">
                             <div className="skill-header">
@@ -223,13 +223,13 @@ function Dashboard({ user }) {
                                 <span className="skill-count" style={{ color: '#10b981' }}>{stats.completedProblems}/{stats.totalProblems}</span>
                             </div>
                             <div className="skill-bar" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>
-                                <div className="skill-fill" style={{ 
+                                <div className="skill-fill" style={{
                                     width: `${stats.totalProblems > 0 ? (stats.completedProblems / stats.totalProblems) * 100 : 0}%`,
                                     background: 'linear-gradient(90deg, #059669, #10b981)'
                                 }} />
                             </div>
                         </div>
-                        
+
                         {/* Aptitude Skills */}
                         <div className="skill-item">
                             <div className="skill-header">
@@ -237,7 +237,7 @@ function Dashboard({ user }) {
                                 <span className="skill-count" style={{ color: '#8b5cf6' }}>{stats.completedAptitude}/{stats.totalAptitude}</span>
                             </div>
                             <div className="skill-bar" style={{ background: 'rgba(139, 92, 246, 0.15)' }}>
-                                <div className="skill-fill" style={{ 
+                                <div className="skill-fill" style={{
                                     width: `${stats.totalAptitude > 0 ? (stats.completedAptitude / stats.totalAptitude) * 100 : 0}%`,
                                     background: 'linear-gradient(90deg, #7c3aed, #8b5cf6)'
                                 }} />
@@ -252,14 +252,14 @@ function Dashboard({ user }) {
                         <h3 className="panel-title" style={{ margin: 0 }}>
                             <Clock size={18} color="#3b82f6" /> Recent Submissions
                         </h3>
-                        <button 
+                        <button
                             onClick={() => window.location.href = '/student/submissions'}
                             className="view-all-btn"
                         >
                             View All →
                         </button>
                     </div>
-                    
+
                     <div className="submissions-list">
                         {stats.recentSubmissions && stats.recentSubmissions.length > 0 ? (
                             stats.recentSubmissions.map((sub, idx) => (
@@ -292,7 +292,7 @@ function Dashboard({ user }) {
                     <h3 className="panel-title">
                         <Trophy size={18} color="#fbbf24" /> Leaderboard
                     </h3>
-                    
+
                     <div className="leaderboard-list">
                         {stats.leaderboard && stats.leaderboard.length > 0 ? (
                             stats.leaderboard.slice(0, 5).map((student, idx) => (
@@ -550,12 +550,12 @@ function Assignments({ user }) {
                                     <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'var(--primary-alpha)', color: 'var(--primary)', fontWeight: 700 }}>{problem.type?.toUpperCase()}</span>
                                     <span className={`status-badge ${problem.status || 'live'}`} style={{ fontSize: '0.65rem' }}>{problem.status || 'Active'}</span>
                                     {problem.proctoring?.enabled && (
-                                        <span style={{ 
-                                            fontSize: '0.6rem', 
-                                            padding: '3px 8px', 
-                                            borderRadius: '4px', 
-                                            background: 'rgba(239, 68, 68, 0.15)', 
-                                            color: '#ef4444', 
+                                        <span style={{
+                                            fontSize: '0.6rem',
+                                            padding: '3px 8px',
+                                            borderRadius: '4px',
+                                            background: 'rgba(239, 68, 68, 0.15)',
+                                            color: '#ef4444',
                                             fontWeight: 700,
                                             display: 'flex',
                                             alignItems: 'center',
@@ -569,13 +569,13 @@ function Assignments({ user }) {
                             </div>
                             <h3 style={{ margin: '0.75rem 0', fontSize: '1.2rem' }}>{problem.title}</h3>
                             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '1rem' }}>{problem.description}</p>
-                            
+
                             {/* Proctoring Info */}
                             {problem.proctoring?.enabled && (
-                                <div style={{ 
-                                    padding: '0.5rem 0.75rem', 
-                                    background: 'rgba(239, 68, 68, 0.08)', 
-                                    borderRadius: '8px', 
+                                <div style={{
+                                    padding: '0.5rem 0.75rem',
+                                    background: 'rgba(239, 68, 68, 0.08)',
+                                    borderRadius: '8px',
                                     marginBottom: '0.75rem',
                                     border: '1px solid rgba(239, 68, 68, 0.15)'
                                 }}>
@@ -587,7 +587,7 @@ function Assignments({ user }) {
                                     </p>
                                 </div>
                             )}
-                            
+
                             <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
                                 <span className={`difficulty-badge ${problem.difficulty?.toLowerCase()}`}>{problem.difficulty}</span>
                                 <button onClick={() => handleSolve(problem)} className="btn-create-new" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}><Play size={16} /> Solve</button>
@@ -596,12 +596,12 @@ function Assignments({ user }) {
                     ))
                 )}
             </div>
-            
+
             {/* Use Proctored Editor if proctoring is enabled, otherwise use regular modal */}
             {activeProblem && useProctoredEditor && (
-                <ProctoredCodeEditor 
-                    problem={activeProblem} 
-                    user={user} 
+                <ProctoredCodeEditor
+                    problem={activeProblem}
+                    user={user}
                     onClose={handleClose}
                     onSubmitSuccess={() => {
                         // Refresh problems after successful submission
@@ -610,7 +610,7 @@ function Assignments({ user }) {
                     }}
                 />
             )}
-            
+
             {activeProblem && !useProctoredEditor && (
                 <CodeEditorModal problem={activeProblem} user={user} onClose={handleClose} />
             )}
@@ -1526,9 +1526,9 @@ function AptitudeTests({ user }) {
             return
         }
 
-        // Check if max attempts reached
+        // Check if max attempts reached (skip if unlimited: -1)
         if (!canRetryTest(test) && getAttemptCount(test.id) > 0) {
-            alert(`You have reached the maximum number of attempts (${test.maxAttempts || 1}) for this test.`)
+            alert(`You have reached the maximum number of attempts (${test.maxAttempts}) for this test.`)
             return
         }
 
@@ -1566,15 +1566,20 @@ function AptitudeTests({ user }) {
     // Check if student can retry the test
     const canRetryTest = (test) => {
         const attemptCount = getAttemptCount(test.id)
-        const maxAttempts = test.maxAttempts || 1
-        return attemptCount < maxAttempts
+        const maxAttempts = test.maxAttempts
+        // -1 means unlimited attempts
+        if (maxAttempts === -1) return true
+        // Default to 1 attempt if not set
+        return attemptCount < (maxAttempts || 1)
     }
 
     // Get remaining attempts
     const getRemainingAttempts = (test) => {
         const attemptCount = getAttemptCount(test.id)
-        const maxAttempts = test.maxAttempts || 1
-        return Math.max(0, maxAttempts - attemptCount)
+        const maxAttempts = test.maxAttempts
+        // -1 means unlimited attempts
+        if (maxAttempts === -1) return '∞'
+        return Math.max(0, (maxAttempts || 1) - attemptCount)
     }
 
     // Get unique tests with their latest submissions for stats
@@ -1796,19 +1801,19 @@ function AptitudeTests({ user }) {
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <Zap size={16} color="#06b6d4" />
-                                    <span>Attempts: {getAttemptCount(test.id)}/{test.maxAttempts || 1}</span>
+                                    <span>Attempts: {getAttemptCount(test.id)}/{test.maxAttempts === -1 ? '∞' : (test.maxAttempts || 1)}</span>
                                 </div>
                                 {test.deadline && (
-                                    <div style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
                                         gap: '0.5rem',
                                         color: new Date(test.deadline) < new Date() ? '#ef4444' : 'var(--text-muted)'
                                     }}>
                                         <Clock size={16} color={new Date(test.deadline) < new Date() ? '#ef4444' : '#10b981'} />
                                         <span>
-                                            {new Date(test.deadline) < new Date() 
-                                                ? 'Expired' 
+                                            {new Date(test.deadline) < new Date()
+                                                ? 'Expired'
                                                 : `Due: ${new Date(test.deadline).toLocaleDateString()}`
                                             }
                                         </span>

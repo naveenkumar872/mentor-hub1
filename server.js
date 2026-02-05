@@ -26,7 +26,7 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`)
 });
 
-const upload = multer({ 
+const upload = multer({
     storage,
     limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
     fileFilter: (req, file, cb) => {
@@ -58,12 +58,12 @@ async function cerebrasChat(messages, options = {}) {
             ...(options.response_format && { response_format: options.response_format })
         })
     });
-    
+
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Cerebras API error: ${response.status} - ${errorText}`);
     }
-    
+
     return await response.json();
 }
 
@@ -107,16 +107,16 @@ const allowedOrigins = [
 ];
 
 app.use(cors({
-    origin: function(origin, callback) {
+    origin: function (origin, callback) {
         // Allow requests with no origin (mobile apps, curl, etc)
         if (!origin) return callback(null, true);
-        
+
         // Check if origin is allowed
         const isAllowed = allowedOrigins.some(allowed => {
             if (allowed instanceof RegExp) return allowed.test(origin);
             return allowed === origin;
         });
-        
+
         if (isAllowed) {
             callback(null, true);
         } else {
@@ -455,11 +455,11 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
 app.post('/api/problems', async (req, res) => {
     try {
         const problemId = uuidv4();
-        const { 
-            mentorId, title, description, sampleInput, expectedOutput, 
+        const {
+            mentorId, title, description, sampleInput, expectedOutput,
             difficulty, type, language, status, deadline,
             // Proctoring settings
-            enableProctoring, enableVideoAudio, disableCopyPaste, 
+            enableProctoring, enableVideoAudio, disableCopyPaste,
             trackTabSwitches, maxTabSwitches
         } = req.body;
         const createdAt = new Date();
@@ -509,7 +509,7 @@ app.delete('/api/problems/:id', async (req, res) => {
 app.get('/api/submissions', async (req, res) => {
     try {
         const { studentId, mentorId } = req.query;
-        
+
         let query = `
             SELECT s.*, u.name as studentName, u.mentor_id,
                    p.title as problemTitle, t.title as taskTitle
@@ -526,7 +526,7 @@ app.get('/api/submissions', async (req, res) => {
             query += ' AND s.student_id = ?';
             params.push(studentId);
         }
-        
+
         // Filter by mentorId for mentor portal (students assigned to this mentor)
         if (mentorId) {
             query += ' AND u.mentor_id = ?';
@@ -808,7 +808,7 @@ app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (
         const { studentId, problemId, language, code, submissionType, tabSwitches, copyPasteAttempts, cameraBlockedCount, phoneDetectionCount, timeSpent } = req.body;
         const submissionId = uuidv4();
         const submittedAt = new Date();
-        
+
         // Get video file info if uploaded and convert to MP4
         let videoFilename = null;
         if (req.file) {
@@ -816,12 +816,12 @@ app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (
             const webmFilename = req.file.filename;
             const mp4Filename = webmFilename.replace('.webm', '.mp4');
             const mp4Path = path.join(uploadDir, mp4Filename);
-            
+
             try {
                 // Convert WebM to MP4 using ffmpeg
                 console.log(`🔄 Converting video to MP4: ${webmFilename} -> ${mp4Filename}`);
                 await execPromise(`ffmpeg -i "${webmPath}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart "${mp4Path}" -y`);
-                
+
                 // Delete original WebM file after successful conversion
                 fs.unlinkSync(webmPath);
                 videoFilename = mp4Filename;
@@ -999,17 +999,28 @@ app.delete('/api/submissions/:id', async (req, res) => {
 // Reset all submissions (Admin only)
 app.delete('/api/submissions', async (req, res) => {
     try {
+
+        // Disable FK checks to allow clean deletion regardless of order
+        await connection.query('SET FOREIGN_KEY_CHECKS = 0');
         // Delete all code submissions
-        const [codeResult] = await pool.query('DELETE FROM submissions');
+        const [codeResult] = await connection.query('DELETE FROM submissions');
+
+        // Delete dependent aptitude tables
+        await connection.query('DELETE FROM aptitude_question_results');
+        await connection.query('DELETE FROM student_completed_aptitude');
+
         // Delete all aptitude submissions
-        const [aptitudeResult] = await pool.query('DELETE FROM aptitude_submissions');
+        const [aptitudeResult] = await connection.query('DELETE FROM aptitude_submissions');
         // Delete all problem completions
-        await pool.query('DELETE FROM problem_completions');
+        await connection.query('DELETE FROM problem_completions');
         // Delete all task completions
-        await pool.query('DELETE FROM task_completions');
-        
-        res.json({ 
-            success: true, 
+        await connection.query('DELETE FROM task_completions');
+
+        // Re-enable FK checks
+        await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+
+        res.json({
+            success: true,
             message: 'All submissions reset successfully',
             deletedCodeSubmissions: codeResult.affectedRows,
             deletedAptitudeSubmissions: aptitudeResult.affectedRows
@@ -1026,45 +1037,44 @@ app.post('/api/run', async (req, res) => {
     try {
         const { code, language, problemId } = req.body;
 
-        let problemContext = '';
-        if (problemId) {
-            const [probs] = await pool.query('SELECT * FROM problems WHERE id = ?', [problemId]);
-            if (probs.length > 0) {
-                const p = probs[0];
-                problemContext = `Problem: ${p.title}\nDescription: ${p.description}\nSample Input: ${p.sample_input || 'N/A'}\nExpected Output: ${p.expected_output || 'N/A'}`;
-            }
-        }
+        // Map languages to Piston runtimes
+        const languageMap = {
+            'Python': { language: 'python', version: '3.10.0' },
+            'JavaScript': { language: 'javascript', version: '18.15.0' },
+            'Java': { language: 'java', version: '15.0.2' },
+            'C': { language: 'c', version: '10.2.0' },
+            'C++': { language: 'cpp', version: '10.2.0' },
+            'SQL': { language: 'sqlite3', version: '3.36.0' }
+        };
 
-        const systemPrompt = `You are a high-performance Python and JavaScript code executor and evaluator.
-        Your task is to:
-        1. Simulate the execution of the provided code with extreme accuracy.
-        2. Identify any syntax, runtime, or logical errors.
-        3. If a problem context is provided, verify if the code logic correctly solves it.
-        4. Focus on the output of the function or the final print statements.
-        
-        Respond ONLY with a JSON object:
-        {
-            "output": "The simulated standard output (stdout)",
-            "status": "success" | "error" | "logical_error",
-            "testCasesPassed": "X/Y (if context provided, else N/A)",
-            "explanation": "Brief technical explanation"
-        }`;
+        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
 
-        const chatCompletion = await cerebrasChat([
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `${problemContext}\n\nLanguage: ${language}\n\nCode to execute:\n${code}` }
-        ], {
-            model: 'llama-3.3-70b',
-            temperature: 0.1,
-            max_tokens: 512,
-            response_format: { type: 'json_object' }
+        // Piston Execution API
+        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                language: runtime.language,
+                version: runtime.version,
+                files: [
+                    {
+                        content: code
+                    }
+                ]
+            })
         });
 
-        const responseText = chatCompletion.choices[0]?.message?.content;
-        let result = { output: 'No output', status: 'error' };
-        try { result = JSON.parse(responseText); } catch (e) { }
+        const data = await response.json();
 
-        res.json(result);
+        if (data.run) {
+            res.json({
+                output: data.run.output || 'No output detected',
+                status: data.run.code === 0 ? 'success' : 'error'
+            });
+        } else {
+            throw new Error(data.message || 'Execution failed');
+        }
+
     } catch (error) {
         console.error('Run Error:', error);
         res.status(500).json({ error: 'Failed to run code', details: error.message });
@@ -1306,7 +1316,7 @@ app.post('/api/aptitude', async (req, res) => {
             const q = questions[i];
             const questionId = uuidv4();
             const options = q.options || [];
-            
+
             await connection.query(
                 'INSERT INTO aptitude_questions (question_id, test_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [questionId, testId, q.question, options[0] || '', options[1] || '', options[2] || '', options[3] || '', q.correctAnswer, q.explanation || '', q.category || 'general']
@@ -1512,25 +1522,25 @@ app.get('/api/aptitude-submissions', async (req, res) => {
 app.get('/api/aptitude-submissions/:id', async (req, res) => {
     try {
         const submissionId = req.params.id;
-        
+
         // Get submission details
         const [submissions] = await pool.query(
             'SELECT s.*, u.name as student_name FROM aptitude_submissions s JOIN users u ON s.student_id = u.id WHERE s.id = ?',
             [submissionId]
         );
-        
+
         if (submissions.length === 0) {
             return res.status(404).json({ error: 'Submission not found' });
         }
-        
+
         const s = submissions[0];
-        
+
         // Get question results
         const [questionResults] = await pool.query(
             'SELECT * FROM aptitude_question_results WHERE submission_id = ?',
             [submissionId]
         );
-        
+
         const result = {
             id: s.id,
             testId: s.test_id,
@@ -1554,7 +1564,7 @@ app.get('/api/aptitude-submissions/:id', async (req, res) => {
                 category: qr.category
             }))
         };
-        
+
         res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1611,13 +1621,13 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             WHERE msa.student_id = ?
             LIMIT 1
         `, [studentId]);
-        
+
         const mentorInfo = allocationRows.length > 0 ? {
             id: allocationRows[0].mentor_id,
             name: allocationRows[0].mentor_name,
             email: allocationRows[0].mentor_email
         } : null;
-        
+
         const mentorId = mentorInfo?.id || null;
 
         // Average problem score from submissions (code problems only)
@@ -1767,7 +1777,7 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
             WHERE msa.mentor_id = ?
             ORDER BY u.name ASC
         `, [mentorId]);
-        
+
         const studentIds = allocations.map(a => a.id);
         const allocatedStudents = allocations.map(s => ({
             id: s.id,
@@ -1803,7 +1813,7 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
         const [taskSubs] = await pool.query('SELECT COUNT(*) as count FROM task_completions WHERE student_id IN (?)', [studentIds]);
         const [codeSubs] = await pool.query('SELECT COUNT(*) as count FROM submissions WHERE student_id IN (?)', [studentIds]);
         const [aptSubs] = await pool.query('SELECT COUNT(*) as count FROM student_completed_aptitude WHERE student_id IN (?)', [studentIds]);
-        
+
         const taskSubmissions = taskSubs[0]?.count || 0;
         const codeSubmissions = codeSubs[0]?.count || 0;
         const aptitudeSubmissions = aptSubs[0]?.count || 0;

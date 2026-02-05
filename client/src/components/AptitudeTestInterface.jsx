@@ -2,25 +2,25 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { X, Clock, CheckCircle, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Send, Eye, Brain, Target, Award, Sparkles } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Seeded random shuffle - ensures same student gets same order on refresh
 function seededShuffle(array, seed) {
     const shuffled = [...array]
     let currentIndex = shuffled.length
-    
+
     // Simple seeded random number generator
     const seededRandom = () => {
         seed = (seed * 9301 + 49297) % 233280
         return seed / 233280
     }
-    
+
     while (currentIndex > 0) {
         const randomIndex = Math.floor(seededRandom() * currentIndex)
         currentIndex--
-        ;[shuffled[currentIndex], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[currentIndex]]
+            ;[shuffled[currentIndex], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[currentIndex]]
     }
-    
+
     return shuffled
 }
 
@@ -57,6 +57,22 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
     }, [rawQuestions, user.id, test.id])
 
     const timerRef = useRef(null)
+    const answersRef = useRef(answers)
+    const tabSwitchesRef = useRef(tabSwitches)
+    const timeLeftRef = useRef(timeLeft)
+
+    // Keep refs in sync with state (to avoid stale closures in timer)
+    useEffect(() => {
+        answersRef.current = answers
+    }, [answers])
+
+    useEffect(() => {
+        tabSwitchesRef.current = tabSwitches
+    }, [tabSwitches])
+
+    useEffect(() => {
+        timeLeftRef.current = timeLeft
+    }, [timeLeft])
 
     // Enter fullscreen on mount
     useEffect(() => {
@@ -168,11 +184,16 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
     const handleAutoSubmit = async (disqualified = false) => {
         setIsSubmitting(true)
         try {
+            // Use refs to get the latest values (avoids stale closure issues with timer)
+            const currentAnswers = answersRef.current
+            const currentTabSwitches = tabSwitchesRef.current
+            const currentTimeLeft = timeLeftRef.current
+            
             const response = await axios.post(`${API_BASE}/aptitude/${test.id}/submit`, {
                 studentId: user.id,
-                answers: disqualified ? {} : answers,
-                timeSpent: (test.duration * 60) - timeLeft,
-                tabSwitches
+                answers: disqualified ? {} : currentAnswers,
+                timeSpent: (test.duration * 60) - currentTimeLeft,
+                tabSwitches: currentTabSwitches
             })
 
             setResult(response.data.submission)
@@ -381,10 +402,10 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
                                 border: '1px solid rgba(245, 158, 11, 0.2)',
                                 textAlign: 'center'
                             }}>
-                                <div style={{ 
-                                    fontSize: '1.75rem', 
-                                    fontWeight: 800, 
-                                    color: (result.tabSwitches || tabSwitches || 0) > 0 ? '#f59e0b' : '#10b981' 
+                                <div style={{
+                                    fontSize: '1.75rem',
+                                    fontWeight: 800,
+                                    color: (result.tabSwitches || tabSwitches || 0) > 0 ? '#f59e0b' : '#10b981'
                                 }}>
                                     {result.tabSwitches || tabSwitches || 0}
                                 </div>

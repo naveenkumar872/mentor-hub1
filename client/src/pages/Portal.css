@@ -37,6 +37,31 @@
     padding: 0.5rem 0;
 }
 
+/* Admin Dashboard 6-Column Grid Responsive */
+@media (max-width: 1600px) {
+    .admin-stats-grid-6 {
+        grid-template-columns: repeat(3, 1fr) !important;
+    }
+}
+
+@media (max-width: 1200px) {
+    .admin-stats-grid-6 {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    .admin-charts-grid {
+        grid-template-columns: 1fr !important;
+    }
+    .admin-bottom-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .admin-stats-grid-6 {
+        grid-template-columns: 1fr !important;
+    }
+}
+
 /* Dashboard Stats Grid */
 .dashboard-stats-grid {
     display: grid;
