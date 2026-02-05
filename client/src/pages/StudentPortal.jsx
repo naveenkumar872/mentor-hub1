@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
 import AptitudeReportModal from '../components/AptitudeReportModal'
 import ProctoredCodeEditor from '../components/ProctoredCodeEditor'
+import CodeOutputPreview from '../components/CodeOutputPreview'
+import SQLValidator from '../components/SQLValidator'
 import { useAuth } from '../App'
 import axios from 'axios'
 import Editor from '@monaco-editor/react'
@@ -510,6 +512,7 @@ function Assignments({ user }) {
     const [loading, setLoading] = useState(true)
     const [activeProblem, setActiveProblem] = useState(null)
     const [useProctoredEditor, setUseProctoredEditor] = useState(false)
+    const [activeTab, setActiveTab] = useState('coding') // 'coding' or 'sql'
 
     useEffect(() => {
         axios.get(`${API_BASE}/students/${user.id}/problems`)
@@ -531,71 +534,160 @@ function Assignments({ user }) {
         setUseProctoredEditor(false)
     }
 
+    // Separate problems into Coding and SQL
+    const codingProblems = problems.filter(p => p.language !== 'SQL' && p.type !== 'SQL')
+    const sqlProblems = problems.filter(p => p.language === 'SQL' || p.type === 'SQL')
+
     if (loading) return <div className="loading-spinner"></div>
+
+    // Helper function to render problem cards
+    const renderProblemCard = (problem) => (
+        <div key={problem.id} className="item-card glass">
+            <div className="item-card-header">
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'var(--primary-alpha)', color: 'var(--primary)', fontWeight: 700 }}>{problem.type?.toUpperCase()}</span>
+                    <span className={`status-badge ${problem.status || 'live'}`} style={{ fontSize: '0.65rem' }}>{problem.status || 'Active'}</span>
+                    {problem.proctoring?.enabled && (
+                        <span style={{
+                            fontSize: '0.6rem',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            color: '#ef4444',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                        }}>
+                            <Shield size={10} /> PROCTORED
+                        </span>
+                    )}
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-dark)', padding: '2px 8px', borderRadius: '4px' }}>{problem.language}</span>
+            </div>
+            <h3 style={{ margin: '0.75rem 0', fontSize: '1.2rem' }}>{problem.title}</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '1rem' }}>{problem.description}</p>
+
+            {/* Proctoring Info */}
+            {problem.proctoring?.enabled && (
+                <div style={{
+                    padding: '0.5rem 0.75rem',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    borderRadius: '8px',
+                    marginBottom: '0.75rem',
+                    border: '1px solid rgba(239, 68, 68, 0.15)'
+                }}>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Eye size={12} /> Proctoring Enabled:
+                        {problem.proctoring.videoAudio && <span style={{ marginLeft: '4px' }}>📹 Video</span>}
+                        {problem.proctoring.disableCopyPaste && <span style={{ marginLeft: '4px' }}>📋 No Copy</span>}
+                        {problem.proctoring.trackTabSwitches && <span style={{ marginLeft: '4px' }}>🔒 Tab Track</span>}
+                    </p>
+                </div>
+            )}
+
+            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                <span className={`difficulty-badge ${problem.difficulty?.toLowerCase()}`}>{problem.difficulty}</span>
+                <button onClick={() => handleSolve(problem)} className="btn-create-new" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}><Play size={16} /> Solve</button>
+            </div>
+        </div>
+    )
 
     return (
         <>
-            <div className="cards-grid animate-slideUp">
-                {problems.length === 0 ? (
-                    <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-                        <div className="empty-state-icon"><Code size={40} /></div>
-                        <h3>No Coding Problems</h3>
-                        <p>Your mentor hasn't assigned any problems yet.</p>
-                    </div>
-                ) : (
-                    problems.map(problem => (
-                        <div key={problem.id} className="item-card glass">
-                            <div className="item-card-header">
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'var(--primary-alpha)', color: 'var(--primary)', fontWeight: 700 }}>{problem.type?.toUpperCase()}</span>
-                                    <span className={`status-badge ${problem.status || 'live'}`} style={{ fontSize: '0.65rem' }}>{problem.status || 'Active'}</span>
-                                    {problem.proctoring?.enabled && (
-                                        <span style={{
-                                            fontSize: '0.6rem',
-                                            padding: '3px 8px',
-                                            borderRadius: '4px',
-                                            background: 'rgba(239, 68, 68, 0.15)',
-                                            color: '#ef4444',
-                                            fontWeight: 700,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px'
-                                        }}>
-                                            <Shield size={10} /> PROCTORED
-                                        </span>
-                                    )}
-                                </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-dark)', padding: '2px 8px', borderRadius: '4px' }}>{problem.language}</span>
-                            </div>
-                            <h3 style={{ margin: '0.75rem 0', fontSize: '1.2rem' }}>{problem.title}</h3>
-                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '1rem' }}>{problem.description}</p>
-
-                            {/* Proctoring Info */}
-                            {problem.proctoring?.enabled && (
-                                <div style={{
-                                    padding: '0.5rem 0.75rem',
-                                    background: 'rgba(239, 68, 68, 0.08)',
-                                    borderRadius: '8px',
-                                    marginBottom: '0.75rem',
-                                    border: '1px solid rgba(239, 68, 68, 0.15)'
-                                }}>
-                                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <Eye size={12} /> Proctoring Enabled:
-                                        {problem.proctoring.videoAudio && <span style={{ marginLeft: '4px' }}>📹 Video</span>}
-                                        {problem.proctoring.disableCopyPaste && <span style={{ marginLeft: '4px' }}>📋 No Copy</span>}
-                                        {problem.proctoring.trackTabSwitches && <span style={{ marginLeft: '4px' }}>🔒 Tab Track</span>}
-                                    </p>
-                                </div>
-                            )}
-
-                            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
-                                <span className={`difficulty-badge ${problem.difficulty?.toLowerCase()}`}>{problem.difficulty}</span>
-                                <button onClick={() => handleSolve(problem)} className="btn-create-new" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}><Play size={16} /> Solve</button>
-                            </div>
-                        </div>
-                    ))
-                )}
+            {/* Tab Buttons */}
+            <div style={{ 
+                display: 'flex', 
+                gap: '1rem', 
+                marginBottom: '1.5rem',
+                padding: '0.5rem',
+                background: 'var(--bg-card)',
+                borderRadius: '12px',
+                width: 'fit-content'
+            }}>
+                <button
+                    onClick={() => setActiveTab('coding')}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.2s ease',
+                        background: activeTab === 'coding' ? 'var(--primary)' : 'transparent',
+                        color: activeTab === 'coding' ? 'white' : 'var(--text-muted)'
+                    }}
+                >
+                    <Code size={18} />
+                    Coding Problems
+                    <span style={{
+                        background: activeTab === 'coding' ? 'rgba(255,255,255,0.2)' : 'var(--bg-dark)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem'
+                    }}>{codingProblems.length}</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('sql')}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.2s ease',
+                        background: activeTab === 'sql' ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'transparent',
+                        color: activeTab === 'sql' ? 'white' : 'var(--text-muted)'
+                    }}
+                >
+                    <FileText size={18} />
+                    SQL Problems
+                    <span style={{
+                        background: activeTab === 'sql' ? 'rgba(255,255,255,0.2)' : 'var(--bg-dark)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem'
+                    }}>{sqlProblems.length}</span>
+                </button>
             </div>
+
+            {/* Coding Problems Tab */}
+            {activeTab === 'coding' && (
+                <div className="cards-grid animate-slideUp">
+                    {codingProblems.length === 0 ? (
+                        <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                            <div className="empty-state-icon"><Code size={40} /></div>
+                            <h3>No Coding Problems</h3>
+                            <p>Your mentor hasn't assigned any coding problems yet.</p>
+                        </div>
+                    ) : (
+                        codingProblems.map(problem => renderProblemCard(problem))
+                    )}
+                </div>
+            )}
+
+            {/* SQL Problems Tab */}
+            {activeTab === 'sql' && (
+                <div className="cards-grid animate-slideUp">
+                    {sqlProblems.length === 0 ? (
+                        <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                            <div className="empty-state-icon"><FileText size={40} /></div>
+                            <h3>No SQL Problems</h3>
+                            <p>Your mentor hasn't assigned any SQL problems yet.</p>
+                        </div>
+                    ) : (
+                        sqlProblems.map(problem => renderProblemCard(problem))
+                    )}
+                </div>
+            )}
 
             {/* Use Proctored Editor if proctoring is enabled, otherwise use regular modal */}
             {activeProblem && useProctoredEditor && (
@@ -630,6 +722,8 @@ function CodeEditorModal({ problem, user, onClose }) {
     const [isFullscreen, setIsFullscreen] = useState(false)
     const [showWarning, setShowWarning] = useState(false)
     const [warningMessage, setWarningMessage] = useState('')
+    const [showTestResults, setShowTestResults] = useState(false)
+    const [testResults, setTestResults] = useState(null)
     const containerRef = useRef(null)
 
     // Enter fullscreen on mount
@@ -734,9 +828,33 @@ function CodeEditorModal({ problem, user, onClose }) {
         setStatus('running')
         setOutput('Running code...\n')
         try {
-            const res = await axios.post(`${API_BASE}/run`, { code, language: selectedLang, problemId: problem.id })
+            // First run the code normally
+            const res = await axios.post(`${API_BASE}/run`, { 
+                code, 
+                language: selectedLang, 
+                problemId: problem.id,
+                sqlSchema: problem.sqlSchema  // Pass SQL schema for execution
+            })
             setOutput(res.data.output)
             setStatus(res.data.status === 'error' ? 'error' : 'success')
+            
+            // Also run test cases in background
+            try {
+                const testRes = await axios.post(`${API_BASE}/run-with-tests`, {
+                    problemId: problem.id,
+                    code,
+                    language: selectedLang
+                })
+                if (testRes.data?.testResults) {
+                    setTestResults({
+                        passed: testRes.data.testResults.filter(r => r.passed).length,
+                        total: testRes.data.testResults.length,
+                        results: testRes.data.testResults
+                    })
+                }
+            } catch (testErr) {
+                console.log('No test cases or test run failed:', testErr)
+            }
         } catch (error) {
             setOutput(`Error: ${error.response?.data?.details || 'Failed to execute code.'}`)
             setStatus('error')
@@ -834,12 +952,61 @@ function CodeEditorModal({ problem, user, onClose }) {
                     <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
                     <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
                         {problem.description}
-                        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
-                            <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
-                            <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || problem.testInput || "N/A"}</code>
-                            <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
-                            <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
-                        </div>
+                        
+                        {/* Show SQL-specific fields or regular input/output */}
+                        {(problem.type === 'SQL' || problem.language === 'SQL') ? (
+                            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
+                                {problem.sqlSchema && (
+                                    <>
+                                        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#06b6d4' }}>🗄️</span>
+                                            <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
+                                        </div>
+                                        <pre style={{ 
+                                            color: '#93c5fd', 
+                                            background: '#0f172a', 
+                                            padding: '1rem', 
+                                            borderRadius: '6px', 
+                                            marginBottom: '1rem',
+                                            fontSize: '0.8rem',
+                                            overflowX: 'auto',
+                                            whiteSpace: 'pre-wrap',
+                                            border: '1px solid #334155'
+                                        }}>{problem.sqlSchema}</pre>
+                                    </>
+                                )}
+                                {problem.expectedQueryResult && (
+                                    <>
+                                        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#10b981' }}>📊</span>
+                                            <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
+                                        </div>
+                                        <pre style={{ 
+                                            color: '#4ade80', 
+                                            background: '#0f172a', 
+                                            padding: '1rem', 
+                                            borderRadius: '6px',
+                                            fontSize: '0.8rem',
+                                            overflowX: 'auto',
+                                            whiteSpace: 'pre-wrap',
+                                            border: '1px solid #334155'
+                                        }}>{problem.expectedQueryResult}</pre>
+                                    </>
+                                )}
+                                {!problem.sqlSchema && !problem.expectedQueryResult && (
+                                    <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
+                                        Write a SQL query to solve this problem. Your query will be executed against the database.
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
+                                <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
+                                <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || problem.testInput || "N/A"}</code>
+                                <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
+                                <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
+                            </div>
+                        )}
                     </div>
 
                     {/* AI Hints Section */}
@@ -979,9 +1146,12 @@ function CodeEditorModal({ problem, user, onClose }) {
                             </select>
                         </div>
                         <div style={{ display: 'flex', gap: '0.75rem' }}>
-                            <button onClick={handleRun} disabled={status === 'running' || status === 'submitting'} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                <Play size={16} /> {status === 'running' ? 'Running...' : 'Run Code'}
-                            </button>
+                            {/* Hide Run Code for SQL - SQLValidator handles execution */}
+                            {selectedLang !== 'SQL' && (
+                                <button onClick={handleRun} disabled={status === 'running' || status === 'submitting'} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                    <Play size={16} /> {status === 'running' ? 'Running...' : 'Run Code'}
+                                </button>
+                            )}
                             <button onClick={handleSubmit} disabled={status === 'running' || status === 'submitting' || result} style={{ background: result ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: result ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
                                 <Send size={16} /> {status === 'submitting' ? 'Submitting...' : 'Submit'}
                             </button>
@@ -1005,11 +1175,98 @@ function CodeEditorModal({ problem, user, onClose }) {
                         </div>
                     )}
 
-                    {/* Console Output */}
-                    {output && !result && (
-                        <div style={{ height: '200px', background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #1e293b', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>Console Output</div>
-                            <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflowY: 'auto' }}>{output}</div>
+                    {/* Console Output / Test Results - Hide for SQL */}
+                    {(output || testResults) && !result && selectedLang !== 'SQL' && (
+                        <div style={{ maxHeight: '350px', background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+                            {/* Tab Switcher for Output Types */}
+                            <div style={{ display: 'flex', borderBottom: '1px solid #1e293b', background: '#0f172a' }}>
+                                <button
+                                    onClick={() => setShowTestResults(false)}
+                                    style={{
+                                        padding: '0.75rem 1.25rem',
+                                        background: !showTestResults ? '#1e293b' : 'transparent',
+                                        border: 'none',
+                                        borderBottom: !showTestResults ? '2px solid #3b82f6' : '2px solid transparent',
+                                        color: !showTestResults ? '#60a5fa' : '#64748b',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                >
+                                    <Code size={14} /> Console Output
+                                </button>
+                                <button
+                                    onClick={() => setShowTestResults(true)}
+                                    style={{
+                                        padding: '0.75rem 1.25rem',
+                                        background: showTestResults ? '#1e293b' : 'transparent',
+                                        border: 'none',
+                                        borderBottom: showTestResults ? '2px solid #10b981' : '2px solid transparent',
+                                        color: showTestResults ? '#4ade80' : '#64748b',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                >
+                                    <CheckCircle size={14} /> Test Cases
+                                    {testResults && (
+                                        <span style={{
+                                            padding: '2px 8px',
+                                            borderRadius: '10px',
+                                            fontSize: '0.7rem',
+                                            fontWeight: 600,
+                                            background: testResults.passed === testResults.total ? 'rgba(16, 185, 129, 0.2)' : 'rgba(249, 115, 22, 0.2)',
+                                            color: testResults.passed === testResults.total ? '#10b981' : '#f97316'
+                                        }}>
+                                            {testResults.passed}/{testResults.total}
+                                        </span>
+                                    )}
+                                </button>
+                            </div>
+                            
+                            {/* Console Output Tab */}
+                            {!showTestResults && (
+                                <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflowY: 'auto' }}>
+                                    {output || 'No output yet. Run your code to see results.'}
+                                </div>
+                            )}
+                            
+                            {/* Test Cases Tab */}
+                            {showTestResults && (
+                                <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+                                    <CodeOutputPreview 
+                                        problemId={problem.id}
+                                        code={code}
+                                        language={selectedLang}
+                                        showRunButton={true}
+                                        onRunComplete={(results) => {
+                                            if (results?.testResults) {
+                                                setTestResults({
+                                                    passed: results.testResults.filter(r => r.passed).length,
+                                                    total: results.testResults.length
+                                                })
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* SQL Validator for SQL problems */}
+                    {(problem.type === 'SQL' || problem.language === 'SQL') && !result && (
+                        <div style={{ borderTop: '1px solid #334155', padding: '1rem', background: '#0f172a' }}>
+                            <SQLValidator 
+                                query={code}
+                                onQueryChange={setCode}
+                                schemaContext={problem.sqlSchema}
+                            />
                         </div>
                     )}
                 </div>

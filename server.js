@@ -394,6 +394,8 @@ app.get('/api/problems', async (req, res) => {
                 mentorId: p.mentor_id,
                 sampleInput: p.sample_input,
                 expectedOutput: p.expected_output,
+                sqlSchema: p.sql_schema,
+                expectedQueryResult: p.expected_query_result,
                 createdAt: p.created_at,
                 completedBy: completions.map(c => c.student_id),
                 proctoring: {
@@ -433,6 +435,8 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
                 mentorId: p.mentor_id,
                 sampleInput: p.sample_input,
                 expectedOutput: p.expected_output,
+                sqlSchema: p.sql_schema,
+                expectedQueryResult: p.expected_query_result,
                 createdAt: p.created_at,
                 completedBy: completions.map(c => c.student_id),
                 proctoring: {
@@ -458,6 +462,8 @@ app.post('/api/problems', async (req, res) => {
         const {
             mentorId, title, description, sampleInput, expectedOutput,
             difficulty, type, language, status, deadline,
+            // SQL-specific fields
+            sqlSchema, expectedQueryResult,
             // Proctoring settings
             enableProctoring, enableVideoAudio, disableCopyPaste,
             trackTabSwitches, maxTabSwitches
@@ -465,8 +471,8 @@ app.post('/api/problems', async (req, res) => {
         const createdAt = new Date();
 
         await pool.query(
-            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3]
+            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3]
         );
 
         res.json({
@@ -773,7 +779,21 @@ Scoring Guide:
                     'INSERT IGNORE INTO problem_completions (problem_id, student_id, completed_at) VALUES (?, ?, ?)',
                     [problemId, studentId, submittedAt]
                 );
+                
+                // Log activity and update streak for successful problem completion
+                try {
+                    await updateUserStreak(studentId, { problemsSolved: 1, submissionsCount: 1 });
+                } catch (streakErr) {
+                    console.log('Streak update skipped:', streakErr.message);
+                }
             } catch (e) { /* Ignore if already completed */ }
+        } else {
+            // Still log submission activity even if not accepted
+            try {
+                await updateUserStreak(studentId, { submissionsCount: 1 });
+            } catch (streakErr) {
+                console.log('Streak update skipped:', streakErr.message);
+            }
         }
 
         // Return result to student
@@ -1035,7 +1055,7 @@ app.delete('/api/submissions', async (req, res) => {
 
 app.post('/api/run', async (req, res) => {
     try {
-        const { code, language, problemId } = req.body;
+        const { code, language, problemId, sqlSchema } = req.body;
 
         // Map languages to Piston runtimes
         const languageMap = {
@@ -1049,6 +1069,25 @@ app.post('/api/run', async (req, res) => {
 
         const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
 
+        // For SQL, prepend the schema to create tables before running the query
+        let codeToExecute = code;
+        if (language === 'SQL') {
+            let schemaToUse = sqlSchema;
+            
+            // If no schema passed, try to get from database
+            if (!schemaToUse && problemId) {
+                const [probs] = await pool.query('SELECT sql_schema FROM problems WHERE id = ?', [problemId]);
+                if (probs.length > 0 && probs[0].sql_schema) {
+                    schemaToUse = probs[0].sql_schema;
+                }
+            }
+            
+            // Prepend schema to user's query
+            if (schemaToUse) {
+                codeToExecute = `${schemaToUse}\n\n${code}`;
+            }
+        }
+
         // Piston Execution API
         const response = await fetch('https://emkc.org/api/v2/piston/execute', {
             method: 'POST',
@@ -1058,7 +1097,7 @@ app.post('/api/run', async (req, res) => {
                 version: runtime.version,
                 files: [
                     {
-                        content: code
+                        content: codeToExecute
                     }
                 ]
             })
@@ -1123,9 +1162,12 @@ app.post('/api/ai/generate-problem', async (req, res) => {
     try {
         const { prompt, type, language } = req.body;
         const isProblem = type === 'problem' || type === 'coding';
+        const isSQL = language === 'SQL' || prompt.toLowerCase().includes('sql');
 
         const systemPrompt = isProblem
-            ? `Generate coding problem JSON ({title, description, sampleInput, expectedOutput, difficulty, type="Coding", language="${language || 'Python'}", status="live"}) based on request.`
+            ? isSQL 
+                ? `Generate SQL problem JSON ({title, description, sqlSchema (CREATE TABLE and INSERT statements), expectedQueryResult (the expected query output), difficulty, type="SQL", language="SQL", status="live"}) based on request. The sqlSchema should include table creation and sample data. The expectedQueryResult should show what the correct query should return.`
+                : `Generate coding problem JSON ({title, description, sampleInput, expectedOutput, difficulty, type="Coding", language="${language || 'Python'}", status="live"}) based on request.`
             : `Generate ML task JSON ({title, description, requirements (as a string with items separated by newlines), difficulty, type="machine_learning", status="live"}) based on request. The requirements field MUST be a string, not an array.`;
 
         const chatCompletion = await cerebrasChat([
@@ -1406,6 +1448,13 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
         }
 
         await connection.commit();
+
+        // Log activity and update streak for aptitude completion
+        try {
+            await updateUserStreak(studentId, { aptitudeCompleted: 1 });
+        } catch (streakErr) {
+            console.log('Streak update skipped:', streakErr.message);
+        }
 
         res.json({
             submission: {
@@ -2050,6 +2099,282 @@ app.get('/api/mentor-leaderboard', async (req, res) => {
         }));
 
         res.json(leaderboard);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== TEST CASES API ====================
+
+// Get test cases for a problem (visible only for students, all for mentors/admins)
+app.get('/api/problems/:problemId/test-cases', async (req, res) => {
+    try {
+        const { problemId } = req.params;
+        const { role } = req.query; // 'student', 'mentor', or 'admin'
+
+        let query = 'SELECT * FROM test_cases WHERE problem_id = ?';
+        if (role === 'student') {
+            query += ' AND is_hidden = FALSE';
+        }
+        query += ' ORDER BY created_at ASC';
+
+        const [testCases] = await pool.query(query, [problemId]);
+
+        res.json(testCases.map(tc => ({
+            id: tc.id,
+            problemId: tc.problem_id,
+            input: tc.input,
+            expectedOutput: tc.expected_output,
+            isHidden: tc.is_hidden,
+            points: tc.points,
+            description: tc.description
+        })));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create test case (mentor/admin only)
+app.post('/api/problems/:problemId/test-cases', async (req, res) => {
+    try {
+        const { problemId } = req.params;
+        const { input, expectedOutput, isHidden, points, description } = req.body;
+        const testCaseId = uuidv4();
+
+        await pool.query(
+            `INSERT INTO test_cases (id, problem_id, input, expected_output, is_hidden, points, description) 
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [testCaseId, problemId, input, expectedOutput, isHidden || false, points || 10, description || '']
+        );
+
+        res.json({
+            id: testCaseId,
+            problemId,
+            input,
+            expectedOutput,
+            isHidden: isHidden || false,
+            points: points || 10,
+            description: description || ''
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update test case
+app.put('/api/test-cases/:testCaseId', async (req, res) => {
+    try {
+        const { testCaseId } = req.params;
+        const { input, expectedOutput, isHidden, points, description } = req.body;
+
+        await pool.query(
+            `UPDATE test_cases SET input = ?, expected_output = ?, is_hidden = ?, points = ?, description = ? WHERE id = ?`,
+            [input, expectedOutput, isHidden, points, description, testCaseId]
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete test case
+app.delete('/api/test-cases/:testCaseId', async (req, res) => {
+    try {
+        const { testCaseId } = req.params;
+        await pool.query('DELETE FROM test_cases WHERE id = ?', [testCaseId]);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Run code against all test cases
+app.post('/api/run-with-tests', async (req, res) => {
+    try {
+        const { code, language, problemId, sqlSchema } = req.body;
+
+        // Get all test cases for this problem
+        const [testCases] = await pool.query(
+            'SELECT * FROM test_cases WHERE problem_id = ? ORDER BY created_at ASC',
+            [problemId]
+        );
+
+        // Language mapping for Piston
+        const languageMap = {
+            'Python': { language: 'python', version: '3.10.0' },
+            'JavaScript': { language: 'javascript', version: '18.15.0' },
+            'Java': { language: 'java', version: '15.0.2' },
+            'C': { language: 'c', version: '10.2.0' },
+            'C++': { language: 'cpp', version: '10.2.0' },
+            'SQL': { language: 'sqlite3', version: '3.36.0' }
+        };
+
+        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
+        const results = [];
+        let passedCount = 0;
+        let totalPoints = 0;
+        let earnedPoints = 0;
+
+        // If no test cases, run code once and return output
+        if (testCases.length === 0) {
+            let codeToExecute = code;
+            if (language === 'SQL' && sqlSchema) {
+                codeToExecute = `${sqlSchema}\n\n${code}`;
+            }
+
+            const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: runtime.language,
+                    version: runtime.version,
+                    files: [{ content: codeToExecute }]
+                })
+            });
+
+            const data = await response.json();
+            return res.json({
+                hasTestCases: false,
+                output: data.run?.output || 'No output',
+                status: data.run?.code === 0 ? 'success' : 'error',
+                results: []
+            });
+        }
+
+        // Run against each test case
+        for (const tc of testCases) {
+            totalPoints += tc.points || 10;
+
+            let codeWithInput = code;
+            if (language === 'SQL') {
+                codeWithInput = sqlSchema ? `${sqlSchema}\n\n${code}` : code;
+            } else {
+                // For other languages, we might need to handle input differently
+                // This is a simplified version - in production you'd want stdin support
+                codeWithInput = code;
+            }
+
+            try {
+                const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        language: runtime.language,
+                        version: runtime.version,
+                        files: [{ content: codeWithInput }],
+                        stdin: tc.input || ''
+                    })
+                });
+
+                const data = await response.json();
+                const actualOutput = (data.run?.output || '').trim();
+                const expectedOutput = (tc.expected_output || '').trim();
+                const passed = actualOutput === expectedOutput;
+
+                if (passed) {
+                    passedCount++;
+                    earnedPoints += tc.points || 10;
+                }
+
+                results.push({
+                    testCaseId: tc.id,
+                    description: tc.description,
+                    input: tc.input,
+                    expectedOutput: tc.is_hidden ? '(Hidden)' : expectedOutput,
+                    actualOutput: tc.is_hidden ? (passed ? 'Correct' : 'Incorrect') : actualOutput,
+                    passed,
+                    isHidden: tc.is_hidden,
+                    points: tc.points || 10,
+                    earnedPoints: passed ? (tc.points || 10) : 0
+                });
+            } catch (err) {
+                results.push({
+                    testCaseId: tc.id,
+                    description: tc.description,
+                    input: tc.input,
+                    expectedOutput: tc.is_hidden ? '(Hidden)' : tc.expected_output,
+                    actualOutput: 'Execution Error',
+                    passed: false,
+                    isHidden: tc.is_hidden,
+                    points: tc.points || 10,
+                    earnedPoints: 0,
+                    error: err.message
+                });
+            }
+        }
+
+        res.json({
+            hasTestCases: true,
+            success: true,
+            totalTestCases: testCases.length,
+            passedTestCases: passedCount,
+            totalPoints,
+            earnedPoints,
+            score: earnedPoints,
+            percentage: Math.round((passedCount / testCases.length) * 100),
+            testResults: results
+        });
+
+    } catch (error) {
+        console.error('Run with tests error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== SQL EXECUTOR ====================
+
+// Execute SQL and get visualization data
+app.post('/api/sql/execute-visualize', async (req, res) => {
+    try {
+        const { query, schema } = req.body;
+
+        // Execute via Piston
+        let fullQuery = schema ? `${schema}\n\n${query}` : query;
+
+        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                language: 'sqlite3',
+                version: '3.36.0',
+                files: [{ content: fullQuery }]
+            })
+        });
+
+        const data = await response.json();
+        const output = data.run?.output || '';
+        const isError = data.run?.code !== 0;
+
+        // Parse the output into table format
+        let parsedData = { columns: [], rows: [], rawOutput: output };
+
+        if (!isError && output.trim()) {
+            const lines = output.trim().split('\n');
+            if (lines.length > 0) {
+                // Try to detect if it's tabular output
+                const firstLine = lines[0];
+                if (firstLine.includes('|')) {
+                    // Pipe-separated format
+                    parsedData.columns = firstLine.split('|').map(c => c.trim()).filter(c => c);
+                    parsedData.rows = lines.slice(1)
+                        .filter(line => line.includes('|') && !line.match(/^[\-\+]+$/))
+                        .map(line => line.split('|').map(c => c.trim()).filter(c => c));
+                } else {
+                    // Plain output - parse as column-separated
+                    parsedData.columns = ['Result'];
+                    parsedData.rows = lines.map(line => [line]);
+                }
+            }
+        }
+
+        res.json({
+            success: !isError,
+            output,
+            parsedData,
+            executionTime: data.run?.time || 0,
+            error: isError ? output : null
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

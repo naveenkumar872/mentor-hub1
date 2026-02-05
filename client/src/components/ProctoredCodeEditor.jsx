@@ -402,7 +402,8 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             const res = await axios.post(`${API_BASE}/run`, {
                 code,
                 language: problem.language,
-                problemId: problem.id
+                problemId: problem.id,
+                sqlSchema: problem.sqlSchema  // Pass SQL schema for execution
             })
             setOutput(res.data.output || res.data.error || 'No output')
         } catch (err) {
@@ -530,12 +531,61 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                     <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
                     <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
                         {problem.description}
-                        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
-                            <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
-                            <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || "N/A"}</code>
-                            <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
-                            <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
-                        </div>
+                        
+                        {/* Show SQL-specific fields or regular input/output */}
+                        {(problem.type === 'SQL' || problem.language === 'SQL') ? (
+                            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
+                                {problem.sqlSchema && (
+                                    <>
+                                        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#06b6d4' }}>🗄️</span>
+                                            <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
+                                        </div>
+                                        <pre style={{ 
+                                            color: '#93c5fd', 
+                                            background: '#0f172a', 
+                                            padding: '1rem', 
+                                            borderRadius: '6px', 
+                                            marginBottom: '1rem',
+                                            fontSize: '0.8rem',
+                                            overflowX: 'auto',
+                                            whiteSpace: 'pre-wrap',
+                                            border: '1px solid #334155'
+                                        }}>{problem.sqlSchema}</pre>
+                                    </>
+                                )}
+                                {problem.expectedQueryResult && (
+                                    <>
+                                        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#10b981' }}>📊</span>
+                                            <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
+                                        </div>
+                                        <pre style={{ 
+                                            color: '#4ade80', 
+                                            background: '#0f172a', 
+                                            padding: '1rem', 
+                                            borderRadius: '6px',
+                                            fontSize: '0.8rem',
+                                            overflowX: 'auto',
+                                            whiteSpace: 'pre-wrap',
+                                            border: '1px solid #334155'
+                                        }}>{problem.expectedQueryResult}</pre>
+                                    </>
+                                )}
+                                {!problem.sqlSchema && !problem.expectedQueryResult && (
+                                    <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
+                                        Write a SQL query to solve this problem. Your query will be executed against the database.
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
+                                <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
+                                <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || "N/A"}</code>
+                                <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
+                                <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
+                            </div>
+                        )}
                     </div>
 
                     {/* AI Hints Section */}

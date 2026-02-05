@@ -48,9 +48,11 @@
     .admin-stats-grid-6 {
         grid-template-columns: repeat(2, 1fr) !important;
     }
+
     .admin-charts-grid {
         grid-template-columns: 1fr !important;
     }
+
     .admin-bottom-grid {
         grid-template-columns: 1fr !important;
     }
@@ -307,7 +309,7 @@
     left: 0;
     right: 0;
     height: 50%;
-    background: linear-gradient(to bottom, rgba(255,255,255,0.25), transparent);
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.25), transparent);
     border-radius: 6px 6px 0 0;
 }
 
@@ -573,10 +575,22 @@
     letter-spacing: 0.03em;
 }
 
-.rank-1-score { color: #fbbf24; }
-.rank-2-score { color: #94a3b8; }
-.rank-3-score { color: #f97316; }
-.rank-4-score, .rank-5-score { color: #10b981; }
+.rank-1-score {
+    color: #fbbf24;
+}
+
+.rank-2-score {
+    color: #94a3b8;
+}
+
+.rank-3-score {
+    color: #f97316;
+}
+
+.rank-4-score,
+.rank-5-score {
+    color: #10b981;
+}
 
 .empty-state-small {
     flex: 1;
@@ -645,19 +659,56 @@
 }
 
 /* Stat Card Color Variants */
-.stat-card-blue { --stat-accent: #3b82f6; --stat-glow: rgba(59, 130, 246, 0.15); }
-.stat-card-green { --stat-accent: #10b981; --stat-glow: rgba(16, 185, 129, 0.15); }
-.stat-card-pink { --stat-accent: #ec4899; --stat-glow: rgba(236, 72, 153, 0.15); }
-.stat-card-emerald { --stat-accent: #34d399; --stat-glow: rgba(52, 211, 153, 0.15); }
-.stat-card-purple { --stat-accent: #8b5cf6; --stat-glow: rgba(139, 92, 246, 0.15); }
-.stat-card-orange { --stat-accent: #f97316; --stat-glow: rgba(249, 115, 22, 0.15); }
+.stat-card-blue {
+    --stat-accent: #3b82f6;
+    --stat-glow: rgba(59, 130, 246, 0.15);
+}
+
+.stat-card-green {
+    --stat-accent: #10b981;
+    --stat-glow: rgba(16, 185, 129, 0.15);
+}
+
+.stat-card-pink {
+    --stat-accent: #ec4899;
+    --stat-glow: rgba(236, 72, 153, 0.15);
+}
+
+.stat-card-emerald {
+    --stat-accent: #34d399;
+    --stat-glow: rgba(52, 211, 153, 0.15);
+}
+
+.stat-card-purple {
+    --stat-accent: #8b5cf6;
+    --stat-glow: rgba(139, 92, 246, 0.15);
+}
+
+.stat-card-orange {
+    --stat-accent: #f97316;
+    --stat-glow: rgba(249, 115, 22, 0.15);
+}
 
 /* Leaderboard rank colors */
-.leaderboard-item:nth-child(1) { --rank-color: #fbbf24; }
-.leaderboard-item:nth-child(2) { --rank-color: #94a3b8; }
-.leaderboard-item:nth-child(3) { --rank-color: #f97316; }
-.leaderboard-item:nth-child(4) { --rank-color: #10b981; }
-.leaderboard-item:nth-child(5) { --rank-color: #06b6d4; }
+.leaderboard-item:nth-child(1) {
+    --rank-color: #fbbf24;
+}
+
+.leaderboard-item:nth-child(2) {
+    --rank-color: #94a3b8;
+}
+
+.leaderboard-item:nth-child(3) {
+    --rank-color: #f97316;
+}
+
+.leaderboard-item:nth-child(4) {
+    --rank-color: #10b981;
+}
+
+.leaderboard-item:nth-child(5) {
+    --rank-color: #06b6d4;
+}
 
 /* ==================== MENTOR DASHBOARD STYLES ==================== */
 
@@ -722,6 +773,7 @@
     .mentor-charts-grid {
         grid-template-columns: 1fr;
     }
+
     .mentor-bottom-grid {
         grid-template-columns: 1fr 1fr;
     }
@@ -2010,10 +2062,13 @@ td {
 }
 
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
         transform: scale(1);
     }
+
     50% {
         opacity: 0.85;
         transform: scale(1.02);

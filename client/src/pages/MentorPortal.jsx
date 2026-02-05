@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles, Brain, Target, XCircle, Search, Mail, Calendar, BookOpen } from 'lucide-react'
+import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles, Brain, Target, XCircle, Search, Mail, Calendar, BookOpen, Settings, ClipboardList } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
 import AptitudeReportModal from '../components/AptitudeReportModal'
+import TestCasesManager from '../components/TestCasesManager'
 import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
@@ -436,7 +437,9 @@ function UploadTasks({ user }) {
     }
 
     const canDelete = (task) => {
-        return task.completedBy?.length >= students.length && students.length > 0
+        // Allow deletion if no one has started (0 submissions) OR if everyone has finished
+        const completedCount = task.completedBy?.length || 0;
+        return completedCount === 0 || (completedCount >= students.length && students.length > 0);
     }
 
     if (loading) return <div className="loading-spinner"></div>
@@ -597,7 +600,7 @@ function UploadTasks({ user }) {
                                                 cursor: canDelete(t) ? 'pointer' : 'not-allowed',
                                                 fontSize: '0.8rem'
                                             }}
-                                            title={canDelete(t) ? 'Delete task' : 'Can only delete when all students complete'}
+                                            title={canDelete(t) ? 'Delete task' : 'Cannot delete while students are in progress'}
                                         >
                                             <Trash2 size={14} />
                                         </button>
@@ -627,6 +630,8 @@ function UploadProblems({ user }) {
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
     const [showAIChat, setShowAIChat] = useState(false)
+    const [activeTab, setActiveTab] = useState('coding') // 'coding' or 'sql'
+    const [selectedProblemForTestCases, setSelectedProblemForTestCases] = useState(null)
     const [problem, setProblem] = useState({
         title: '',
         type: 'Coding',
@@ -637,6 +642,9 @@ function UploadProblems({ user }) {
         expectedOutput: '',
         deadline: '',
         status: 'live',
+        // SQL specific fields
+        sqlSchema: '',
+        expectedQueryResult: '',
         // Proctoring settings
         enableProctoring: false,
         enableVideoAudio: false,
@@ -645,16 +653,22 @@ function UploadProblems({ user }) {
         maxTabSwitches: 3
     })
 
+    // Check if SQL is selected
+    const isSQLProblem = problem.type === 'SQL' || problem.language === 'SQL'
+
     // AI Chatbot handler - auto-fills the problem form
     const handleAIGenerate = (generated) => {
+        const isSQL = generated.type === 'SQL' || generated.language === 'SQL'
         setProblem({
             title: generated.title || '',
             type: generated.type || 'Coding',
             language: generated.language || 'Python',
             difficulty: generated.difficulty || 'Medium',
             description: generated.description || '',
-            testInput: generated.sampleInput || '',
-            expectedOutput: generated.expectedOutput || '',
+            testInput: isSQL ? '' : (generated.sampleInput || ''),
+            expectedOutput: isSQL ? '' : (generated.expectedOutput || ''),
+            sqlSchema: isSQL ? (generated.sqlSchema || generated.schema || '') : '',
+            expectedQueryResult: isSQL ? (generated.expectedQueryResult || generated.expectedResult || '') : '',
             deadline: problem.deadline,
             status: generated.status || 'live',
             enableProctoring: problem.enableProctoring,
@@ -714,10 +728,17 @@ function UploadProblems({ user }) {
     }
 
     const canDelete = (problem) => {
-        return problem.completedBy?.length >= students.length && students.length > 0
+        // Allow deletion if no one has started (0 submissions) OR if everyone has finished
+        const completedCount = problem.completedBy?.length || 0;
+        return completedCount === 0 || (completedCount >= students.length && students.length > 0);
     }
 
     if (loading) return <div className="loading-spinner"></div>
+
+    // Separate problems into Coding and SQL
+    const codingProblems = problems.filter(p => p.language !== 'SQL' && p.type !== 'SQL')
+    const sqlProblems = problems.filter(p => p.language === 'SQL' || p.type === 'SQL')
+    const displayedProblems = activeTab === 'coding' ? codingProblems : sqlProblems
 
     return (
         <div className="animate-fadeIn">
@@ -756,6 +777,70 @@ function UploadProblems({ user }) {
                 </div>
             </div>
 
+            {/* Tab Buttons */}
+            <div style={{
+                display: 'flex',
+                gap: '1rem',
+                marginBottom: '1.5rem',
+                padding: '0.5rem',
+                background: 'var(--bg-card)',
+                borderRadius: '12px',
+                width: 'fit-content'
+            }}>
+                <button
+                    onClick={() => setActiveTab('coding')}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.2s ease',
+                        background: activeTab === 'coding' ? 'var(--primary)' : 'transparent',
+                        color: activeTab === 'coding' ? 'white' : 'var(--text-muted)'
+                    }}
+                >
+                    <Code size={18} />
+                    Coding Problems
+                    <span style={{
+                        background: activeTab === 'coding' ? 'rgba(255,255,255,0.2)' : 'var(--bg-dark)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem'
+                    }}>{codingProblems.length}</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('sql')}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        transition: 'all 0.2s ease',
+                        background: activeTab === 'sql' ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'transparent',
+                        color: activeTab === 'sql' ? 'white' : 'var(--text-muted)'
+                    }}
+                >
+                    <FileText size={18} />
+                    SQL Problems
+                    <span style={{
+                        background: activeTab === 'sql' ? 'rgba(255,255,255,0.2)' : 'var(--bg-dark)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem'
+                    }}>{sqlProblems.length}</span>
+                </button>
+            </div>
+
             {/* Problem Leaderboard Table */}
             <div className="card glass">
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
@@ -776,7 +861,13 @@ function UploadProblems({ user }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {problems.map(p => (
+                            {displayedProblems.length === 0 ? (
+                                <tr>
+                                    <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                                        No {activeTab === 'sql' ? 'SQL' : 'coding'} problems found. Create one to get started!
+                                    </td>
+                                </tr>
+                            ) : displayedProblems.map(p => (
                                 <tr key={p.id}>
                                     <td style={{ fontWeight: 600 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -822,22 +913,44 @@ function UploadProblems({ user }) {
                                     </td>
                                     <td><span className={`status-badge ${p.status}`}>{p.status}</span></td>
                                     <td>
-                                        <button
-                                            onClick={() => handleDelete(p.id)}
-                                            disabled={!canDelete(p)}
-                                            style={{
-                                                background: canDelete(p) ? 'rgba(239, 68, 68, 0.1)' : 'rgba(148, 163, 184, 0.1)',
-                                                border: 'none',
-                                                color: canDelete(p) ? '#ef4444' : '#64748b',
-                                                padding: '0.4rem 0.75rem',
-                                                borderRadius: '6px',
-                                                cursor: canDelete(p) ? 'pointer' : 'not-allowed',
-                                                fontSize: '0.8rem'
-                                            }}
-                                            title={canDelete(p) ? 'Delete problem' : 'Can only delete when all students complete'}
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                onClick={() => setSelectedProblemForTestCases(p)}
+                                                disabled={p.language === 'SQL' || p.type === 'SQL'}
+                                                style={{
+                                                    background: (p.language === 'SQL' || p.type === 'SQL') ? 'rgba(100, 116, 139, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                                                    border: 'none',
+                                                    color: (p.language === 'SQL' || p.type === 'SQL') ? '#64748b' : '#10b981',
+                                                    padding: '0.4rem 0.75rem',
+                                                    borderRadius: '6px',
+                                                    cursor: (p.language === 'SQL' || p.type === 'SQL') ? 'not-allowed' : 'pointer',
+                                                    fontSize: '0.8rem',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    opacity: (p.language === 'SQL' || p.type === 'SQL') ? 0.5 : 1
+                                                }}
+                                                title={(p.language === 'SQL' || p.type === 'SQL') ? 'Test cases not available for SQL problems' : 'Manage Test Cases'}
+                                            >
+                                                <ClipboardList size={14} /> Tests
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(p.id)}
+                                                disabled={!canDelete(p)}
+                                                style={{
+                                                    background: canDelete(p) ? 'rgba(239, 68, 68, 0.1)' : 'rgba(148, 163, 184, 0.1)',
+                                                    border: 'none',
+                                                    color: canDelete(p) ? '#ef4444' : '#64748b',
+                                                    padding: '0.4rem 0.75rem',
+                                                    borderRadius: '6px',
+                                                    cursor: canDelete(p) ? 'pointer' : 'not-allowed',
+                                                    fontSize: '0.8rem'
+                                                }}
+                                                title={canDelete(p) ? 'Delete problem' : 'Cannot delete while students are in progress'}
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -868,7 +981,14 @@ function UploadProblems({ user }) {
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Problem Type</label>
-                                        <select value={problem.type} onChange={(e) => setProblem({ ...problem, type: e.target.value })}>
+                                        <select value={problem.type} onChange={(e) => {
+                                            const newType = e.target.value
+                                            setProblem({
+                                                ...problem,
+                                                type: newType,
+                                                language: newType === 'SQL' ? 'SQL' : problem.language === 'SQL' ? 'Python' : problem.language
+                                            })
+                                        }}>
                                             <option value="Coding">Coding</option>
                                             <option value="SQL">SQL</option>
                                             <option value="Algorithm">Algorithm</option>
@@ -879,7 +999,17 @@ function UploadProblems({ user }) {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
                                     <div className="form-group">
                                         <label className="form-label">Language</label>
-                                        <select value={problem.language} onChange={(e) => setProblem({ ...problem, language: e.target.value })}>
+                                        <select
+                                            value={problem.language}
+                                            onChange={(e) => {
+                                                const newLang = e.target.value
+                                                setProblem({
+                                                    ...problem,
+                                                    language: newLang,
+                                                    type: newLang === 'SQL' ? 'SQL' : problem.type === 'SQL' ? 'Coding' : problem.type
+                                                })
+                                            }}
+                                        >
                                             <option value="Python">Python</option>
                                             <option value="JavaScript">JavaScript</option>
                                             <option value="Java">Java</option>
@@ -911,16 +1041,52 @@ function UploadProblems({ user }) {
                                     <textarea rows="5" placeholder="Describe the problem..." value={problem.description} onChange={(e) => setProblem({ ...problem, description: e.target.value })} required></textarea>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-                                    <div className="form-group">
-                                        <label className="form-label">Sample Input</label>
-                                        <input type="text" placeholder="e.g., [1, 2, 3]" value={problem.testInput} onChange={(e) => setProblem({ ...problem, testInput: e.target.value })} />
+                                {/* SQL-specific fields */}
+                                {isSQLProblem ? (
+                                    <>
+                                        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <Code size={14} color="#06b6d4" /> Database Schema (CREATE TABLE statements)
+                                            </label>
+                                            <textarea
+                                                rows="6"
+                                                placeholder="CREATE TABLE employees (&#10;  id INT PRIMARY KEY,&#10;  name VARCHAR(100),&#10;  department VARCHAR(50),&#10;  salary DECIMAL(10,2)&#10;);&#10;&#10;INSERT INTO employees VALUES (1, 'John', 'IT', 50000);"
+                                                value={problem.sqlSchema}
+                                                onChange={(e) => setProblem({ ...problem, sqlSchema: e.target.value })}
+                                                style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                                            />
+                                            <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                                                Include CREATE TABLE and INSERT statements to set up the test database
+                                            </small>
+                                        </div>
+                                        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <CheckCircle size={14} color="#10b981" /> Expected Query Result
+                                            </label>
+                                            <textarea
+                                                rows="4"
+                                                placeholder="id | name | salary&#10;1  | John | 50000&#10;2  | Jane | 60000"
+                                                value={problem.expectedQueryResult}
+                                                onChange={(e) => setProblem({ ...problem, expectedQueryResult: e.target.value })}
+                                                style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                                            />
+                                            <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                                                The expected output when the correct SQL query is executed
+                                            </small>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Sample Input</label>
+                                            <input type="text" placeholder="e.g., [1, 2, 3]" value={problem.testInput} onChange={(e) => setProblem({ ...problem, testInput: e.target.value })} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Expected Output</label>
+                                            <input type="text" placeholder="e.g., 6" value={problem.expectedOutput} onChange={(e) => setProblem({ ...problem, expectedOutput: e.target.value })} />
+                                        </div>
                                     </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Expected Output</label>
-                                        <input type="text" placeholder="e.g., 6" value={problem.expectedOutput} onChange={(e) => setProblem({ ...problem, expectedOutput: e.target.value })} />
-                                    </div>
-                                </div>
+                                )}
 
                                 <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                                     <label className="form-label">Deadline (Optional)</label>
@@ -1026,6 +1192,15 @@ function UploadProblems({ user }) {
                 onClose={() => setShowAIChat(false)}
                 onGenerate={handleAIGenerate}
             />
+
+            {/* Test Cases Manager Modal */}
+            {selectedProblemForTestCases && (
+                <TestCasesManager
+                    problemId={selectedProblemForTestCases.id}
+                    problemTitle={selectedProblemForTestCases.title}
+                    onClose={() => setSelectedProblemForTestCases(null)}
+                />
+            )}
         </div>
     )
 }

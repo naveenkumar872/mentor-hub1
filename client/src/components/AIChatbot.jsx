@@ -11,7 +11,7 @@ function AIChatbot({ context = 'problem', onGenerate, isOpen, onClose }) {
             role: 'assistant',
             content: context === 'task'
                 ? `👋 Hi! I'm your AI assistant for creating ML/AI tasks. I can help you:\n\n• **Brainstorm** task ideas based on topics\n• **Generate** complete task specifications\n• **Suggest** improvements to your descriptions\n\nTry asking: "Create a beginner-friendly sentiment analysis task" or "I need an image classification project"`
-                : `👋 Hi! I'm your AI assistant for creating coding problems. I can help you:\n\n• **Brainstorm** problem ideas by topic or difficulty\n• **Generate** complete problem specifications\n• **Suggest** test cases and edge cases\n\nTry asking: "Create an easy array problem about finding duplicates" or "I need a hard dynamic programming challenge"`
+                : `👋 Hi! I'm your AI assistant for creating coding problems. I can help you:\n\n• **Brainstorm** problem ideas by topic or difficulty\n• **Generate** complete problem specifications (including **SQL queries**!)\n• **Suggest** test cases and edge cases\n\nTry asking:\n• "Create an easy array problem about finding duplicates"\n• "Generate a SQL problem about employee salaries"\n• "I need a hard dynamic programming challenge"`
         }
     ])
     const [input, setInput] = useState('')
@@ -36,20 +36,30 @@ function AIChatbot({ context = 'problem', onGenerate, isOpen, onClose }) {
         setInput('')
         setIsLoading(true)
 
+        // Detect if user is asking for SQL problem
+        const isSQL = input.toLowerCase().includes('sql') || input.toLowerCase().includes('query') || input.toLowerCase().includes('database')
+
         try {
             // First try the quick generate endpoint for direct requests
             if (input.toLowerCase().includes('create') || input.toLowerCase().includes('generate') || input.toLowerCase().includes('make')) {
                 const genRes = await axios.post(`${API_BASE}/ai/generate-problem`, {
                     prompt: input,
                     type: context === 'task' ? 'task' : 'problem',
-                    language: 'Python'
+                    language: isSQL ? 'SQL' : 'Python'
                 })
 
                 if (genRes.data.success && genRes.data.generated) {
                     const generated = genRes.data.generated
-                    const formattedResponse = context === 'task'
-                        ? `✨ I've generated an ML task for you!\n\n**${generated.title}**\n\n📋 **Type:** ${generated.type}\n⚡ **Difficulty:** ${generated.difficulty}\n\n📝 **Description:**\n${generated.description}\n\n✅ **Requirements:**\n${generated.requirements}\n\n---\n*Click "Use This" to auto-fill the form, or ask me to modify it!*`
-                        : `✨ I've generated a coding problem for you!\n\n**${generated.title}**\n\n💻 **Language:** ${generated.language}\n⚡ **Difficulty:** ${generated.difficulty}\n\n📝 **Description:**\n${generated.description}\n\n📥 **Sample Input:** \`${generated.sampleInput}\`\n📤 **Expected Output:** \`${generated.expectedOutput}\`\n\n---\n*Click "Use This" to auto-fill the form, or ask me to modify it!*`
+                    const isSQLGenerated = generated.type === 'SQL' || generated.language === 'SQL'
+                    
+                    let formattedResponse
+                    if (context === 'task') {
+                        formattedResponse = `✨ I've generated an ML task for you!\n\n**${generated.title}**\n\n📋 **Type:** ${generated.type}\n⚡ **Difficulty:** ${generated.difficulty}\n\n📝 **Description:**\n${generated.description}\n\n✅ **Requirements:**\n${generated.requirements}\n\n---\n*Click "Use This" to auto-fill the form, or ask me to modify it!*`
+                    } else if (isSQLGenerated) {
+                        formattedResponse = `✨ I've generated a SQL problem for you!\n\n**${generated.title}**\n\n💾 **Type:** SQL Query\n⚡ **Difficulty:** ${generated.difficulty}\n\n📝 **Description:**\n${generated.description}\n\n🗄️ **Database Schema:**\n\`\`\`sql\n${generated.sqlSchema || 'Schema will be provided'}\n\`\`\`\n\n📊 **Expected Result:**\n\`\`\`\n${generated.expectedQueryResult || generated.expectedResult || 'Result preview'}\n\`\`\`\n\n---\n*Click "Use This" to auto-fill the form, or ask me to modify it!*`
+                    } else {
+                        formattedResponse = `✨ I've generated a coding problem for you!\n\n**${generated.title}**\n\n💻 **Language:** ${generated.language}\n⚡ **Difficulty:** ${generated.difficulty}\n\n📝 **Description:**\n${generated.description}\n\n📥 **Sample Input:** \`${generated.sampleInput}\`\n📤 **Expected Output:** \`${generated.expectedOutput}\`\n\n---\n*Click "Use This" to auto-fill the form, or ask me to modify it!*`
+                    }
 
                     setMessages(prev => [...prev, {
                         role: 'assistant',
