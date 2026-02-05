@@ -5,7 +5,7 @@ import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
 import * as cocoSsd from '@tensorflow-models/coco-ssd'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Language configurations
 const LANGUAGE_CONFIG = {
@@ -37,15 +37,12 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const [videoEnabled, setVideoEnabled] = useState(false)
     const [audioEnabled, setAudioEnabled] = useState(false)
     const [mediaStream, setMediaStream] = useState(null)
-    const [isRecording, setIsRecording] = useState(false)
     const [cameraBlocked, setCameraBlocked] = useState(false)
     const [cameraBlockedCount, setCameraBlockedCount] = useState(0)
     const [phoneDetected, setPhoneDetected] = useState(false)
     const [phoneDetectionCount, setPhoneDetectionCount] = useState(0)
     const [modelLoaded, setModelLoaded] = useState(false)
     const videoRef = useRef(null)
-    const mediaRecorderRef = useRef(null)
-    const recordedChunksRef = useRef([])
     const canvasRef = useRef(null)
     const cameraCheckIntervalRef = useRef(null)
     const cameraBlockedRef = useRef(false)
@@ -62,7 +59,6 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             initializeMedia()
         }
         return () => {
-            stopRecording()
             stopCameraCheck()
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop())
@@ -82,8 +78,6 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             if (videoRef.current) {
                 videoRef.current.srcObject = stream
             }
-            // Start recording immediately
-            startRecording(stream)
             // Start camera obstruction detection
             startCameraCheck()
             // Load AI model for phone detection
@@ -95,54 +89,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         }
     }
 
-    const startRecording = (stream) => {
-        try {
-            recordedChunksRef.current = []
-            const options = { mimeType: 'video/webm;codecs=vp9,opus' }
-            
-            // Fallback for browsers that don't support vp9
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'video/webm;codecs=vp8,opus'
-            }
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'video/webm'
-            }
-            
-            const mediaRecorder = new MediaRecorder(stream, options)
-            mediaRecorderRef.current = mediaRecorder
-            
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
-                    recordedChunksRef.current.push(event.data)
-                }
-            }
-            
-            mediaRecorder.onstart = () => {
-                setIsRecording(true)
-                console.log('🎥 Recording started')
-            }
-            
-            mediaRecorder.onstop = () => {
-                setIsRecording(false)
-                console.log('🎥 Recording stopped, chunks:', recordedChunksRef.current.length)
-            }
-            
-            // Record in chunks every 5 seconds for safety
-            mediaRecorder.start(5000)
-        } catch (err) {
-            console.error('Failed to start recording:', err)
-        }
-    }
-
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop()
-        }
-    }
-
     const stopAllMedia = () => {
-        // Stop recording
-        stopRecording()
         // Stop camera obstruction detection
         stopCameraCheck()
         // Stop phone detection
@@ -161,17 +108,11 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         }
         setVideoEnabled(false)
         setAudioEnabled(false)
-        setIsRecording(false)
     }
 
     const handleClose = () => {
         stopAllMedia()
         onClose()
-    }
-
-    const getRecordedBlob = () => {
-        if (recordedChunksRef.current.length === 0) return null
-        return new Blob(recordedChunksRef.current, { type: 'video/webm' })
     }
 
     // Camera obstruction detection - checks if camera is blocked/covered
@@ -456,36 +397,18 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         const timeSpent = Math.round((Date.now() - startTime) / 1000)
         
         try {
-            // Stop recording and get the video blob
-            stopRecording()
-            
-            // Wait a moment for the recorder to finalize
-            await new Promise(resolve => setTimeout(resolve, 500))
-            
-            // Create form data to send both the submission and video
-            const formData = new FormData()
-            formData.append('studentId', user.id)
-            formData.append('problemId', problem.id)
-            formData.append('code', code)
-            formData.append('language', problem.language)
-            formData.append('submissionType', 'editor')
-            formData.append('tabSwitches', tabSwitches)
-            formData.append('copyPasteAttempts', copyPasteAttempts)
-            formData.append('cameraBlockedCount', cameraBlockedCount)
-            formData.append('phoneDetectionCount', phoneDetectionCount)
-            formData.append('timeSpent', timeSpent)
-            formData.append('proctored', proctoring.enabled ? 'true' : 'false')
-            
-            // Add video recording if available
-            const videoBlob = getRecordedBlob()
-            if (videoBlob && proctoring.videoAudio) {
-                const videoFile = new File([videoBlob], `proctoring_${user.id}_${problem.id}_${Date.now()}.webm`, { type: 'video/webm' })
-                formData.append('proctoringVideo', videoFile)
-                console.log('📹 Video attached to submission, size:', (videoBlob.size / 1024 / 1024).toFixed(2), 'MB')
-            }
-            
-            const response = await axios.post(`${API_BASE}/submissions/proctored`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+            const response = await axios.post(`${API_BASE}/submissions/proctored`, {
+                studentId: user.id,
+                problemId: problem.id,
+                code,
+                language: problem.language,
+                submissionType: 'editor',
+                tabSwitches,
+                copyPasteAttempts,
+                cameraBlockedCount,
+                phoneDetectionCount,
+                timeSpent,
+                proctored: proctoring.enabled
             })
             
             // Stop all media (camera, microphone, recording)
@@ -779,7 +702,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                     objectFit: 'contain',
                                     borderRadius: '8px',
                                     background: '#000',
-                                    border: cameraBlocked ? '3px solid #ef4444' : (isRecording ? '2px solid #10b981' : '2px solid transparent'),
+                                    border: cameraBlocked ? '3px solid #ef4444' : '2px solid #10b981',
                                     opacity: cameraBlocked ? 0.5 : 1
                                 }}
                             />
@@ -806,14 +729,14 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                             <p style={{ 
                                 margin: '0.5rem 0 0', 
                                 fontSize: '0.7rem', 
-                                color: cameraBlocked ? '#ef4444' : (isRecording ? '#10b981' : 'var(--text-muted)'), 
+                                color: cameraBlocked ? '#ef4444' : '#10b981', 
                                 textAlign: 'center',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 gap: '0.5rem'
                             }}>
-                                {isRecording && !cameraBlocked && (
+                                {!cameraBlocked && (
                                     <span style={{
                                         width: '8px',
                                         height: '8px',
@@ -822,7 +745,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                         animation: 'pulse 1s infinite'
                                     }}></span>
                                 )}
-                                {cameraBlocked ? '⚠️ Uncover your camera!' : (isRecording ? `REC • ${modelLoaded ? '🤖 AI Active' : '⏳ Loading AI...'}` : '📹 Initializing camera...')}
+                                {cameraBlocked ? '⚠️ Uncover your camera!' : (modelLoaded ? '🤖 AI Monitoring Active' : '⏳ Loading AI...')}
                             </p>
                         </div>
                     )}

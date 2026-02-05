@@ -9,7 +9,7 @@ import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -594,16 +594,18 @@ function AllSubmissions() {
     const [activeTab, setActiveTab] = useState('all')
     const [viewReport, setViewReport] = useState(null)
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
+    const [resetting, setResetting] = useState(false)
 
-    useEffect(() => {
+    const fetchSubmissions = () => {
+        setLoading(true)
         Promise.all([
             axios.get(`${API_BASE}/submissions`),
             axios.get(`${API_BASE}/aptitude-submissions`)
         ]).then(([codeRes, aptRes]) => {
-            const codeSubs = (codeRes.data || []).map(s => ({ ...s, submissionType: 'code' }))
+            const codeSubs = (codeRes.data || []).map(s => ({ ...s, subType: 'code' }))
             const aptSubs = (aptRes.data || []).map(s => ({
                 ...s,
-                submissionType: 'aptitude',
+                subType: 'aptitude',
                 itemTitle: s.testTitle,
                 language: 'Aptitude'
             }))
@@ -611,7 +613,47 @@ function AllSubmissions() {
             setAptitudeSubmissions(aptSubs)
             setLoading(false)
         }).catch(err => setLoading(false))
+    }
+
+    useEffect(() => {
+        fetchSubmissions()
     }, [])
+
+    const handleResetAllSubmissions = async () => {
+        const confirmReset = window.confirm(
+            '⚠️ WARNING: This will permanently delete ALL submissions from ALL students!\n\n' +
+            'This includes:\n' +
+            '• All code submissions\n' +
+            '• All aptitude test submissions\n' +
+            '• All problem completions\n' +
+            '• All task completions\n\n' +
+            'This action CANNOT be undone. Are you sure?'
+        )
+        
+        if (!confirmReset) return
+        
+        // Double confirmation for safety
+        const doubleConfirm = window.confirm(
+            '🚨 FINAL CONFIRMATION 🚨\n\n' +
+            'You are about to delete ALL submissions permanently.\n\n' +
+            'Type OK to proceed.'
+        )
+        
+        if (!doubleConfirm) return
+        
+        setResetting(true)
+        try {
+            const response = await axios.delete(`${API_BASE}/submissions`)
+            alert(`✅ Reset Complete!\n\n` +
+                `• Code submissions deleted: ${response.data.deletedCodeSubmissions}\n` +
+                `• Aptitude submissions deleted: ${response.data.deletedAptitudeSubmissions}`)
+            fetchSubmissions() // Refresh the list
+        } catch (err) {
+            alert('❌ Failed to reset submissions: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setResetting(false)
+        }
+    }
 
     const allSubmissions = [...submissions, ...aptitudeSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
@@ -664,7 +706,7 @@ function AllSubmissions() {
                                 cursor: 'pointer',
                                 fontSize: '0.85rem'
                             }}
-                        >Code ({submissions.length})</button>
+                        >💻 Code ({submissions.length})</button>
                         <button
                             onClick={() => setActiveTab('aptitude')}
                             style={{
@@ -675,7 +717,7 @@ function AllSubmissions() {
                                 cursor: 'pointer',
                                 fontSize: '0.85rem'
                             }}
-                        >Aptitude ({aptitudeSubmissions.length})</button>
+                        >📝 Aptitude ({aptitudeSubmissions.length})</button>
                     </div>
                     <div style={{ position: 'relative' }}>
                         <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -687,10 +729,40 @@ function AllSubmissions() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
+                    <button
+                        onClick={handleResetAllSubmissions}
+                        disabled={resetting || allSubmissions.length === 0}
+                        style={{
+                            padding: '0.6rem 1rem',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '8px',
+                            color: '#ef4444',
+                            cursor: resetting || allSubmissions.length === 0 ? 'not-allowed' : 'pointer',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            opacity: resetting || allSubmissions.length === 0 ? 0.5 : 1,
+                            transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                            if (!resetting && allSubmissions.length > 0) {
+                                e.target.style.background = 'rgba(239, 68, 68, 0.2)'
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.background = 'rgba(239, 68, 68, 0.1)'
+                        }}
+                    >
+                        <Trash2 size={16} />
+                        {resetting ? 'Resetting...' : 'Reset All'}
+                    </button>
                 </div>
             </div>
 
-            <div className="table-container card">
+            <div className="table-container card glass">
                 <table>
                     <thead>
                         <tr>
@@ -705,31 +777,33 @@ function AllSubmissions() {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredSubmissions.map(sub => (
+                        {filteredSubmissions.length === 0 ? (
+                            <tr><td colSpan="8" style={{ textAlign: 'center', padding: '3rem' }}>No submissions found</td></tr>
+                        ) : filteredSubmissions.map(sub => (
                             <tr key={sub.id}>
                                 <td>
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ fontWeight: 600 }}>{sub.studentName}</span>
-                                    </div>
+                                    <div style={{ fontWeight: 600 }}>{sub.studentName}</div>
                                 </td>
                                 <td>
                                     <span style={{
                                         fontSize: '0.75rem',
                                         padding: '2px 8px',
                                         borderRadius: '4px',
-                                        background: sub.submissionType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                                        color: sub.submissionType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
+                                        background: sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                                        color: sub.subType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
                                     }}>
-                                        {sub.submissionType === 'aptitude' ? '📝 Aptitude' : '💻 Code'}
+                                        {sub.subType === 'aptitude' ? '📝 Aptitude' : '💻 Code'}
                                     </span>
                                 </td>
                                 <td>
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ color: 'var(--primary)', fontWeight: 500 }}>{sub.itemTitle || sub.testTitle}</span>
-                                    </div>
+                                    <div style={{ color: 'var(--primary)', fontWeight: 500 }}>{sub.itemTitle || sub.testTitle}</div>
                                 </td>
-                                <td><span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>{sub.language?.toUpperCase()}</span></td>
-                                <td style={{ fontWeight: 700 }}>{sub.score}%</td>
+                                <td>
+                                    <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
+                                        {sub.subType === 'aptitude' ? 'N/A' : (sub.language?.toUpperCase() || 'N/A')}
+                                    </span>
+                                </td>
+                                <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>{sub.score}%</td>
                                 <td>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center' }}>
                                         <span className={`status-badge ${sub.status}`}>{sub.status}</span>
@@ -750,14 +824,44 @@ function AllSubmissions() {
                                                 alignItems: 'center',
                                                 gap: '3px'
                                             }}>
-                                                <AlertTriangle size={10} /> {sub.integrity?.tabSwitches || sub.tabSwitches || 0} Viol
+                                                <AlertTriangle size={10} /> {sub.integrity?.tabSwitches || sub.tabSwitches || 0} Tab
+                                            </span>
+                                        )}
+                                        {sub.cameraBlockedCount > 0 && (
+                                            <span style={{
+                                                fontSize: '0.65rem',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                background: 'rgba(239, 68, 68, 0.15)',
+                                                color: '#ef4444',
+                                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '3px'
+                                            }}>
+                                                📷 {sub.cameraBlockedCount} Cam
+                                            </span>
+                                        )}
+                                        {sub.phoneDetectionCount > 0 && (
+                                            <span style={{
+                                                fontSize: '0.65rem',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                background: 'rgba(239, 68, 68, 0.15)',
+                                                color: '#ef4444',
+                                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '3px'
+                                            }}>
+                                                📱 {sub.phoneDetectionCount} Phone
                                             </span>
                                         )}
                                     </div>
                                 </td>
                                 <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{new Date(sub.submittedAt).toLocaleString()}</td>
                                 <td>
-                                    {sub.submissionType === 'aptitude' ? (
+                                    {sub.subType === 'aptitude' ? (
                                         <button
                                             onClick={() => setViewAptitudeResult(sub)}
                                             style={{
@@ -910,53 +1014,53 @@ function AdminSubmissionReportModal({ submission, onClose }) {
                     )}
 
                     {/* Proctoring Violations Section */}
-                    {(submission.tab_switches > 0 || submission.copy_paste_attempts > 0 || submission.camera_blocked_count > 0 || submission.phone_detection_count > 0) && (
+                    {(submission.tabSwitches > 0 || submission.copyPasteAttempts > 0 || submission.cameraBlockedCount > 0 || submission.phoneDetectionCount > 0) && (
                         <div style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                             <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f59e0b' }}>
                                 <AlertTriangle size={18} /> Proctoring Violations
                             </h4>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-                                {submission.tab_switches > 0 && (
+                                {submission.tabSwitches > 0 && (
                                     <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                         <Eye size={18} color="#f59e0b" />
                                         <div>
-                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.tab_switches} Tab Switches</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.tab_switches * 5, 25)} pts</div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.tabSwitches} Tab Switches</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.tabSwitches * 5, 25)} pts</div>
                                         </div>
                                     </div>
                                 )}
-                                {submission.copy_paste_attempts > 0 && (
+                                {submission.copyPasteAttempts > 0 && (
                                     <div style={{ padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                         <span style={{ fontSize: '1.1rem' }}>📋</span>
                                         <div>
-                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.copy_paste_attempts} Copy/Paste</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.copy_paste_attempts * 3, 15)} pts</div>
+                                            <div style={{ fontWeight: 600, color: '#f59e0b' }}>{submission.copyPasteAttempts} Copy/Paste</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.copyPasteAttempts * 3, 15)} pts</div>
                                         </div>
                                     </div>
                                 )}
-                                {submission.camera_blocked_count > 0 && (
+                                {submission.cameraBlockedCount > 0 && (
                                     <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                         <span style={{ fontSize: '1.1rem' }}>📷</span>
                                         <div>
-                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.camera_blocked_count} Camera Blocked</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.camera_blocked_count * 10, 30)} pts</div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.cameraBlockedCount} Camera Blocked</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.cameraBlockedCount * 10, 30)} pts</div>
                                         </div>
                                     </div>
                                 )}
-                                {submission.phone_detection_count > 0 && (
+                                {submission.phoneDetectionCount > 0 && (
                                     <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                         <span style={{ fontSize: '1.1rem' }}>📱</span>
                                         <div>
-                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.phone_detection_count} Phone Detected</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.phone_detection_count * 15, 45)} pts</div>
+                                            <div style={{ fontWeight: 600, color: '#ef4444' }}>{submission.phoneDetectionCount} Phone Detected</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Penalty: -{Math.min(submission.phoneDetectionCount * 15, 45)} pts</div>
                                         </div>
                                     </div>
                                 )}
                             </div>
-                            {submission.proctoring_video && (
+                            {submission.proctoringVideo && (
                                 <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <span style={{ fontSize: '1rem' }}>🎥</span>
-                                    <span style={{ fontSize: '0.85rem', color: '#3b82f6' }}>Proctoring video recorded: {submission.proctoring_video}</span>
+                                    <span style={{ fontSize: '0.85rem', color: '#3b82f6' }}>Proctoring video recorded: {submission.proctoringVideo}</span>
                                 </div>
                             )}
                         </div>

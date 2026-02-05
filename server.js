@@ -459,11 +459,34 @@ app.delete('/api/problems/:id', async (req, res) => {
 // Get all submissions
 app.get('/api/submissions', async (req, res) => {
     try {
-        const [rows] = await pool.query(`
-            SELECT s.*, u.name as studentName 
+        const { studentId, mentorId } = req.query;
+        
+        let query = `
+            SELECT s.*, u.name as studentName, u.mentor_id,
+                   p.title as problemTitle, t.title as taskTitle
             FROM submissions s 
             JOIN users u ON s.student_id = u.id
-        `);
+            LEFT JOIN problems p ON s.problem_id = p.id
+            LEFT JOIN tasks t ON s.task_id = t.id
+            WHERE 1=1
+        `;
+        const params = [];
+
+        // Filter by studentId for student portal
+        if (studentId) {
+            query += ' AND s.student_id = ?';
+            params.push(studentId);
+        }
+        
+        // Filter by mentorId for mentor portal (students assigned to this mentor)
+        if (mentorId) {
+            query += ' AND u.mentor_id = ?';
+            params.push(mentorId);
+        }
+
+        query += ' ORDER BY s.submitted_at DESC';
+
+        const [rows] = await pool.query(query, params);
 
         const fixedRows = rows.map(s => ({
             id: s.id,
@@ -471,6 +494,7 @@ app.get('/api/submissions', async (req, res) => {
             studentName: s.studentName,
             problemId: s.problem_id,
             taskId: s.task_id,
+            itemTitle: s.problemTitle || s.taskTitle || 'Unknown',
             code: s.code,
             submissionType: s.submission_type,
             fileName: s.file_name,
@@ -494,11 +518,11 @@ app.get('/api/submissions', async (req, res) => {
                 tabSwitches: s.tab_switches,
                 integrityViolation: s.integrity_violation === 'true'
             },
-            tab_switches: s.tab_switches || 0,
-            copy_paste_attempts: s.copy_paste_attempts || 0,
-            camera_blocked_count: s.camera_blocked_count || 0,
-            phone_detection_count: s.phone_detection_count || 0,
-            proctoring_video: s.proctoring_video,
+            tabSwitches: s.tab_switches || 0,
+            copyPasteAttempts: s.copy_paste_attempts || 0,
+            cameraBlockedCount: s.camera_blocked_count || 0,
+            phoneDetectionCount: s.phone_detection_count || 0,
+            proctoringVideo: s.proctoring_video,
             submittedAt: s.submitted_at
         }));
 
@@ -919,6 +943,29 @@ app.delete('/api/submissions/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM submissions WHERE id = ?', [req.params.id]);
         res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Reset all submissions (Admin only)
+app.delete('/api/submissions', async (req, res) => {
+    try {
+        // Delete all code submissions
+        const [codeResult] = await pool.query('DELETE FROM submissions');
+        // Delete all aptitude submissions
+        const [aptitudeResult] = await pool.query('DELETE FROM aptitude_submissions');
+        // Delete all problem completions
+        await pool.query('DELETE FROM problem_completions');
+        // Delete all task completions
+        await pool.query('DELETE FROM task_completions');
+        
+        res.json({ 
+            success: true, 
+            message: 'All submissions reset successfully',
+            deletedCodeSubmissions: codeResult.affectedRows,
+            deletedAptitudeSubmissions: aptitudeResult.affectedRows
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
