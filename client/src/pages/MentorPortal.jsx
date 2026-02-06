@@ -10,7 +10,7 @@ import { useAuth } from '../App'
 import axios from 'axios'
 import './Portal.css'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 function MentorPortal() {

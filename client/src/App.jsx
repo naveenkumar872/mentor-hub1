@@ -27,7 +27,7 @@ function ProtectedRoute({ children, allowedRoles }) {
     return children
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE = import.meta.env.VITE_API_URL || 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function App() {
     const [user, setUser] = useState(null)
