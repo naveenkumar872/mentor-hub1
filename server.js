@@ -40,31 +40,74 @@ const upload = multer({
 
 // Initialize Cerebras API helper
 const CEREBRAS_API_URL = 'https://api.cerebras.ai/v1/chat/completions';
-const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || process.env.cereberas_api_key || '';
 
-// Cerebras chat completion helper function
-async function cerebrasChat(messages, options = {}) {
-    const response = await fetch(CEREBRAS_API_URL, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            model: options.model || 'llama-3.3-70b',
-            messages: messages,
-            temperature: options.temperature || 0.7,
-            max_tokens: options.max_tokens || 1024,
-            ...(options.response_format && { response_format: options.response_format })
-        })
-    });
+// Helper to get all available API keys
+const getCerebrasKeys = () => {
+    const keys = [];
+    // Primary key
+    if (process.env.CEREBRAS_API_KEY) keys.push(process.env.CEREBRAS_API_KEY);
+    if (process.env.cereberas_api_key) keys.push(process.env.cereberas_api_key);
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Cerebras API error: ${response.status} - ${errorText}`);
+    // Numbered backups (1-4)
+    for (let i = 1; i <= 4; i++) {
+        const k = process.env[`CEREBRAS_API_KEY_${i}`];
+        if (k) keys.push(k);
     }
 
-    return await response.json();
+    // Deduplicate and filter empty
+    return [...new Set(keys)].filter(k => k && k.trim().length > 0);
+};
+
+// Cerebras chat completion helper function with Failover/Rotation
+async function cerebrasChat(messages, options = {}) {
+    const keys = getCerebrasKeys();
+
+    if (keys.length === 0) {
+        console.error('❌ No Cerebras API keys found in environment variables!');
+        throw new Error('Server configuration error: No AI API keys available.');
+    }
+
+    let lastError = null;
+
+    // Try each key in sequence
+    for (const apiKey of keys) {
+        try {
+            const response = await fetch(CEREBRAS_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: options.model || 'llama-3.3-70b',
+                    messages: messages,
+                    temperature: options.temperature || 0.7,
+                    max_tokens: options.max_tokens || 1024,
+                    ...(options.response_format && { response_format: options.response_format })
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // If it's a 4xx or 5xx error, log warn and try next key
+                console.warn(`⚠️ API Error (${response.status}) with key ending ...${apiKey.slice(-5)}. Switching to next backup key.`);
+                lastError = new Error(`API Error ${response.status}: ${errorText}`);
+                continue;
+            }
+
+            // Success!
+            return await response.json();
+
+        } catch (error) {
+            console.warn(`⚠️ Network/Execution Error with key ending ...${apiKey.slice(-5)}: ${error.message}. Switching to next backup key.`);
+            lastError = error;
+            // Continue to loop
+        }
+    }
+
+    // If we get here, all keys failed
+    console.error('❌ All available Cerebras API keys failed.');
+    throw lastError || new Error('All AI API keys failed to respond.');
 }
 
 // Database Connection
@@ -99,11 +142,12 @@ pool.getConnection()
         }
     });
 
-// Middleware - CORS configuration for production
+// Middleware - CORS configuration
 const allowedOrigins = [
-    'https://mentor-hub-backend-tkil.onrender.com',
-    'https://mentor-hub-backend-tkil.onrender.com',
-    /\.onrender\.com$/  // Allow all Render subdomains
+    'http://localhost:5173', // Vite Frontend
+    'http://localhost:3000', // Backend/Frontend if served together
+    // 'https://mentor-hub-backend-tkil.onrender.com', 
+    // /\.onrender\.com$/  
 ];
 
 app.use(cors({
@@ -606,9 +650,9 @@ app.post('/api/submissions', async (req, res) => {
             }
         }
 
-        // Check for plagiarism - get other submissions for same problem
+        // Check for plagiarism - get other submissions for same problem (SKIP for SQL)
         let plagiarismResult = { detected: false, copiedFrom: null, copiedFromName: null, similarity: 0 };
-        if (problemId) {
+        if (problemId && language !== 'SQL') {
             const [otherSubs] = await pool.query(
                 `SELECT s.id, s.student_id, s.code, u.name as student_name 
                  FROM submissions s 
@@ -664,8 +708,192 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
             }
         }
 
-        // AI Code Evaluation
-        const evaluationPrompt = `You are an expert code evaluator for a coding education platform.
+        // SQL-Specific Evaluation or AI Code Evaluation
+        let evaluationResult = {
+            score: 0,
+            status: 'rejected',
+            feedback: 'Evaluation pending...',
+            aiExplanation: 'Evaluation in progress.',
+            analysis: {
+                correctness: 'Unknown',
+                efficiency: 'Unknown',
+                codeStyle: 'Unknown',
+                bestPractices: 'Unknown'
+            }
+        };
+
+        // Check if this is a SQL submission
+        if (language === 'SQL' && problemId) {
+            try {
+                // Get problem details including SQL schema and expected result
+                const [probs] = await pool.query('SELECT * FROM problems WHERE id = ?', [problemId]);
+                if (probs.length > 0) {
+                    const problem = probs[0];
+                    const sqlSchema = problem.sql_schema;
+                    const expectedQueryResult = problem.expected_query_result;
+
+                    if (sqlSchema && expectedQueryResult) {
+                        // Execute the student's SQL query with the schema
+                        const fullQuery = `.headers on\n.mode list\n${sqlSchema}\n\n${code}`;
+
+                        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                language: 'sqlite3',
+                                version: '3.36.0',
+                                files: [{ content: fullQuery }]
+                            })
+                        });
+
+                        const data = await response.json();
+                        const actualOutput = (data.run?.output || '').trim();
+                        const expectedOutput = expectedQueryResult.trim();
+
+                        // Check if query executed successfully
+                        const executedSuccessfully = data.run?.code === 0;
+
+                        // Helper function to parse SQL output into comparable data
+                        function parseSQLOutput(output) {
+                            if (!output || output.length === 0) return null;
+
+                            const lines = output.trim().split('\n').filter(line => {
+                                // Remove separator lines (lines with only -, +, |, =, and spaces)
+                                return line.trim() && !/^[\-\+\|\=\s]+$/.test(line.trim());
+                            });
+
+                            if (lines.length === 0) return null;
+
+                            // Extract rows - handle both pipe-separated and whitespace-separated formats
+                            const rows = [];
+                            for (const line of lines) {
+                                let values;
+                                if (line.includes('|')) {
+                                    // Pipe-separated format
+                                    values = line.split('|')
+                                        .map(v => v.trim())
+                                        .filter(v => v.length > 0);
+                                } else {
+                                    // Whitespace-separated format - split by multiple spaces
+                                    values = line.trim().split(/\s{2,}/)
+                                        .map(v => v.trim())
+                                        .filter(v => v.length > 0);
+                                }
+                                if (values.length > 0) {
+                                    rows.push(values);
+                                }
+                            }
+
+                            return rows;
+                        }
+
+                        // Helper function to normalize values for comparison
+                        function normalizeValue(val) {
+                            if (!val) return '';
+                            // Convert to lowercase, trim, remove extra spaces
+                            return val.toString().toLowerCase().trim().replace(/\s+/g, ' ');
+                        }
+
+                        // Helper function to compare two parsed outputs
+                        function compareOutputs(actual, expected) {
+                            if (!actual || !expected) return false;
+                            if (actual.length !== expected.length) return false;
+
+                            // Sort both outputs to handle different row orders (especially for GROUP BY)
+                            const sortRows = (rows) => {
+                                return rows.map(row => row.map(normalizeValue))
+                                    .sort((a, b) => a.join('|').localeCompare(b.join('|')));
+                            };
+
+                            const actualSorted = sortRows(actual);
+                            const expectedSorted = sortRows(expected);
+
+                            // Compare each row
+                            for (let i = 0; i < actualSorted.length; i++) {
+                                const actualRow = actualSorted[i];
+                                const expectedRow = expectedSorted[i];
+
+                                if (actualRow.length !== expectedRow.length) return false;
+
+                                for (let j = 0; j < actualRow.length; j++) {
+                                    if (actualRow[j] !== expectedRow[j]) {
+                                        return false;
+                                    }
+                                }
+                            }
+
+                            return true;
+                        }
+
+                        // Parse both outputs
+                        const actualParsed = parseSQLOutput(actualOutput);
+                        const expectedParsed = parseSQLOutput(expectedOutput);
+
+                        // Compare the parsed data
+                        const isCorrect = compareOutputs(actualParsed, expectedParsed);
+
+                        console.log(`SQL Evaluation - Executed: ${executedSuccessfully}, Correct: ${isCorrect}`);
+                        console.log(`Expected rows:`, expectedParsed);
+                        console.log(`Actual rows:`, actualParsed);
+
+
+                        if (executedSuccessfully && isCorrect) {
+                            // Perfect match - award full points
+                            evaluationResult.score = 100;
+                            evaluationResult.status = 'accepted';
+                            evaluationResult.feedback = 'Excellent! Your SQL query is correct and produces the expected output.';
+                            evaluationResult.aiExplanation = 'Query executed successfully and output matches expected result exactly.';
+                            evaluationResult.analysis = {
+                                correctness: 'Excellent - Query produces correct output',
+                                efficiency: 'Good - Query structure is appropriate',
+                                codeStyle: 'Good - SQL syntax is clean',
+                                bestPractices: 'Good - Follows SQL conventions'
+                            };
+                        } else if (executedSuccessfully && !isCorrect) {
+                            // Query runs but produces wrong output
+                            evaluationResult.score = 30;
+                            evaluationResult.status = 'rejected';
+                            evaluationResult.feedback = 'Your query executes but does not produce the expected output. Review the expected result and adjust your query.';
+                            evaluationResult.aiExplanation = `Query executed but output does not match. Expected format/data differs from actual output.`;
+                            evaluationResult.analysis = {
+                                correctness: 'Poor - Output does not match expected result',
+                                efficiency: 'Fair - Query executes',
+                                codeStyle: 'Fair - Syntax is valid',
+                                bestPractices: 'Fair - Query structure needs review'
+                            };
+                        } else {
+                            // Query has syntax error or runtime error
+                            evaluationResult.score = 0;
+                            evaluationResult.status = 'rejected';
+                            evaluationResult.feedback = 'Your SQL query has syntax errors or fails to execute. Check your SQL syntax and try again.';
+                            evaluationResult.aiExplanation = `SQL execution failed: ${actualOutput.substring(0, 200)}`;
+                            evaluationResult.analysis = {
+                                correctness: 'Poor - Query fails to execute',
+                                efficiency: 'N/A',
+                                codeStyle: 'Poor - Syntax errors present',
+                                bestPractices: 'Poor - Query needs fixing'
+                            };
+                        }
+                    } else {
+                        // Fall back to AI evaluation if schema or expected result is missing
+                        console.log('SQL problem missing schema or expected result, falling back to AI evaluation');
+                        throw new Error('Missing SQL schema or expected result');
+                    }
+                }
+            } catch (sqlEvalError) {
+                console.error('SQL Evaluation error:', sqlEvalError.message);
+                // Explicitly set error result for SQL to avoid AI fallback confusion
+                evaluationResult.score = 0;
+                evaluationResult.status = 'rejected';
+                evaluationResult.feedback = `Evaluation System Error: ${sqlEvalError.message}.`;
+                evaluationResult.aiExplanation = 'Internal System Error during SQL execution.';
+                evaluationResult.analysis = { correctness: 'Error', efficiency: 'Error', codeStyle: 'Error', bestPractices: 'Error' };
+            }
+        }
+
+        // For non-SQL ONLY (Strictly skip if SQL was attempted)
+        if (language !== 'SQL') {
+            const evaluationPrompt = `You are an expert code evaluator for a coding education platform.
 
 ${problemContext}
 
@@ -701,50 +929,43 @@ Scoring Guide:
 - 50-69: Partially correct or has significant issues
 - 0-49: Incorrect or major problems`;
 
-        let evaluationResult = {
-            score: 0,
-            status: 'rejected',
-            feedback: 'Evaluation failed. Please try again.',
-            aiExplanation: 'Could not evaluate submission.',
-            analysis: {
-                correctness: 'Unknown',
-                efficiency: 'Unknown',
-                codeStyle: 'Unknown',
-                bestPractices: 'Unknown'
+            try {
+                const evaluation = await cerebrasChat([
+                    { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
+                    { role: 'user', content: evaluationPrompt }
+                ], {
+                    model: 'llama-3.3-70b',
+                    temperature: 0.2,
+                    max_tokens: 800,
+                    response_format: { type: 'json_object' }
+                });
+
+                evaluationResult = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
+            } catch (e) {
+                console.error('AI Evaluation error:', e.message);
             }
-        };
-
-        try {
-            const evaluation = await cerebrasChat([
-                { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
-                { role: 'user', content: evaluationPrompt }
-            ], {
-                model: 'llama-3.3-70b',
-                temperature: 0.2,
-                max_tokens: 800,
-                response_format: { type: 'json_object' }
-            });
-
-            evaluationResult = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
-        } catch (e) {
-            console.error('AI Evaluation error:', e.message);
         }
 
         // Apply penalties
         let finalScore = evaluationResult.score || 0;
         let integrityViolation = false;
 
-        // Penalty for tab switches (each switch = -5 points, max -25)
-        if (tabSwitches > 0) {
-            const tabPenalty = Math.min(tabSwitches * 5, 25);
-            finalScore = Math.max(0, finalScore - tabPenalty);
-            integrityViolation = tabSwitches >= 3;
-        }
+        // Penalty for tab switches (each switch = -5 points, max -25) - SKIP FOR SQL
+        if (language !== 'SQL') {
+            if (tabSwitches > 0) {
+                const tabPenalty = Math.min(tabSwitches * 5, 25);
+                finalScore = Math.max(0, finalScore - tabPenalty);
+                integrityViolation = tabSwitches >= 3;
+                // Append explanation to feedback if it exists, otherwise init
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Penalty: -${tabPenalty} points for ${tabSwitches} tab switches.`;
+            }
 
-        // Penalty for plagiarism
-        if (plagiarismResult.detected) {
-            finalScore = Math.max(0, Math.floor(finalScore * 0.3)); // 70% penalty
-            integrityViolation = true;
+            // Penalty for plagiarism
+            if (plagiarismResult.detected) {
+                finalScore = Math.max(0, Math.floor(finalScore * 0.3)); // 70% penalty
+                integrityViolation = true;
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Academic Integrity Warning: Plagiarism detected. Score reduced by 70%.`;
+            }
         }
 
         // Determine final status
@@ -860,10 +1081,175 @@ app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (
             if (problems.length > 0) problemDetails = problems[0];
         }
 
-        // AI Evaluation (same as regular submission)
-        let evaluationResult = { score: 0, status: 'rejected', feedback: 'Unable to evaluate', analysis: {} };
-        try {
-            const evaluationPrompt = `You are an expert code evaluator. Analyze this ${language} code submission for a coding problem.
+        // SQL-Specific Evaluation or AI Code Evaluation
+        let evaluationResult = { score: 0, status: 'rejected', feedback: 'Evaluation pending...', analysis: {} };
+
+        // Check if this is a SQL submission
+        if (language === 'SQL' && problemDetails) {
+            try {
+                const sqlSchema = problemDetails.sql_schema;
+                const expectedQueryResult = problemDetails.expected_query_result;
+
+                if (sqlSchema && expectedQueryResult) {
+                    // Execute the student's SQL query with the schema
+                    const fullQuery = `.headers on\n.mode list\n${sqlSchema}\n\n${code}`;
+
+                    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            language: 'sqlite3',
+                            version: '3.36.0',
+                            files: [{ content: fullQuery }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    const actualOutput = (data.run?.output || '').trim();
+                    const expectedOutput = expectedQueryResult.trim();
+
+                    // Check if query executed successfully
+                    const executedSuccessfully = data.run?.code === 0;
+
+                    // Helper function to parse SQL output into comparable data
+                    function parseSQLOutput(output) {
+                        if (!output || output.length === 0) return null;
+
+                        const lines = output.trim().split('\n').filter(line => {
+                            // Remove separator lines (lines with only -, +, |, =, and spaces)
+                            return line.trim() && !/^[\-\+\|\=\s]+$/.test(line.trim());
+                        });
+
+                        if (lines.length === 0) return null;
+
+                        // Extract rows - handle both pipe-separated and whitespace-separated formats
+                        const rows = [];
+                        for (const line of lines) {
+                            let values;
+                            if (line.includes('|')) {
+                                // Pipe-separated format
+                                values = line.split('|')
+                                    .map(v => v.trim())
+                                    .filter(v => v.length > 0);
+                            } else {
+                                // Whitespace-separated format - split by multiple spaces
+                                values = line.trim().split(/\s{2,}/)
+                                    .map(v => v.trim())
+                                    .filter(v => v.length > 0);
+                            }
+                            if (values.length > 0) {
+                                rows.push(values);
+                            }
+                        }
+
+                        return rows;
+                    }
+
+                    // Helper function to normalize values for comparison
+                    function normalizeValue(val) {
+                        if (!val) return '';
+                        // Convert to lowercase, trim, remove extra spaces
+                        return val.toString().toLowerCase().trim().replace(/\s+/g, ' ');
+                    }
+
+                    // Helper function to compare two parsed outputs
+                    function compareOutputs(actual, expected) {
+                        if (!actual || !expected) return false;
+                        if (actual.length !== expected.length) return false;
+
+                        // Sort both outputs to handle different row orders (especially for GROUP BY)
+                        const sortRows = (rows) => {
+                            return rows.map(row => row.map(normalizeValue))
+                                .sort((a, b) => a.join('|').localeCompare(b.join('|')));
+                        };
+
+                        const actualSorted = sortRows(actual);
+                        const expectedSorted = sortRows(expected);
+
+                        // Compare each row
+                        for (let i = 0; i < actualSorted.length; i++) {
+                            const actualRow = actualSorted[i];
+                            const expectedRow = expectedSorted[i];
+
+                            if (actualRow.length !== expectedRow.length) return false;
+
+                            for (let j = 0; j < actualRow.length; j++) {
+                                if (actualRow[j] !== expectedRow[j]) {
+                                    return false;
+                                }
+                            }
+                        }
+
+                        return true;
+                    }
+
+                    // Parse both outputs
+                    const actualParsed = parseSQLOutput(actualOutput);
+                    const expectedParsed = parseSQLOutput(expectedOutput);
+
+                    // Compare the parsed data
+                    const isCorrect = compareOutputs(actualParsed, expectedParsed);
+
+                    console.log(`Proctored SQL Evaluation - Executed: ${executedSuccessfully}, Correct: ${isCorrect}`);
+                    console.log(`Expected rows:`, expectedParsed);
+                    console.log(`Actual rows:`, actualParsed);
+
+                    if (executedSuccessfully && isCorrect) {
+                        // Perfect match - award full points
+                        evaluationResult.score = 100;
+                        evaluationResult.status = 'accepted';
+                        evaluationResult.feedback = 'Excellent! Your SQL query is correct and produces the expected output.';
+                        evaluationResult.aiExplanation = 'Query executed successfully and output matches expected result exactly.';
+                        evaluationResult.analysis = {
+                            correctness: 'Excellent - Query produces correct output',
+                            efficiency: 'Good - Query structure is appropriate',
+                            codeStyle: 'Good - SQL syntax is clean',
+                            bestPractices: 'Good - Follows SQL conventions'
+                        };
+                    } else if (executedSuccessfully && !isCorrect) {
+                        // Query runs but produces wrong output
+                        evaluationResult.score = 30;
+                        evaluationResult.status = 'rejected';
+                        evaluationResult.feedback = 'Your query executes but does not produce the expected output. Review the expected result and adjust your query.';
+                        evaluationResult.aiExplanation = `Query executed but output does not match. Expected format/data differs from actual output.`;
+                        evaluationResult.analysis = {
+                            correctness: 'Poor - Output does not match expected result',
+                            efficiency: 'Fair - Query executes',
+                            codeStyle: 'Fair - Syntax is valid',
+                            bestPractices: 'Fair - Query structure needs review'
+                        };
+                    } else {
+                        // Query has syntax error or runtime error
+                        evaluationResult.score = 0;
+                        evaluationResult.status = 'rejected';
+                        evaluationResult.feedback = 'Your SQL query has syntax errors or fails to execute. Check your SQL syntax and try again.';
+                        evaluationResult.aiExplanation = `SQL execution failed: ${actualOutput.substring(0, 200)}`;
+                        evaluationResult.analysis = {
+                            correctness: 'Poor - Query fails to execute',
+                            efficiency: 'N/A',
+                            codeStyle: 'Poor - Syntax errors present',
+                            bestPractices: 'Poor - Query needs fixing'
+                        };
+                    }
+                } else {
+                    console.log('SQL problem missing schema or expected result, falling back to AI evaluation');
+                    throw new Error('Missing SQL schema or expected result');
+                }
+            } catch (sqlEvalError) {
+                console.error('SQL Evaluation error:', sqlEvalError.message);
+                // Explicitly set error result for SQL to avoid AI fallback confusion
+                evaluationResult.score = 0;
+                evaluationResult.status = 'rejected';
+                evaluationResult.feedback = `Evaluation System Error: ${sqlEvalError.message}.`;
+                evaluationResult.aiExplanation = 'Internal System Error during SQL execution.';
+                evaluationResult.analysis = { correctness: 'Error', efficiency: 'Error', codeStyle: 'Error', bestPractices: 'Error' };
+            }
+        }
+
+        // For non-SQL ONLY (Strictly skip if SQL was attempted)
+        if (language !== 'SQL') {
+            try {
+                const evaluationPrompt = `You are an expert code evaluator. Analyze this ${language} code submission for a coding problem.
 
 Problem: ${problemDetails?.title || 'Unknown'}
 Description: ${problemDetails?.description || 'No description'}
@@ -893,21 +1279,22 @@ Respond in this exact JSON format:
   }
 }`;
 
-            const aiResponse = await cerebrasChat([
-                { role: 'user', content: evaluationPrompt }
-            ], {
-                model: 'llama-3.3-70b',
-                temperature: 0.3,
-                max_tokens: 1000
-            });
+                const aiResponse = await cerebrasChat([
+                    { role: 'user', content: evaluationPrompt }
+                ], {
+                    model: 'llama-3.3-70b',
+                    temperature: 0.3,
+                    max_tokens: 1000
+                });
 
-            const responseText = aiResponse.choices[0]?.message?.content || '';
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                evaluationResult = JSON.parse(jsonMatch[0]);
+                const responseText = aiResponse.choices[0]?.message?.content || '';
+                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    evaluationResult = JSON.parse(jsonMatch[0]);
+                }
+            } catch (e) {
+                console.error('AI Evaluation error:', e.message);
             }
-        } catch (e) {
-            console.error('AI Evaluation error:', e.message);
         }
 
         // Apply penalties for proctoring violations
@@ -918,34 +1305,41 @@ Respond in this exact JSON format:
         const cameraBlockCount = parseInt(cameraBlockedCount) || 0;
         const phoneCount = parseInt(phoneDetectionCount) || 0;
 
-        // Penalty for tab switches (each switch = -5 points, max -25)
-        if (tabSwitchCount > 0) {
-            const tabPenalty = Math.min(tabSwitchCount * 5, 25);
-            finalScore = Math.max(0, finalScore - tabPenalty);
-            integrityViolation = tabSwitchCount >= 3;
-        }
+        // Apply penalties ONLY if not SQL
+        if (language !== 'SQL') {
+            // Penalty for tab switches (each switch = -5 points, max -25)
+            if (tabSwitchCount > 0) {
+                const tabPenalty = Math.min(tabSwitchCount * 5, 25);
+                finalScore = Math.max(0, finalScore - tabPenalty);
+                integrityViolation = tabSwitchCount >= 3;
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Penalty: -${tabPenalty} points for ${tabSwitchCount} tab switches.`;
+            }
 
-        // Penalty for copy/paste attempts (each attempt = -3 points, max -15)
-        if (copyPasteCount > 0) {
-            const copyPenalty = Math.min(copyPasteCount * 3, 15);
-            finalScore = Math.max(0, finalScore - copyPenalty);
-        }
+            // Penalty for copy/paste attempts (each attempt = -3 points, max -15)
+            if (copyPasteCount > 0) {
+                const copyPenalty = Math.min(copyPasteCount * 3, 15);
+                finalScore = Math.max(0, finalScore - copyPenalty);
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Penalty: -${copyPenalty} points for copy/paste attempts.`;
+            }
 
-        // Penalty for camera obstruction (each block = -10 points, max -30)
-        // This is a serious violation as it indicates attempt to hide from proctoring
-        if (cameraBlockCount > 0) {
-            const cameraPenalty = Math.min(cameraBlockCount * 10, 30);
-            finalScore = Math.max(0, finalScore - cameraPenalty);
-            if (cameraBlockCount >= 2) integrityViolation = true;
-        }
+            // Penalty for camera obstruction (each block = -10 points, max -30)
+            // This is a serious violation as it indicates attempt to hide from proctoring
+            if (cameraBlockCount > 0) {
+                const cameraPenalty = Math.min(cameraBlockCount * 10, 30);
+                finalScore = Math.max(0, finalScore - cameraPenalty);
+                if (cameraBlockCount >= 2) integrityViolation = true;
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ High Penalty: -${cameraPenalty} points for camera obstruction.`;
+            }
 
-        // Penalty for phone detection (each detection = -15 points, max -45)
-        // Using a phone is a severe cheating attempt
-        if (phoneCount > 0) {
-            const phonePenalty = Math.min(phoneCount * 15, 45);
-            finalScore = Math.max(0, finalScore - phonePenalty);
-            integrityViolation = true; // Any phone detection is an integrity violation
-            console.log(`📱 Phone detected ${phoneCount} times, penalty: -${phonePenalty} points`);
+            // Penalty for phone detection (each detection = -15 points, max -45)
+            // Using a phone is a severe cheating attempt
+            if (phoneCount > 0) {
+                const phonePenalty = Math.min(phoneCount * 15, 45);
+                finalScore = Math.max(0, finalScore - phonePenalty);
+                integrityViolation = true; // Any phone detection is an integrity violation
+                console.log(`📱 Phone detected ${phoneCount} times, penalty: -${phonePenalty} points`);
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⛔ Severe Penalty: -${phonePenalty} points for phone detection.`;
+            }
         }
 
         // Determine final status
@@ -2731,6 +3125,19 @@ app.post('/api/reports/bulk', async (req, res) => {
 });
 
 // Start server
+
+// Helper: Update User Streak (Placeholder to prevent ReferenceError)
+async function updateUserStreak(userId, activity) {
+    try {
+        // Future implementation: Logic to update continuous learning streak
+        // console.log(`Streak updated for user ${userId}`);
+        return true;
+    } catch (e) {
+        console.error('Streak update failed:', e.message);
+        return false;
+    }
+}
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
     console.log('📚 Student Portal: http://127.0.0.1:3000/#/student');

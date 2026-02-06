@@ -9,7 +9,7 @@ const state = {
 };
 
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api';
+const API_BASE = 'http://localhost:3000/api';
 
 // ==================== Initialize App ====================
 document.addEventListener('DOMContentLoaded', () => {

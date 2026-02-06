@@ -1148,7 +1148,21 @@ function CodeEditorModal({ problem, user, onClose }) {
                     <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
                         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                             <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
-                            <select value={selectedLang} onChange={(e) => handleLanguageChange(e.target.value)} style={{ background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>
+                            <select
+                                value={selectedLang}
+                                onChange={(e) => handleLanguageChange(e.target.value)}
+                                disabled={problem.type === 'SQL' || problem.language === 'SQL'}
+                                style={{
+                                    background: '#0f172a',
+                                    color: '#f8fafc',
+                                    border: '1px solid #334155',
+                                    borderRadius: '6px',
+                                    padding: '0.4rem 0.75rem',
+                                    fontSize: '0.85rem',
+                                    opacity: (problem.type === 'SQL' || problem.language === 'SQL') ? 0.7 : 1,
+                                    cursor: (problem.type === 'SQL' || problem.language === 'SQL') ? 'not-allowed' : 'pointer'
+                                }}
+                            >
                                 {Object.keys(LANGUAGE_CONFIG).map(lang => <option key={lang} value={lang}>{lang}</option>)}
                             </select>
                         </div>

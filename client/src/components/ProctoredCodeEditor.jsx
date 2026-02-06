@@ -725,7 +725,17 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                     setSelectedLanguage(newLang)
                                     setCode(LANGUAGE_CONFIG[newLang]?.defaultCode || '')
                                 }}
-                                style={{ background: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '6px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer' }}
+                                disabled={problem.type === 'SQL' || problem.language === 'SQL'}
+                                style={{
+                                    background: '#0f172a',
+                                    color: '#f8fafc',
+                                    border: '1px solid #334155',
+                                    borderRadius: '6px',
+                                    padding: '0.4rem 0.75rem',
+                                    fontSize: '0.85rem',
+                                    cursor: (problem.type === 'SQL' || problem.language === 'SQL') ? 'not-allowed' : 'pointer',
+                                    opacity: (problem.type === 'SQL' || problem.language === 'SQL') ? 0.7 : 1
+                                }}
                             >
                                 {Object.keys(LANGUAGE_CONFIG).map(lang => <option key={lang} value={lang}>{lang}</option>)}
                             </select>
