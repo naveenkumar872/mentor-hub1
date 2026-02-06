@@ -1859,6 +1859,11 @@ function AptitudeTests({ user }) {
     }
 
     const startTest = async (test) => {
+        // Check if test has not started yet
+        if (test.startTime && new Date(test.startTime) > new Date()) {
+            alert('This test is not yet available. Please check the start time.')
+            return
+        }
         // Check if deadline has passed
         if (test.deadline && new Date(test.deadline) < new Date()) {
             alert('This test has expired. The deadline has passed.')
@@ -2147,13 +2152,28 @@ function AptitudeTests({ user }) {
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '0.5rem',
-                                        color: new Date(test.deadline) < new Date() ? '#ef4444' : 'var(--text-muted)'
+                                        color:
+                                            test.startTime && new Date(test.startTime) > new Date()
+                                                ? '#f59e42' // orange for not started
+                                                : test.deadline && new Date(test.deadline) < new Date()
+                                                    ? '#ef4444' // red for expired
+                                                    : 'var(--text-muted)'
                                     }}>
-                                        <Clock size={16} color={new Date(test.deadline) < new Date() ? '#ef4444' : '#10b981'} />
+                                        <Clock size={16} color={
+                                            test.startTime && new Date(test.startTime) > new Date()
+                                                ? '#f59e42'
+                                                : test.deadline && new Date(test.deadline) < new Date()
+                                                    ? '#ef4444'
+                                                    : '#10b981'
+                                        } />
                                         <span>
-                                            {new Date(test.deadline) < new Date()
-                                                ? 'Expired'
-                                                : `Due: ${new Date(test.deadline).toLocaleDateString()}`
+                                            {test.startTime && new Date(test.startTime) > new Date()
+                                                ? `Not Yet Started`
+                                                : test.deadline && new Date(test.deadline) < new Date()
+                                                    ? 'Expired'
+                                                    : test.deadline
+                                                        ? `Due: ${new Date(test.deadline).toLocaleDateString()}`
+                                                        : ''
                                             }
                                         </span>
                                     </div>
@@ -2196,7 +2216,26 @@ function AptitudeTests({ user }) {
 
                             <div style={{ display: 'flex', gap: '0.75rem' }}>
                                 {!completed ? (
-                                    test.deadline && new Date(test.deadline) < new Date() ? (
+                                    test.startTime && new Date(test.startTime) > new Date() ? (
+                                        <div
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.75rem',
+                                                background: 'rgba(245, 158, 66, 0.15)',
+                                                border: 'none',
+                                                borderRadius: '10px',
+                                                color: '#f59e42',
+                                                fontSize: '0.9rem',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '0.5rem'
+                                            }}
+                                        >
+                                            <XCircle size={18} /> Not Yet Started
+                                        </div>
+                                    ) : test.deadline && new Date(test.deadline) < new Date() ? (
                                         <div
                                             style={{
                                                 flex: 1,
