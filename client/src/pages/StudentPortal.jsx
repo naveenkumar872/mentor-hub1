@@ -727,6 +727,8 @@ function CodeEditorModal({ problem, user, onClose }) {
     const [warningMessage, setWarningMessage] = useState('')
     const [showTestResults, setShowTestResults] = useState(false)
     const [testResults, setTestResults] = useState(null)
+    const [customInput, setCustomInput] = useState(problem.sampleInput || problem.testInput || '')
+    const [activeOutputTab, setActiveOutputTab] = useState('input')
     const containerRef = useRef(null)
 
     // Enter fullscreen on mount
@@ -830,13 +832,15 @@ function CodeEditorModal({ problem, user, onClose }) {
     const handleRun = async () => {
         setStatus('running')
         setOutput('Running code...\n')
+        setActiveOutputTab('output')
         try {
             // First run the code normally
             const res = await axios.post(`${API_BASE}/run`, {
                 code,
                 language: selectedLang,
                 problemId: problem.id,
-                sqlSchema: problem.sqlSchema  // Pass SQL schema for execution
+                sqlSchema: problem.sqlSchema,
+                stdin: customInput || ''
             })
             setOutput(res.data.output)
             setStatus(res.data.status === 'error' ? 'error' : 'success')
@@ -1178,70 +1182,85 @@ function CodeEditorModal({ problem, user, onClose }) {
                         </div>
                     )}
 
-                    {/* Console Output / Test Results - Hide for SQL */}
-                    {(output || testResults) && !result && selectedLang !== 'SQL' && (
+                    {/* Console: Input / Output / Test Cases - Hide for SQL */}
+                    {!result && selectedLang !== 'SQL' && (
                         <div style={{ maxHeight: '350px', background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-                            {/* Tab Switcher for Output Types */}
+                            {/* Tab Switcher */}
                             <div style={{ display: 'flex', borderBottom: '1px solid #1e293b', background: '#0f172a' }}>
-                                <button
-                                    onClick={() => setShowTestResults(false)}
-                                    style={{
-                                        padding: '0.75rem 1.25rem',
-                                        background: !showTestResults ? '#1e293b' : 'transparent',
-                                        border: 'none',
-                                        borderBottom: !showTestResults ? '2px solid #3b82f6' : '2px solid transparent',
-                                        color: !showTestResults ? '#60a5fa' : '#64748b',
-                                        cursor: 'pointer',
-                                        fontSize: '0.85rem',
-                                        fontWeight: 500,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem'
-                                    }}
-                                >
-                                    <Code size={14} /> Console Output
-                                </button>
-                                <button
-                                    onClick={() => setShowTestResults(true)}
-                                    style={{
-                                        padding: '0.75rem 1.25rem',
-                                        background: showTestResults ? '#1e293b' : 'transparent',
-                                        border: 'none',
-                                        borderBottom: showTestResults ? '2px solid #10b981' : '2px solid transparent',
-                                        color: showTestResults ? '#4ade80' : '#64748b',
-                                        cursor: 'pointer',
-                                        fontSize: '0.85rem',
-                                        fontWeight: 500,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem'
-                                    }}
-                                >
-                                    <CheckCircle size={14} /> Test Cases
-                                    {testResults && (
-                                        <span style={{
-                                            padding: '2px 8px',
-                                            borderRadius: '10px',
-                                            fontSize: '0.7rem',
-                                            fontWeight: 600,
-                                            background: testResults.passed === testResults.total ? 'rgba(16, 185, 129, 0.2)' : 'rgba(249, 115, 22, 0.2)',
-                                            color: testResults.passed === testResults.total ? '#10b981' : '#f97316'
-                                        }}>
-                                            {testResults.passed}/{testResults.total}
-                                        </span>
-                                    )}
-                                </button>
+                                {['input', 'output', 'tests'].map(tab => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => setActiveOutputTab(tab)}
+                                        style={{
+                                            padding: '0.75rem 1.25rem',
+                                            background: activeOutputTab === tab ? '#1e293b' : 'transparent',
+                                            border: 'none',
+                                            borderBottom: activeOutputTab === tab ? `2px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#10b981'}` : '2px solid transparent',
+                                            color: activeOutputTab === tab ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#4ade80') : '#64748b',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 500,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
+                                        }}
+                                    >
+                                        {tab === 'input' && <><FileText size={14} /> Custom Input</>}
+                                        {tab === 'output' && <><Code size={14} /> Output {output && <span style={{ width: 6, height: 6, borderRadius: '50%', background: status === 'success' ? '#10b981' : status === 'error' ? '#ef4444' : '#3b82f6' }}></span>}</>}
+                                        {tab === 'tests' && <><CheckCircle size={14} /> Test Cases
+                                            {testResults && (
+                                                <span style={{
+                                                    padding: '2px 8px',
+                                                    borderRadius: '10px',
+                                                    fontSize: '0.7rem',
+                                                    fontWeight: 600,
+                                                    background: testResults.passed === testResults.total ? 'rgba(16, 185, 129, 0.2)' : 'rgba(249, 115, 22, 0.2)',
+                                                    color: testResults.passed === testResults.total ? '#10b981' : '#f97316'
+                                                }}>
+                                                    {testResults.passed}/{testResults.total}
+                                                </span>
+                                            )}
+                                        </>}
+                                    </button>
+                                ))}
                             </div>
 
+                            {/* Custom Input Tab */}
+                            {activeOutputTab === 'input' && (
+                                <div style={{ padding: '0.75rem', flex: 1 }}>
+                                    <textarea
+                                        value={customInput}
+                                        onChange={(e) => setCustomInput(e.target.value)}
+                                        placeholder={`Enter your input here (stdin)...\nExample:\n5\n1 2 3 4 5`}
+                                        style={{
+                                            width: '100%',
+                                            minHeight: '120px',
+                                            background: '#0f172a',
+                                            color: '#e2e8f0',
+                                            border: '1px solid #334155',
+                                            borderRadius: '8px',
+                                            padding: '0.75rem',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.85rem',
+                                            resize: 'vertical',
+                                            outline: 'none'
+                                        }}
+                                    />
+                                    <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: '#64748b' }}>
+                                        💡 This input will be passed as stdin when you click "Run Code"
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Console Output Tab */}
-                            {!showTestResults && (
+                            {activeOutputTab === 'output' && (
                                 <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflowY: 'auto' }}>
                                     {output || 'No output yet. Run your code to see results.'}
                                 </div>
                             )}
 
                             {/* Test Cases Tab */}
-                            {showTestResults && (
+                            {activeOutputTab === 'tests' && (
                                 <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
                                     <CodeOutputPreview
                                         problemId={problem.id}

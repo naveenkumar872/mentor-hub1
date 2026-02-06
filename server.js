@@ -1055,7 +1055,7 @@ app.delete('/api/submissions', async (req, res) => {
 
 app.post('/api/run', async (req, res) => {
     try {
-        const { code, language, problemId, sqlSchema } = req.body;
+        const { code, language, problemId, sqlSchema, stdin } = req.body;
 
         // Map languages to Piston runtimes
         const languageMap = {
@@ -1099,7 +1099,8 @@ app.post('/api/run', async (req, res) => {
                     {
                         content: codeToExecute
                     }
-                ]
+                ],
+                stdin: stdin || ''
             })
         });
 
