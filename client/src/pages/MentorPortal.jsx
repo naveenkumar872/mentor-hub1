@@ -5,6 +5,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
 import AptitudeReportModal from '../components/AptitudeReportModal'
+import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
 import { useAuth } from '../App'
 import axios from 'axios'
@@ -1209,6 +1210,7 @@ function UploadProblems({ user }) {
 function Leaderboard({ user }) {
     const [leaders, setLeaders] = useState([])
     const [loading, setLoading] = useState(true)
+    const [reportStudent, setReportStudent] = useState(null)
 
     useEffect(() => {
         axios.get(`${API_BASE}/leaderboard?mentorId=${user.id}`)
@@ -1265,6 +1267,7 @@ function Leaderboard({ user }) {
                             <th>Submissions</th>
                             <th>Violations</th>
                             <th style={{ textAlign: 'center' }}>Status</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1386,12 +1389,47 @@ function Leaderboard({ user }) {
                                             <div style={{ width: `${Math.min(student.avgScore, 100)}%`, height: '100%', backgroundColor: hasIssues ? '#f59e0b' : (i === 0 ? '#fbbf24' : 'var(--primary)') }}></div>
                                         </div>
                                     </td>
+                                    <td>
+                                        <button
+                                            onClick={() => setReportStudent({ id: student.studentId, name: student.name })}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.4rem',
+                                                padding: '0.5rem 0.85rem',
+                                                background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                color: 'white',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
+                                            }}
+                                            title="Generate comprehensive report"
+                                        >
+                                            <FileText size={14} />
+                                            Report
+                                        </button>
+                                    </td>
                                 </tr>
                             )
                         })}
                     </tbody>
                 </table>
             </div>
+
+            {/* Student Report Modal */}
+            {reportStudent && (
+                <StudentReportModal
+                    studentId={reportStudent.id}
+                    studentName={reportStudent.name}
+                    onClose={() => setReportStudent(null)}
+                    requestedBy={user?.name || 'Mentor'}
+                    requestedByRole="mentor"
+                />
+            )}
         </div>
     )
 }

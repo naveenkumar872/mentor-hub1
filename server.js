@@ -2473,6 +2473,263 @@ Respond in JSON format:
     }
 });
 
+// ==================== STUDENT REPORT GENERATION ====================
+
+// Generate comprehensive student report
+app.post('/api/reports/student/:studentId', async (req, res) => {
+    try {
+        const studentId = req.params.studentId;
+        const { requestedBy, requestedByRole } = req.body;
+
+        // Get student info
+        const [studentRows] = await pool.query('SELECT * FROM users WHERE id = ?', [studentId]);
+        if (studentRows.length === 0) return res.status(404).json({ error: 'Student not found' });
+
+        const student = studentRows[0];
+        const { password: _, ...studentInfo } = student;
+
+        // Get mentor info
+        const [mentorRows] = await pool.query(`
+            SELECT m.id, m.name, m.email 
+            FROM mentor_student_allocations msa
+            JOIN users m ON msa.mentor_id = m.id
+            WHERE msa.student_id = ?
+        `, [studentId]);
+        const mentorInfo = mentorRows[0] || null;
+
+        // Code Submissions Analysis
+        const [submissions] = await pool.query(`
+            SELECT s.*, p.title as problemTitle, p.difficulty as problemDifficulty,
+                   t.title as taskTitle, t.difficulty as taskDifficulty
+            FROM submissions s
+            LEFT JOIN problems p ON s.problem_id = p.id
+            LEFT JOIN tasks t ON s.task_id = t.id
+            WHERE s.student_id = ?
+            ORDER BY s.submitted_at DESC
+        `, [studentId]);
+
+        const codeSubmissions = submissions.filter(s => s.problem_id);
+        const taskSubmissions = submissions.filter(s => s.task_id);
+
+        // Submission stats
+        const avgCodeScore = codeSubmissions.length > 0
+            ? Math.round(codeSubmissions.reduce((a, s) => a + (s.score || 0), 0) / codeSubmissions.length) : 0;
+        const avgTaskScore = taskSubmissions.length > 0
+            ? Math.round(taskSubmissions.reduce((a, s) => a + (s.score || 0), 0) / taskSubmissions.length) : 0;
+
+        // Language breakdown
+        const languageStats = {};
+        submissions.forEach(s => {
+            const lang = s.language || 'Unknown';
+            if (!languageStats[lang]) languageStats[lang] = { count: 0, totalScore: 0 };
+            languageStats[lang].count++;
+            languageStats[lang].totalScore += s.score || 0;
+        });
+        const languageBreakdown = Object.entries(languageStats).map(([lang, data]) => ({
+            language: lang,
+            count: data.count,
+            avgScore: Math.round(data.totalScore / data.count)
+        }));
+
+        // Integrity violations
+        const totalTabSwitches = submissions.reduce((a, s) => a + (s.tab_switches || 0), 0);
+        const totalCopyPaste = submissions.reduce((a, s) => a + (s.copy_paste_attempts || 0), 0);
+        const totalCameraBlocked = submissions.reduce((a, s) => a + (s.camera_blocked_count || 0), 0);
+        const totalPhoneDetections = submissions.reduce((a, s) => a + (s.phone_detection_count || 0), 0);
+        const plagiarismCount = submissions.filter(s => s.plagiarism_detected === 'true').length;
+
+        // Aptitude Test Results
+        const [aptitudeSubmissions] = await pool.query(`
+            SELECT asub.*, at.title as testTitle, at.difficulty, at.passing_score
+            FROM aptitude_submissions asub
+            LEFT JOIN aptitude_tests at ON asub.test_id = at.id
+            WHERE asub.student_id = ?
+            ORDER BY asub.submitted_at DESC
+        `, [studentId]);
+
+        console.log(`Found ${aptitudeSubmissions.length} aptitude submissions for student ${studentId}`);
+
+
+        const avgAptitudeScore = aptitudeSubmissions.length > 0
+            ? Math.round(aptitudeSubmissions.reduce((a, s) => a + s.score, 0) / aptitudeSubmissions.length) : 0;
+        const aptitudePassed = aptitudeSubmissions.filter(s => s.status === 'passed').length;
+        const aptitudeFailed = aptitudeSubmissions.filter(s => s.status === 'failed').length;
+
+        // Task completions
+        const [[{ completedTasks }]] = await pool.query(
+            'SELECT COUNT(*) as completedTasks FROM task_completions WHERE student_id = ?', [studentId]
+        );
+        const [[{ completedProblems }]] = await pool.query(
+            'SELECT COUNT(*) as completedProblems FROM problem_completions WHERE student_id = ?', [studentId]
+        );
+
+        // Performance trends (last 30 days)
+        const [trends] = await pool.query(`
+            SELECT DATE(submitted_at) as date, AVG(score) as avgScore, COUNT(*) as count
+            FROM submissions WHERE student_id = ? AND submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY DATE(submitted_at) ORDER BY date ASC
+        `, [studentId]);
+
+        // Get leaderboard position
+        const [leaderboard] = await pool.query(`
+            SELECT u.id, AVG(s.score) as avgScore
+            FROM users u LEFT JOIN submissions s ON u.id = s.student_id
+            WHERE u.role = 'student' GROUP BY u.id ORDER BY avgScore DESC
+        `);
+        const rank = leaderboard.findIndex(l => l.id === studentId) + 1;
+
+        // Category analysis for aptitude
+        const [aptitudeDetails] = await pool.query(`
+            SELECT aqr.category, COUNT(*) as total,
+                   SUM(CASE WHEN aqr.is_correct = 'true' OR aqr.is_correct = 1 THEN 1 ELSE 0 END) as correct
+            FROM aptitude_question_results aqr
+            JOIN aptitude_submissions asub ON aqr.submission_id = asub.id
+            WHERE asub.student_id = ?
+            GROUP BY aqr.category
+        `, [studentId]);
+
+        const categoryAnalysis = aptitudeDetails.map(c => ({
+            category: c.category || 'General',
+            total: c.total,
+            correct: c.correct,
+            accuracy: Math.round((c.correct / c.total) * 100)
+        }));
+
+        // Generate AI insights
+        let aiInsights = null;
+        try {
+            const insightPrompt = `Analyze this student's performance and provide personalized recommendations:
+            
+Student: ${student.name}
+Overall Stats:
+- Code Submissions: ${codeSubmissions.length} (Avg Score: ${avgCodeScore}%)
+- Task Submissions: ${taskSubmissions.length} (Avg Score: ${avgTaskScore}%)
+- Aptitude Tests: ${aptitudeSubmissions.length} (Passed: ${aptitudePassed}, Failed: ${aptitudeFailed}, Avg: ${avgAptitudeScore}%)
+- Leaderboard Rank: #${rank} out of ${leaderboard.length}
+
+Integrity Issues:
+- Tab Switches: ${totalTabSwitches}
+- Plagiarism Detected: ${plagiarismCount} times
+
+Language Proficiency: ${languageBreakdown.map(l => `${l.language}: ${l.count} submissions, ${l.avgScore}% avg`).join(', ')}
+
+Category Analysis: ${categoryAnalysis.map(c => `${c.category}: ${c.accuracy}% accuracy`).join(', ')}
+
+Provide a JSON response with:
+{
+    "overallAssessment": "Brief 2-3 sentence overall assessment",
+    "strengths": ["strength1", "strength2", "strength3"],
+    "areasForImprovement": ["area1", "area2", "area3"],
+    "recommendations": ["recommendation1", "recommendation2", "recommendation3"],
+    "performanceLevel": "Excellent/Good/Average/Needs Improvement",
+    "predictedGrowth": "High/Medium/Low"
+}`;
+
+            const aiResponse = await cerebrasChat([
+                { role: 'system', content: 'You are an educational performance analyst. Provide constructive, actionable insights.' },
+                { role: 'user', content: insightPrompt }
+            ], { model: 'llama-3.3-70b', temperature: 0.3, response_format: { type: 'json_object' } });
+
+            aiInsights = JSON.parse(aiResponse.choices[0]?.message?.content || '{}');
+        } catch (e) {
+            console.error('AI Insights generation failed:', e.message);
+        }
+
+        // Compile full report
+        const report = {
+            generatedAt: new Date().toISOString(),
+            requestedBy,
+            requestedByRole,
+            student: {
+                id: studentInfo.id,
+                name: studentInfo.name,
+                email: studentInfo.email,
+                createdAt: studentInfo.created_at
+            },
+            mentor: mentorInfo,
+            summary: {
+                totalSubmissions: submissions.length,
+                codeSubmissions: codeSubmissions.length,
+                taskSubmissions: taskSubmissions.length,
+                aptitudeTests: aptitudeSubmissions.length,
+                completedProblems,
+                completedTasks,
+                avgCodeScore,
+                avgTaskScore,
+                avgAptitudeScore,
+                overallAvgScore: Math.round((avgCodeScore + avgTaskScore + avgAptitudeScore) / 3),
+                leaderboardRank: rank,
+                totalStudents: leaderboard.length
+            },
+            integrity: {
+                tabSwitches: totalTabSwitches,
+                copyPasteAttempts: totalCopyPaste,
+                cameraBlocked: totalCameraBlocked,
+                phoneDetections: totalPhoneDetections,
+                plagiarismCount,
+                integrityScore: Math.max(0, 100 - (totalTabSwitches * 2) - (plagiarismCount * 20) - (totalCopyPaste * 3))
+            },
+            languageBreakdown,
+            categoryAnalysis,
+            aptitudeResults: aptitudeSubmissions.map(a => ({
+                testTitle: a.testTitle,
+                score: a.score,
+                status: a.status,
+                difficulty: a.difficulty,
+                submittedAt: a.submitted_at
+            })),
+            recentSubmissions: submissions.slice(0, 10).map(s => ({
+                title: s.problemTitle || s.taskTitle || 'Unknown',
+                type: s.problem_id ? 'Code' : 'Task',
+                score: s.score,
+                status: s.status,
+                language: s.language,
+                submittedAt: s.submitted_at
+            })),
+            trends: trends.map(t => ({
+                date: t.date,
+                avgScore: Math.round(t.avgScore),
+                count: t.count
+            })),
+            aiInsights
+        };
+
+        res.json(report);
+
+    } catch (error) {
+        console.error('Report Generation Error:', error);
+        res.status(500).json({ error: 'Failed to generate report', details: error.message });
+    }
+});
+
+// Generate bulk reports for multiple students
+app.post('/api/reports/bulk', async (req, res) => {
+    try {
+        const { studentIds, requestedBy, requestedByRole } = req.body;
+
+        if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ error: 'No students selected' });
+        }
+
+        const reports = [];
+        for (const studentId of studentIds) {
+            try {
+                const response = await axios.post(`http://localhost:${PORT}/api/reports/student/${studentId}`, {
+                    requestedBy,
+                    requestedByRole
+                });
+                reports.push(response.data);
+            } catch (e) {
+                reports.push({ studentId, error: 'Failed to generate report' });
+            }
+        }
+
+        res.json({ reports, generatedAt: new Date().toISOString() });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
