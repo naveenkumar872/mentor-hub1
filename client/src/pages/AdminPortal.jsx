@@ -5,6 +5,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
 import AptitudeReportModal from '../components/AptitudeReportModal'
+import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
 import { useAuth } from '../App'
 import axios from 'axios'
@@ -104,8 +105,8 @@ function Dashboard() {
     if (!stats) return <div>Error loading stats</div>
 
     // Calculate additional metrics
-    const avgSubmissionsPerStudent = stats.totalStudents > 0 
-        ? Math.round(stats.totalSubmissions / stats.totalStudents * 10) / 10 
+    const avgSubmissionsPerStudent = stats.totalStudents > 0
+        ? Math.round(stats.totalSubmissions / stats.totalStudents * 10) / 10
         : 0
     const totalMentors = stats.mentorCount || Math.ceil(stats.totalStudents / 15)
     const activeToday = stats.recentSubmissions?.length || 0
@@ -842,6 +843,7 @@ function Allocations() {
 function StudentLeaderboard() {
     const [leaders, setLeaders] = useState([])
     const [loading, setLoading] = useState(true)
+    const [reportStudent, setReportStudent] = useState(null)
 
     useEffect(() => {
         axios.get(`${API_BASE}/leaderboard`)
@@ -892,6 +894,7 @@ function StudentLeaderboard() {
                                 <th>Avg. Score</th>
                                 <th>Violations</th>
                                 <th>Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1000,6 +1003,30 @@ function StudentLeaderboard() {
                                                 <div style={{ width: `${student.avgScore}%`, height: '100%', background: hasIssues ? 'var(--warning)' : 'var(--primary)' }}></div>
                                             </div>
                                         </td>
+                                        <td>
+                                            <button
+                                                onClick={() => setReportStudent({ id: student.studentId, name: student.name })}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.4rem',
+                                                    padding: '0.5rem 0.85rem',
+                                                    background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    color: 'white',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
+                                                }}
+                                                title="Generate comprehensive report"
+                                            >
+                                                <FileText size={14} />
+                                                Report
+                                            </button>
+                                        </td>
                                     </tr>
                                 )
                             })}
@@ -1007,6 +1034,17 @@ function StudentLeaderboard() {
                     </table>
                 </div>
             </div>
+
+            {/* Student Report Modal */}
+            {reportStudent && (
+                <StudentReportModal
+                    studentId={reportStudent.id}
+                    studentName={reportStudent.name}
+                    onClose={() => setReportStudent(null)}
+                    requestedBy="Administrator"
+                    requestedByRole="admin"
+                />
+            )}
         </div>
     )
 }
@@ -2304,9 +2342,9 @@ function GlobalProblems() {
             </div>
 
             {/* Tab Buttons */}
-            <div style={{ 
-                display: 'flex', 
-                gap: '1rem', 
+            <div style={{
+                display: 'flex',
+                gap: '1rem',
                 marginBottom: '1.5rem',
                 padding: '0.5rem',
                 background: 'var(--bg-card)',
@@ -2439,16 +2477,16 @@ function GlobalProblems() {
                                     <button
                                         onClick={() => setSelectedProblemForTestCases(p)}
                                         disabled={p.language === 'SQL' || p.type === 'SQL'}
-                                        style={{ 
-                                            background: (p.language === 'SQL' || p.type === 'SQL') ? 'rgba(100, 116, 139, 0.1)' : 'rgba(16, 185, 129, 0.1)', 
-                                            border: 'none', 
-                                            color: (p.language === 'SQL' || p.type === 'SQL') ? '#64748b' : '#10b981', 
-                                            padding: '0.5rem 0.75rem', 
-                                            borderRadius: '0.5rem', 
-                                            cursor: (p.language === 'SQL' || p.type === 'SQL') ? 'not-allowed' : 'pointer', 
-                                            fontSize: '0.8rem', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
+                                        style={{
+                                            background: (p.language === 'SQL' || p.type === 'SQL') ? 'rgba(100, 116, 139, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                                            border: 'none',
+                                            color: (p.language === 'SQL' || p.type === 'SQL') ? '#64748b' : '#10b981',
+                                            padding: '0.5rem 0.75rem',
+                                            borderRadius: '0.5rem',
+                                            cursor: (p.language === 'SQL' || p.type === 'SQL') ? 'not-allowed' : 'pointer',
+                                            fontSize: '0.8rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
                                             gap: '4px',
                                             opacity: (p.language === 'SQL' || p.type === 'SQL') ? 0.5 : 1
                                         }}
@@ -2505,8 +2543,8 @@ function GlobalProblems() {
                                             value={problem.type}
                                             onChange={(e) => {
                                                 const newType = e.target.value
-                                                setProblem({ 
-                                                    ...problem, 
+                                                setProblem({
+                                                    ...problem,
                                                     type: newType,
                                                     language: newType === 'SQL' ? 'SQL' : problem.language === 'SQL' ? 'Python' : problem.language
                                                 })
@@ -2526,8 +2564,8 @@ function GlobalProblems() {
                                             value={problem.language}
                                             onChange={(e) => {
                                                 const newLang = e.target.value
-                                                setProblem({ 
-                                                    ...problem, 
+                                                setProblem({
+                                                    ...problem,
                                                     language: newLang,
                                                     type: newLang === 'SQL' ? 'SQL' : problem.type === 'SQL' ? 'Coding' : problem.type
                                                 })
@@ -2582,10 +2620,10 @@ function GlobalProblems() {
                                             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                 <Code size={14} color="#06b6d4" /> Database Schema (CREATE TABLE statements)
                                             </label>
-                                            <textarea 
-                                                rows="6" 
-                                                placeholder="CREATE TABLE employees (&#10;  id INT PRIMARY KEY,&#10;  name VARCHAR(100),&#10;  department VARCHAR(50),&#10;  salary DECIMAL(10,2)&#10;);&#10;&#10;INSERT INTO employees VALUES (1, 'John', 'IT', 50000);" 
-                                                value={problem.sqlSchema} 
+                                            <textarea
+                                                rows="6"
+                                                placeholder="CREATE TABLE employees (&#10;  id INT PRIMARY KEY,&#10;  name VARCHAR(100),&#10;  department VARCHAR(50),&#10;  salary DECIMAL(10,2)&#10;);&#10;&#10;INSERT INTO employees VALUES (1, 'John', 'IT', 50000);"
+                                                value={problem.sqlSchema}
                                                 onChange={(e) => setProblem({ ...problem, sqlSchema: e.target.value })}
                                                 style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
                                             />
@@ -2597,10 +2635,10 @@ function GlobalProblems() {
                                             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                 <CheckCircle size={14} color="#10b981" /> Expected Query Result
                                             </label>
-                                            <textarea 
-                                                rows="4" 
-                                                placeholder="id | name | salary&#10;1  | John | 50000&#10;2  | Jane | 60000" 
-                                                value={problem.expectedQueryResult} 
+                                            <textarea
+                                                rows="4"
+                                                placeholder="id | name | salary&#10;1  | John | 50000&#10;2  | Jane | 60000"
+                                                value={problem.expectedQueryResult}
                                                 onChange={(e) => setProblem({ ...problem, expectedQueryResult: e.target.value })}
                                                 style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
                                             />
