@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { X, Clock, CheckCircle, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Send, Eye, Brain, Target, Award, Sparkles } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 // Seeded random shuffle - ensures same student gets same order on refresh
 function seededShuffle(array, seed) {
@@ -188,7 +188,7 @@ function AptitudeTestInterface({ test, user, onClose, onComplete }) {
             const currentAnswers = answersRef.current
             const currentTabSwitches = tabSwitchesRef.current
             const currentTimeLeft = timeLeftRef.current
-            
+
             const response = await axios.post(`${API_BASE}/aptitude/${test.id}/submit`, {
                 studentId: user.id,
                 answers: disqualified ? {} : currentAnswers,
