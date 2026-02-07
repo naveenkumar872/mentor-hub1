@@ -2920,10 +2920,16 @@ function AptitudeTestsAdmin() {
             return
         }
         try {
-            await axios.post(`${API_BASE}/aptitude`, {
-                ...newTest,
-                createdBy: ADMIN_ID
-            })
+            // Convert dates to UTC ISO strings if present
+            const testPayload = { ...newTest, createdBy: ADMIN_ID }
+            if (testPayload.startTime) {
+                testPayload.startTime = new Date(testPayload.startTime).toISOString()
+            }
+            if (testPayload.deadline) {
+                testPayload.deadline = new Date(testPayload.deadline).toISOString()
+            }
+
+            await axios.post(`${API_BASE}/aptitude`, testPayload)
             setShowModal(false)
             setNewTest({
                 title: '',
