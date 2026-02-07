@@ -9,7 +9,9 @@ import SQLValidator from './SQLValidator'
 import SQLVisualizer from './SQLVisualizer'
 import SQLDebugger from './SQLDebugger'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 
 
@@ -459,16 +461,22 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
     const samples = useMemo(() => {
         if (!currentQ) return { input: 'N/A', output: 'N/A' }
-        if (currentQ.sampleInput && currentQ.expectedOutput) {
-            return { input: currentQ.sampleInput, output: currentQ.expectedOutput }
+
+        // Try top-level properties first
+        if (currentQ.sampleInput !== undefined && currentQ.expectedOutput !== undefined) {
+            return { input: String(currentQ.sampleInput), output: String(currentQ.expectedOutput) }
         }
+
+        // Fallback to test cases
         if (currentQ.testCases) {
             const cases = Array.isArray(currentQ.testCases) ? currentQ.testCases : (currentQ.testCases.cases || [])
             const sample = cases.find(c => !c.isHidden) || cases[0]
             if (sample) {
+                const rawInput = sample.input ?? sample.sampleInput ?? '(empty)';
+                const rawOutput = sample.expected_output ?? sample.expectedOutput ?? '(empty)';
                 return {
-                    input: (sample.input || sample.sampleInput) || '(empty)',
-                    output: (sample.expected_output || sample.expectedOutput) || '(empty)'
+                    input: String(rawInput),
+                    output: String(rawOutput)
                 }
             }
         }

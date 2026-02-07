@@ -16,7 +16,9 @@ import GlobalReportModal from '../components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -2117,10 +2119,10 @@ function AptitudeTests({ user }) {
     // Helper function to check if test has started
     const hasTestStarted = (test) => {
         if (!test.startTime) return true // No start time = always available
-        
+
         const startTime = new Date(test.startTime)
         const now = new Date()
-        
+
         // Ensure both dates are compared in the same timezone
         // The backend stores dates in UTC, so we need to compare in UTC
         const startTimeUTC = Date.UTC(
@@ -2130,7 +2132,7 @@ function AptitudeTests({ user }) {
             startTime.getUTCHours(),
             startTime.getUTCMinutes()
         )
-        
+
         const nowUTC = Date.UTC(
             now.getUTCFullYear(),
             now.getUTCMonth(),
@@ -2138,17 +2140,17 @@ function AptitudeTests({ user }) {
             now.getUTCHours(),
             now.getUTCMinutes()
         )
-        
+
         return nowUTC >= startTimeUTC
     }
 
     // Helper function to check if test has expired
     const hasTestExpired = (test) => {
         if (!test.deadline) return false // No deadline = never expires
-        
+
         const deadline = new Date(test.deadline)
         const now = new Date()
-        
+
         const deadlineUTC = Date.UTC(
             deadline.getUTCFullYear(),
             deadline.getUTCMonth(),
@@ -2156,7 +2158,7 @@ function AptitudeTests({ user }) {
             deadline.getUTCHours(),
             deadline.getUTCMinutes()
         )
-        
+
         const nowUTC = Date.UTC(
             now.getUTCFullYear(),
             now.getUTCMonth(),
@@ -2164,7 +2166,7 @@ function AptitudeTests({ user }) {
             now.getUTCHours(),
             now.getUTCMinutes()
         )
-        
+
         return nowUTC > deadlineUTC
     }
 

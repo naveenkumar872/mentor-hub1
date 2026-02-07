@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Play, CheckCircle, XCircle, Clock, Eye, EyeOff, Trophy, AlertTriangle, Terminal, Code2 } from 'lucide-react'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function CodeOutputPreview({
     problemId,
@@ -10,8 +12,7 @@ function CodeOutputPreview({
     language,
     onRunComplete,
     showRunButton = true,
-    isGlobalTest = false
-    showRunButton = true
+    isGlobalTest = false,
 }) {
     const [running, setRunning] = useState(false)
     const [results, setResults] = useState(null)
@@ -432,7 +433,7 @@ function TestCaseResult({ result, index }) {
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word'
                         }}>
-                            {result.input || '(no input)'}
+                            {String(result.input ?? '(no input)')}
                         </pre>
                     </div>
 
@@ -447,12 +448,13 @@ function TestCaseResult({ result, index }) {
                             background: 'rgba(16, 185, 129, 0.1)',
                             borderRadius: '6px',
                             fontSize: '0.8rem',
+                            color: '#10b981',
                             fontFamily: 'monospace',
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
                             border: '1px solid rgba(16, 185, 129, 0.2)'
                         }}>
-                            {result.expectedOutput || '(empty)'}
+                            {String(result.expectedOutput || result.expected_output || '(empty)')}
                         </pre>
                     </div>
 
@@ -464,15 +466,16 @@ function TestCaseResult({ result, index }) {
                         <pre style={{
                             margin: 0,
                             padding: '0.5rem 0.75rem',
-                            background: result.passed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                            background: result.passed ? 'rgba(30, 41, 59, 0.4)' : 'rgba(239, 68, 68, 0.05)',
                             borderRadius: '6px',
                             fontSize: '0.8rem',
+                            color: result.passed ? '#e2e8f0' : '#ef4444',
                             fontFamily: 'monospace',
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
-                            border: `1px solid ${result.passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                            border: `1px solid ${result.passed ? 'rgba(255, 255, 255, 0.05)' : 'rgba(239, 68, 68, 0.1)'}`
                         }}>
-                            {result.actualOutput || '(no output)'}
+                            {String(result.actualOutput || result.output || '(no output)')}
                         </pre>
                     </div>
                 </div>

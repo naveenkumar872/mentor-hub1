@@ -4,7 +4,7 @@ import {
     Globe, Target, CheckCircle, XCircle, X, AlertTriangle,
     Clock, Award, Brain, Code, Database, ChevronDown, ChevronUp,
     Shield, BarChart2, Zap, TrendingUp, Download, Lightbulb, ListChecks,
-    ArrowRight, Star
+    ArrowRight, Star, Sparkles
 } from 'lucide-react'
 import {
     ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
@@ -13,7 +13,9 @@ import {
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
     const [loading, setLoading] = useState(true)
@@ -422,7 +424,7 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                             />
                                             <RechartsTooltip
                                                 contentStyle={{ background: '#1e293b', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px' }}
-                                                itemStyle={{ color: '#white' }}
+                                                itemStyle={{ color: 'white' }}
                                                 cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                             />
                                             <Bar dataKey="score" radius={[8, 8, 0, 0]}>
@@ -598,9 +600,21 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                                                 <p style={{ margin: '0 0 1rem', color: '#e2e8f0', fontWeight: 500, lineHeight: 1.5 }}>{q.question}</p>
 
                                                                 {(section === 'coding' || section === 'sql') ? (
-                                                                    <div style={{ background: '#020617', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', overflowX: 'auto' }}>
-                                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Your Code Submission</div>
-                                                                        <pre style={{ margin: 0, color: '#e2e8f0', fontSize: '0.85rem' }}>{q.user_answer}</pre>
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                                        <div style={{ background: '#020617', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', overflowX: 'auto' }}>
+                                                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>Your Code Submission</div>
+                                                                            <pre style={{ margin: 0, color: '#e2e8f0', fontSize: '0.85rem', fontFamily: '"Fira Code", monospace' }}>{q.user_answer}</pre>
+                                                                        </div>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem', background: q.is_correct ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>
+                                                                            <Shield size={16} color={q.is_correct ? '#10b981' : '#ef4444'} />
+                                                                            <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Evaluation:</span>
+                                                                            <span style={{ fontWeight: 600, color: q.is_correct ? '#10b981' : '#f87171' }}>{q.correct_answer}</span>
+                                                                            {q.points_earned !== undefined && (
+                                                                                <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                                                                    Score: <span style={{ color: 'white', fontWeight: 600 }}>{q.points_earned}</span>
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 ) : (
                                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

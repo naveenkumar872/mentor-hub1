@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Plus, Trash2, Eye, EyeOff, CheckCircle, Save, X, AlertTriangle, Play, Code } from 'lucide-react'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function TestCasesManager({ problemId, problemTitle, isReadOnly = false, onClose }) {
     const [testCases, setTestCases] = useState([])

@@ -13,7 +13,9 @@ import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -1594,6 +1596,13 @@ function AllSubmissions() {
                     isStudentView={false}
                 />
             )}
+
+            {viewReport && (
+                <AdminSubmissionReportModal
+                    submission={viewReport}
+                    onClose={() => setViewReport(null)}
+                />
+            )}
         </div>
     )
 }
@@ -3166,8 +3175,23 @@ function GlobalTestsAdmin() {
         const totalQ = Object.values(questionsBySection).reduce((sum, arr) => sum + arr.length, 0)
         if (totalQ === 0) { alert('Add questions in sections'); return }
         try {
+            // Format dates correctly for backend
+            let formattedStartTime = null;
+            if (newTest.startTime) {
+                const startD = new Date(newTest.startTime);
+                if (!isNaN(startD.getTime())) formattedStartTime = startD.toISOString();
+            }
+
+            let formattedDeadline = null;
+            if (newTest.deadline) {
+                const endD = new Date(newTest.deadline);
+                if (!isNaN(endD.getTime())) formattedDeadline = endD.toISOString();
+            }
+
             const payload = {
                 ...newTest,
+                startTime: formattedStartTime,
+                deadline: formattedDeadline,
                 createdBy: editingId ? undefined : ADMIN_ID,
                 // Include enhanced proctoring settings
                 proctoring: proctoringSettings.enabled ? {
@@ -3206,7 +3230,7 @@ function GlobalTestsAdmin() {
             setQuestionsBySection({ aptitude: [], verbal: [], logical: [], coding: [], sql: [] })
             setNewTest({
                 title: '', type: 'comprehensive', difficulty: 'Medium', duration: 180, passingScore: 60,
-                description: '', startTime: '', deadline: '', maxAttempts: 1, maxTabSwitches: 3, status: 'draft',
+                description: '', startTime: '', deadline: '', maxAttempts: 1, maxTabSwitches: 3, status: 'live',
                 sectionConfig: newTest.sectionConfig
             })
             fetchTests()
@@ -4208,7 +4232,7 @@ function AptitudeTestsAdmin() {
         setGeneratedQuestions([])
     }
 
-    const handleCreateOrUpdate = async (e) => {
+    const handleCreateTest = async (e) => {
         if (e) e.preventDefault()
 
         if (newTest.questions.length === 0) {
@@ -4227,22 +4251,16 @@ function AptitudeTestsAdmin() {
         }
 
         try {
-            await axios.post(`${API_BASE}/aptitude`, {
-                ...newTest,
-                createdBy: ADMIN_ID
-            })
-
             // Convert dates to ISO strings without timezone conversion
             // because datetime-local input is already in local time
             const testPayload = { ...newTest, createdBy: ADMIN_ID }
             if (testPayload.startTime) {
-                // Add timezone offset to convert local time to UTC
                 const date = new Date(testPayload.startTime)
-                testPayload.startTime = date.toISOString()
+                if (!isNaN(date.getTime())) testPayload.startTime = date.toISOString()
             }
             if (testPayload.deadline) {
                 const date = new Date(testPayload.deadline)
-                testPayload.deadline = date.toISOString()
+                if (!isNaN(date.getTime())) testPayload.deadline = date.toISOString()
             }
 
             await axios.post(`${API_BASE}/aptitude`, testPayload)
@@ -4263,14 +4281,14 @@ function AptitudeTestsAdmin() {
             fetchTests()
         } catch (error) {
             console.error(error)
-            alert('Error creating test')
+            alert(error.response?.data?.error || 'Error creating test')
         }
     }
 
     const handleToggleStatus = async (test) => {
         const newStatus = test.status === 'live' ? 'ended' : 'live';
         const action = newStatus === 'live' ? 'make this test visible to students' : 'hide this test from students';
-        
+
         if (window.confirm(`Are you sure you want to ${action}?`)) {
             try {
                 await axios.patch(`${API_BASE}/aptitude/${test.id}/status`, { status: newStatus })
@@ -4453,13 +4471,13 @@ function AptitudeTestsAdmin() {
                                             background: test.status === 'live'
                                                 ? 'rgba(16, 185, 129, 0.15)'
                                                 : test.status === 'ended'
-                                                ? 'rgba(239, 68, 68, 0.15)'
-                                                : 'rgba(107, 114, 128, 0.15)',
+                                                    ? 'rgba(239, 68, 68, 0.15)'
+                                                    : 'rgba(107, 114, 128, 0.15)',
                                             color: test.status === 'live'
                                                 ? '#10b981'
                                                 : test.status === 'ended'
-                                                ? '#ef4444'
-                                                : '#6b7280',
+                                                    ? '#ef4444'
+                                                    : '#6b7280',
                                             fontSize: '0.8rem',
                                             fontWeight: 500
                                         }}>
@@ -4559,7 +4577,7 @@ function AptitudeTestsAdmin() {
                             {/* Test Details */}
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                 <div className="form-group">
-                                    <label className="form-label"><span style={{ marginRight: '0.5rem' }}>H</span> Test Title</label>
+                                    <label className="form-label"><FileText size={14} style={{ marginRight: '0.5rem' }} /> Test Title</label>
                                     <input
                                         type="text"
                                         placeholder="Enter test title..."

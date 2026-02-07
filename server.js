@@ -1781,12 +1781,12 @@ app.post('/api/aptitude', async (req, res) => {
         // Handle date inputs correctly
         let formattedStartTime = null;
         let formattedDeadline = null;
-        
+
         if (startTime) {
             // Parse the ISO string and ensure it's stored as UTC
             formattedStartTime = new Date(startTime).toISOString().slice(0, 19).replace('T', ' ');
         }
-        
+
         if (deadline) {
             formattedDeadline = new Date(deadline).toISOString().slice(0, 19).replace('T', ' ');
         }
@@ -2212,10 +2212,37 @@ app.post('/api/global-tests', async (req, res) => {
         const totalQuestions = (sectionConfig && sectionConfig.sections)
             ? sectionConfig.sections.reduce((sum, s) => sum + (s.enabled ? (s.questionsCount || 0) : 0), 0)
             : 0;
+        // Handle date inputs correctly like aptitude tests
+        let formattedStartTime = null;
+        let formattedDeadline = null;
+
+        if (startTime && startTime.trim() !== '') {
+            try {
+                // If it's already in ISO format from frontend
+                const date = new Date(startTime);
+                if (!isNaN(date.getTime())) {
+                    formattedStartTime = date.toISOString().slice(0, 19).replace('T', ' ');
+                }
+            } catch (e) {
+                formattedStartTime = startTime.replace('T', ' ');
+            }
+        }
+
+        if (deadline && deadline.trim() !== '') {
+            try {
+                const date = new Date(deadline);
+                if (!isNaN(date.getTime())) {
+                    formattedDeadline = date.toISOString().slice(0, 19).replace('T', ' ');
+                }
+            } catch (e) {
+                formattedDeadline = deadline.replace('T', ' ');
+            }
+        }
+
         await connection.query(
             `INSERT INTO global_tests (id, title, type, difficulty, duration, total_questions, passing_score, status, created_by, description, start_time, deadline, max_attempts, max_tab_switches, section_config)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [testId, title || 'Untitled', type || 'comprehensive', difficulty, duration || 180, totalQuestions, passingScore ?? 60, status || 'draft', createdBy || null, description || '', startTime ? startTime.replace('T', ' ') : null, deadline ? deadline.replace('T', ' ') : null, maxAttempts ?? 1, maxTabSwitches ?? 3, sectionConfigJson]
+            [testId, title || 'Untitled', type || 'comprehensive', difficulty, duration || 180, totalQuestions, passingScore ?? 60, status || 'draft', createdBy || null, description || '', formattedStartTime, formattedDeadline, maxAttempts ?? 1, maxTabSwitches ?? 3, sectionConfigJson]
         );
         await connection.commit();
         res.json({
@@ -2261,8 +2288,26 @@ app.put('/api/global-tests/:id', async (req, res) => {
         if (totalQuestions !== null) { updates.push('total_questions = ?'); params.push(totalQuestions); }
         if (passingScore !== undefined) { updates.push('passing_score = ?'); params.push(passingScore); }
         if (description !== undefined) { updates.push('description = ?'); params.push(description); }
-        if (startTime !== undefined) { updates.push('start_time = ?'); params.push(startTime ? startTime.replace('T', ' ') : null); }
-        if (deadline !== undefined) { updates.push('deadline = ?'); params.push(deadline ? deadline.replace('T', ' ') : null); }
+        if (startTime !== undefined) {
+            let formattedStartTime = null;
+            if (startTime && startTime.trim() !== '') {
+                try {
+                    const date = new Date(startTime);
+                    formattedStartTime = !isNaN(date.getTime()) ? date.toISOString().slice(0, 19).replace('T', ' ') : startTime.replace('T', ' ');
+                } catch (e) { formattedStartTime = startTime.replace('T', ' '); }
+            }
+            updates.push('start_time = ?'); params.push(formattedStartTime);
+        }
+        if (deadline !== undefined) {
+            let formattedDeadline = null;
+            if (deadline && deadline.trim() !== '') {
+                try {
+                    const date = new Date(deadline);
+                    formattedDeadline = !isNaN(date.getTime()) ? date.toISOString().slice(0, 19).replace('T', ' ') : deadline.replace('T', ' ');
+                } catch (e) { formattedDeadline = deadline.replace('T', ' '); }
+            }
+            updates.push('deadline = ?'); params.push(formattedDeadline);
+        }
         if (maxAttempts !== undefined) { updates.push('max_attempts = ?'); params.push(maxAttempts); }
         if (maxTabSwitches !== undefined) { updates.push('max_tab_switches = ?'); params.push(maxTabSwitches); }
         if (status !== undefined) { updates.push('status = ?'); params.push(status); }
