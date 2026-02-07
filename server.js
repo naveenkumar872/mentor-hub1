@@ -1410,12 +1410,34 @@ app.delete('/api/submissions/:id', async (req, res) => {
     }
 });
 
+// Individual Global Test Submission Deletion
+app.delete('/api/global-test-submissions/:id', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const id = req.params.id;
+        await connection.query('DELETE FROM question_results WHERE submission_id = ?', [id]);
+        await connection.query('DELETE FROM section_results WHERE submission_id = ?', [id]);
+        const [r] = await connection.query('DELETE FROM global_test_submissions WHERE id = ?', [id]);
+        await connection.commit();
+        if (r.affectedRows === 0) return res.status(404).json({ error: 'Submission not found' });
+        res.json({ success: true });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
 // Reset all submissions (Admin only)
 app.delete('/api/submissions', async (req, res) => {
+    const connection = await pool.getConnection();
     try {
-
+        await connection.beginTransaction();
         // Disable FK checks to allow clean deletion regardless of order
         await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+
         // Delete all code submissions
         const [codeResult] = await connection.query('DELETE FROM submissions');
 
@@ -1425,6 +1447,12 @@ app.delete('/api/submissions', async (req, res) => {
 
         // Delete all aptitude submissions
         const [aptitudeResult] = await connection.query('DELETE FROM aptitude_submissions');
+
+        // Delete Global Test Results
+        await connection.query('DELETE FROM question_results');
+        await connection.query('DELETE FROM section_results');
+        const [globalResult] = await connection.query('DELETE FROM global_test_submissions');
+
         // Delete all problem completions
         await connection.query('DELETE FROM problem_completions');
         // Delete all task completions
@@ -1432,15 +1460,20 @@ app.delete('/api/submissions', async (req, res) => {
 
         // Re-enable FK checks
         await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+        await connection.commit();
 
         res.json({
             success: true,
             message: 'All submissions reset successfully',
             deletedCodeSubmissions: codeResult.affectedRows,
-            deletedAptitudeSubmissions: aptitudeResult.affectedRows
+            deletedAptitudeSubmissions: aptitudeResult.affectedRows,
+            deletedGlobalSubmissions: globalResult.affectedRows
         });
     } catch (error) {
+        await connection.rollback();
         res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
     }
 });
 
@@ -2018,6 +2051,580 @@ app.get('/api/aptitude-submissions/:id', async (req, res) => {
     }
 });
 
+// ==================== GLOBAL COMPLETE TESTS (Aptitude, Verbal, Logical, Coding, SQL) ====================
+
+const SECTIONS = ['aptitude', 'verbal', 'logical', 'coding', 'sql'];
+
+// List global tests
+app.get('/api/global-tests', async (req, res) => {
+    try {
+        const { status, type } = req.query;
+        let query = 'SELECT * FROM global_tests WHERE 1=1';
+        const params = [];
+        if (status) { query += ' AND status = ?'; params.push(status); }
+        if (type) { query += ' AND type = ?'; params.push(type); }
+        query += ' ORDER BY created_at DESC';
+        const [rows] = await pool.query(query, params);
+        const tests = rows.map(t => ({
+            id: t.id,
+            title: t.title,
+            type: t.type,
+            difficulty: t.difficulty,
+            duration: t.duration,
+            totalQuestions: t.total_questions,
+            passingScore: t.passing_score,
+            status: t.status,
+            createdBy: t.created_by,
+            createdAt: t.created_at,
+            description: t.description || '',
+            startTime: t.start_time,
+            deadline: t.deadline,
+            maxAttempts: t.max_attempts ?? 1,
+            maxTabSwitches: t.max_tab_switches ?? 3,
+            sectionConfig: t.section_config ? (typeof t.section_config === 'string' ? JSON.parse(t.section_config) : t.section_config) : null
+        }));
+        res.json(tests);
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single global test with questions grouped by section
+app.get('/api/global-tests/:id', async (req, res) => {
+    try {
+        const [tests] = await pool.query('SELECT * FROM global_tests WHERE id = ?', [req.params.id]);
+        if (tests.length === 0) return res.status(404).json({ error: 'Test not found' });
+        const t = tests[0];
+        const [questions] = await pool.query('SELECT * FROM test_questions WHERE test_id = ? ORDER BY section, question_id', [t.id]);
+        const bySection = {};
+        SECTIONS.forEach(sec => { bySection[sec] = []; });
+        questions.forEach(q => {
+            const opt = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            const item = {
+                id: q.question_id,
+                question: q.question,
+                options: opt,
+                correctAnswer: q.correct_answer,
+                explanation: q.explanation,
+                category: q.category,
+                questionType: q.question_type,
+                section: q.section,
+                testCases: q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null,
+                starterCode: q.starter_code,
+                solutionCode: q.solution_code,
+                points: q.points ?? 1,
+                timeLimit: q.time_limit
+            };
+            if (bySection[q.section]) bySection[q.section].push(item);
+        });
+        const sectionConfig = t.section_config ? (typeof t.section_config === 'string' ? JSON.parse(t.section_config) : t.section_config) : null;
+        res.json({
+            id: t.id,
+            title: t.title,
+            type: t.type,
+            difficulty: t.difficulty,
+            duration: t.duration,
+            totalQuestions: t.total_questions,
+            passingScore: t.passing_score,
+            status: t.status,
+            createdBy: t.created_by,
+            createdAt: t.created_at,
+            description: t.description || '',
+            startTime: t.start_time,
+            deadline: t.deadline,
+            maxAttempts: t.max_attempts ?? 1,
+            maxTabSwitches: t.max_tab_switches ?? 3,
+            sectionConfig,
+            questionsBySection: bySection,
+            questions: questions.map(q => ({
+                id: q.question_id,
+                section: q.section,
+                question: q.question,
+                options: [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean),
+                correctAnswer: q.correct_answer,
+                questionType: q.question_type,
+                explanation: q.explanation,
+                category: q.category
+            }))
+        });
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create global test
+app.post('/api/global-tests', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const testId = uuidv4();
+        const {
+            title, type, difficulty, duration, passingScore, description, startTime, deadline,
+            maxAttempts, maxTabSwitches, status, createdBy, sectionConfig
+        } = req.body;
+        const sectionConfigJson = sectionConfig ? JSON.stringify(sectionConfig) : null;
+        const totalQuestions = (sectionConfig && sectionConfig.sections)
+            ? sectionConfig.sections.reduce((sum, s) => sum + (s.enabled ? (s.questionsCount || 0) : 0), 0)
+            : 0;
+        await connection.query(
+            `INSERT INTO global_tests (id, title, type, difficulty, duration, total_questions, passing_score, status, created_by, description, start_time, deadline, max_attempts, max_tab_switches, section_config)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [testId, title || 'Untitled', type || 'comprehensive', difficulty, duration || 180, totalQuestions, passingScore ?? 60, status || 'draft', createdBy || null, description || '', startTime ? startTime.replace('T', ' ') : null, deadline ? deadline.replace('T', ' ') : null, maxAttempts ?? 1, maxTabSwitches ?? 3, sectionConfigJson]
+        );
+        await connection.commit();
+        res.json({
+            id: testId,
+            title: title || 'Untitled',
+            type: type || 'comprehensive',
+            duration: duration || 120,
+            totalQuestions,
+            passingScore: passingScore ?? 60,
+            status: status || 'draft',
+            sectionConfig: sectionConfig || null
+        });
+    } catch (error) {
+        await connection.rollback();
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Update global test
+app.put('/api/global-tests/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            title, type, difficulty, duration, passingScore, description, startTime, deadline,
+            maxAttempts, maxTabSwitches, status, sectionConfig
+        } = req.body;
+        const sectionConfigJson = sectionConfig ? JSON.stringify(sectionConfig) : null;
+        let totalQuestions = null;
+        if (sectionConfig && sectionConfig.sections) {
+            totalQuestions = sectionConfig.sections.reduce((sum, s) => sum + (s.enabled ? (s.questionsCount || 0) : 0), 0);
+        }
+        const updates = [];
+        const params = [];
+        if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+        if (type !== undefined) { updates.push('type = ?'); params.push(type); }
+        if (difficulty !== undefined) { updates.push('difficulty = ?'); params.push(difficulty); }
+        if (duration !== undefined) { updates.push('duration = ?'); params.push(duration); }
+        if (totalQuestions !== null) { updates.push('total_questions = ?'); params.push(totalQuestions); }
+        if (passingScore !== undefined) { updates.push('passing_score = ?'); params.push(passingScore); }
+        if (description !== undefined) { updates.push('description = ?'); params.push(description); }
+        if (startTime !== undefined) { updates.push('start_time = ?'); params.push(startTime ? startTime.replace('T', ' ') : null); }
+        if (deadline !== undefined) { updates.push('deadline = ?'); params.push(deadline ? deadline.replace('T', ' ') : null); }
+        if (maxAttempts !== undefined) { updates.push('max_attempts = ?'); params.push(maxAttempts); }
+        if (maxTabSwitches !== undefined) { updates.push('max_tab_switches = ?'); params.push(maxTabSwitches); }
+        if (status !== undefined) { updates.push('status = ?'); params.push(status); }
+        if (sectionConfigJson !== undefined) { updates.push('section_config = ?'); params.push(sectionConfigJson); }
+        if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+        params.push(id);
+        await pool.query(`UPDATE global_tests SET ${updates.join(', ')} WHERE id = ?`, params);
+        res.json({ success: true });
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete global test
+app.delete('/api/global-tests/:id', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const id = req.params.id;
+        const [subs] = await connection.query('SELECT id FROM global_test_submissions WHERE test_id = ?', [id]);
+        const subIds = subs.map(s => s.id);
+        if (subIds.length > 0) {
+            await connection.query('DELETE FROM question_results WHERE submission_id IN (?)', [subIds]);
+            await connection.query('DELETE FROM section_results WHERE submission_id IN (?)', [subIds]);
+        }
+        await connection.query('DELETE FROM global_test_submissions WHERE test_id = ?', [id]);
+        await connection.query('DELETE FROM test_questions WHERE test_id = ?', [id]);
+        await connection.query('DELETE FROM personalized_reports WHERE test_id = ?', [id]);
+        const [r] = await connection.query('DELETE FROM global_tests WHERE id = ?', [id]);
+        await connection.commit();
+        if (r.affectedRows === 0) return res.status(404).json({ error: 'Test not found' });
+        res.json({ success: true });
+    } catch (error) {
+        await connection.rollback();
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Add questions to global test (batch per section)
+app.post('/api/global-tests/:id/questions', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const testId = req.params.id;
+        const { section, questions: questionsList } = req.body;
+        if (!section || !SECTIONS.includes(section)) {
+            return res.status(400).json({ error: 'Invalid section. Use: aptitude, verbal, logical, coding, sql' });
+        }
+        if (!Array.isArray(questionsList) || questionsList.length === 0) {
+            return res.status(400).json({ error: 'questions array required' });
+        }
+        const inserted = [];
+        for (const q of questionsList) {
+            const questionId = uuidv4();
+            const options = q.options || [];
+            const correctAnswer = (q.correctAnswer !== undefined && q.correctAnswer !== null) ? String(q.correctAnswer) : (q.correct_answer || '');
+            const questionType = q.questionType || 'mcq';
+            const testCasesJson = q.testCases ? (typeof q.testCases === 'string' ? q.testCases : JSON.stringify(q.testCases)) : null;
+            await connection.query(
+                `INSERT INTO test_questions (question_id, test_id, section, question_type, question, option_1, option_2, option_3, option_4, correct_answer, explanation, category, test_cases, starter_code, solution_code, points)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [questionId, testId, section, questionType, q.question || '', options[0] || '', options[1] || '', options[2] || '', options[3] || '', correctAnswer, q.explanation || '', q.category || 'general', testCasesJson, q.starterCode || null, q.solutionCode || null, q.points ?? (questionType === 'coding' || questionType === 'sql' ? 10 : 1)]
+            );
+            inserted.push(questionId);
+        }
+        const [countRow] = await connection.query('SELECT COUNT(*) as c FROM test_questions WHERE test_id = ?', [testId]);
+        await connection.query('UPDATE global_tests SET total_questions = ? WHERE id = ?', [countRow[0].c, testId]);
+        await connection.commit();
+        res.json({ added: inserted.length, questionIds: inserted });
+    } catch (error) {
+        await connection.rollback();
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Delete all questions for a global test, or only for a section
+app.delete('/api/global-tests/:id/questions', async (req, res) => {
+    try {
+        const testId = req.params.id;
+        const { section } = req.query;
+        let query = 'DELETE FROM test_questions WHERE test_id = ?';
+        const params = [testId];
+        if (section && SECTIONS.includes(section)) {
+            query += ' AND section = ?';
+            params.push(section);
+        }
+        const [r] = await pool.query(query, params);
+        const [countRow] = await pool.query('SELECT COUNT(*) as c FROM test_questions WHERE test_id = ?', [testId]);
+        await pool.query('UPDATE global_tests SET total_questions = ? WHERE id = ?', [countRow[0].c, testId]);
+        res.json({ deleted: r.affectedRows });
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get questions for a global test (optional filter by section)
+app.get('/api/global-tests/:id/questions', async (req, res) => {
+    try {
+        const { section } = req.query;
+        let query = 'SELECT * FROM test_questions WHERE test_id = ?';
+        const params = [req.params.id];
+        if (section && SECTIONS.includes(section)) {
+            query += ' AND section = ?';
+            params.push(section);
+        }
+        query += ' ORDER BY section, question_id';
+        const [rows] = await pool.query(query, params);
+        const questions = rows.map(q => ({
+            id: q.question_id,
+            testId: q.test_id,
+            section: q.section,
+            questionType: q.question_type,
+            question: q.question,
+            options: [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean),
+            correctAnswer: q.correct_answer,
+            explanation: q.explanation,
+            category: q.category,
+            testCases: q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null,
+            starterCode: q.starter_code,
+            solutionCode: q.solution_code,
+            points: q.points ?? 1,
+            timeLimit: q.time_limit
+        }));
+        res.json(questions);
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Submit global test
+app.post('/api/global-tests/:id/submit', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const testId = req.params.id;
+        const { studentId, answers, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
+        if (!studentId) return res.status(400).json({ error: 'studentId required' });
+
+        const [tests] = await connection.query('SELECT * FROM global_tests WHERE id = ?', [testId]);
+        if (tests.length === 0) return res.status(404).json({ error: 'Test not found' });
+        const test = tests[0];
+
+        const [questions] = await connection.query('SELECT * FROM test_questions WHERE test_id = ?', [testId]);
+        const questionMap = {};
+        questions.forEach(q => { questionMap[q.question_id] = q; });
+
+        const sectionScoresComputed = { aptitude: 0, verbal: 0, logical: 0, coding: 0, sql: 0 };
+        const sectionCorrect = { aptitude: 0, verbal: 0, logical: 0, coding: 0, sql: 0 };
+        const sectionTotal = { aptitude: 0, verbal: 0, logical: 0, coding: 0, sql: 0 };
+        const sectionPointsEarned = { aptitude: 0, verbal: 0, logical: 0, coding: 0, sql: 0 };
+        const sectionPointsTotal = { aptitude: 0, verbal: 0, logical: 0, coding: 0, sql: 0 };
+        SECTIONS.forEach(s => {
+            sectionTotal[s] = questions.filter(q => q.section === s).length;
+            sectionPointsTotal[s] = questions.filter(q => q.section === s).reduce((sum, q) => sum + (q.points ?? 1), 0);
+        });
+
+        const questionResults = [];
+        for (const q of questions) {
+            const userAns = answers && answers[q.question_id] !== undefined ? String(answers[q.question_id]).trim() : '';
+            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            let isCorrect = false;
+            let pointsEarned = 0;
+            let correctAnswerText = '';
+
+            if (q.question_type === 'coding') {
+                const testCasesRaw = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
+                const language = (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
+                const cases = Array.isArray(testCasesRaw) ? testCasesRaw : (testCasesRaw && testCasesRaw.cases) ? testCasesRaw.cases : [];
+                const result = await runInlineCodingTests(userAns, language, cases);
+                isCorrect = result.isCorrect;
+                pointsEarned = isCorrect ? (q.points ?? 10) : Math.round((result.percentage / 100) * (q.points ?? 10));
+                correctAnswerText = result.total ? `${result.passedCount}/${result.total} test cases passed` : 'N/A';
+            } else if (q.question_type === 'sql') {
+                const schema = q.starter_code || '';
+                const testCasesRaw = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
+                const expectedOutput = (testCasesRaw && testCasesRaw.expectedOutput) ? testCasesRaw.expectedOutput : (Array.isArray(testCasesRaw) ? '' : '');
+                const result = await runSqlAndCompare(schema, userAns, expectedOutput);
+                isCorrect = result.isCorrect;
+                pointsEarned = isCorrect ? (q.points ?? 10) : 0;
+                correctAnswerText = result.output || 'Expected result';
+            } else {
+                const correctText = q.correct_answer;
+                isCorrect = options.length ? (userAns === correctText || (options[Number(correctText)] !== undefined && userAns === options[Number(correctText)])) : (userAns === correctText);
+                pointsEarned = isCorrect ? (q.points ?? 1) : 0;
+                correctAnswerText = options.length ? (options[Number(correctText)] !== undefined ? options[Number(correctText)] : correctText) : correctText;
+            }
+
+            if (isCorrect) sectionCorrect[q.section]++;
+            sectionPointsEarned[q.section] += pointsEarned;
+            questionResults.push({
+                questionId: q.question_id,
+                section: q.section,
+                userAnswer: (q.question_type === 'coding' || q.question_type === 'sql') ? (userAns ? userAns.substring(0, 500) + (userAns.length > 500 ? '...' : '') : 'Not Answered') : (userAns || 'Not Answered'),
+                correctAnswer: correctAnswerText,
+                isCorrect,
+                pointsEarned,
+                explanation: q.explanation
+            });
+        }
+
+        SECTIONS.forEach(s => {
+            const total = sectionTotal[s];
+            const totalPts = sectionPointsTotal[s];
+            if (total > 0) {
+                sectionScoresComputed[s] = totalPts > 0
+                    ? Math.round((sectionPointsEarned[s] / totalPts) * 100)
+                    : Math.round((sectionCorrect[s] / total) * 100);
+            }
+        });
+
+        const totalScore = Object.values(sectionScoresComputed).reduce((a, b) => a + b, 0);
+        const totalQ = questions.length;
+        const overallPercentage = totalQ ? Math.round((totalScore / (SECTIONS.length * 100)) * 100) : 0;
+        const overallPercent = totalQ ? Math.round((questionResults.filter(r => r.isCorrect).length / totalQ) * 100) : 0;
+        const status = overallPercent >= test.passing_score ? 'passed' : 'failed';
+        const subId = `gts-${uuidv4().slice(0, 12)}`;
+        const submittedAt = new Date();
+
+        await connection.query(
+            `INSERT INTO global_test_submissions (id, test_id, test_title, student_id, aptitude_score, verbal_score, logical_score, coding_score, sql_score, total_score, overall_percentage, status, time_spent, tab_switches, submitted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [subId, testId, test.title, studentId, sectionScoresComputed.aptitude, sectionScoresComputed.verbal, sectionScoresComputed.logical, sectionScoresComputed.coding, sectionScoresComputed.sql, totalScore, overallPercent, status, timeSpent || 0, tabSwitches, submittedAt]
+        );
+
+        for (const sr of SECTIONS) {
+            if (sectionTotal[sr] === 0) continue;
+            const score = sectionScoresComputed[sr];
+            const pct = sectionTotal[sr] ? Math.round((sectionCorrect[sr] / sectionTotal[sr]) * 100) : 0;
+            await connection.query(
+                'INSERT INTO section_results (id, submission_id, section, correct_count, total_questions, score, percentage, time_spent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [`sr-${uuidv4().replace(/-/g, '').slice(0, 16)}`, subId, sr, sectionCorrect[sr], sectionTotal[sr], score, pct, Math.floor((timeSpent || 0) / 5)]
+            );
+        }
+
+        for (const qr of questionResults) {
+            await connection.query(
+                'INSERT INTO question_results (id, submission_id, question_id, section, user_answer, correct_answer, is_correct, points_earned, time_taken, explanation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [`qr-${uuidv4().replace(/-/g, '').slice(0, 16)}`, subId, qr.questionId, qr.section, qr.userAnswer, qr.correctAnswer, qr.isCorrect ? 1 : 0, qr.pointsEarned, null, qr.explanation || '']
+            );
+        }
+
+        await connection.commit();
+
+        res.json({
+            submission: {
+                id: subId,
+                score: overallPercent,
+                totalScore,
+                status,
+                sectionScores: sectionScoresComputed,
+                correctCount: questionResults.filter(r => r.isCorrect).length,
+                totalQuestions: totalQ,
+                tabSwitches,
+                timeSpent: timeSpent || 0,
+                questionResults
+            },
+            message: status === 'passed' ? 'Congratulations! You passed the test!' : 'Keep practicing!'
+        });
+    } catch (error) {
+        await connection.rollback();
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// List global test submissions (admin: all; student: by studentId; mentor: by mentorId)
+app.get('/api/global-test-submissions', async (req, res) => {
+    try {
+        const { testId, studentId, mentorId } = req.query;
+        let query = 'SELECT s.*, u.name as student_name FROM global_test_submissions s JOIN users u ON s.student_id = u.id WHERE 1=1';
+        const params = [];
+        if (testId) { query += ' AND s.test_id = ?'; params.push(testId); }
+        if (studentId) { query += ' AND s.student_id = ?'; params.push(studentId); }
+        if (mentorId) { query += ' AND u.mentor_id = ?'; params.push(mentorId); }
+        query += ' ORDER BY s.submitted_at DESC';
+        const [rows] = await pool.query(query, params);
+        res.json(rows.map(s => ({
+            id: s.id,
+            testId: s.test_id,
+            testTitle: s.test_title,
+            studentId: s.student_id,
+            studentName: s.student_name,
+            aptitudeScore: s.aptitude_score,
+            verbalScore: s.verbal_score,
+            logicalScore: s.logical_score,
+            codingScore: s.coding_score,
+            sqlScore: s.sql_score,
+            totalScore: s.total_score,
+            overallPercentage: Number(s.overall_percentage),
+            status: s.status,
+            timeSpent: s.time_spent,
+            tabSwitches: s.tab_switches,
+            submittedAt: s.submitted_at
+        })));
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single global submission with question results
+app.get('/api/global-test-submissions/:id', async (req, res) => {
+    try {
+        const [subs] = await pool.query('SELECT s.*, u.name as student_name FROM global_test_submissions s JOIN users u ON s.student_id = u.id WHERE s.id = ?', [req.params.id]);
+        if (subs.length === 0) return res.status(404).json({ error: 'Submission not found' });
+        const s = subs[0];
+        const [qr] = await pool.query('SELECT * FROM question_results WHERE submission_id = ?', [s.id]);
+        const [sec] = await pool.query('SELECT * FROM section_results WHERE submission_id = ?', [s.id]);
+        res.json({
+            id: s.id,
+            testId: s.test_id,
+            testTitle: s.test_title,
+            studentId: s.student_id,
+            studentName: s.student_name,
+            aptitudeScore: s.aptitude_score,
+            verbalScore: s.verbal_score,
+            logicalScore: s.logical_score,
+            codingScore: s.coding_score,
+            sqlScore: s.sql_score,
+            totalScore: s.total_score,
+            overallPercentage: Number(s.overall_percentage),
+            status: s.status,
+            timeSpent: s.time_spent,
+            tabSwitches: s.tab_switches,
+            submittedAt: s.submitted_at,
+            questionResults: qr.map(r => ({ questionId: r.question_id, section: r.section, userAnswer: r.user_answer, correctAnswer: r.correct_answer, isCorrect: !!r.is_correct, explanation: r.explanation })),
+            sectionResults: sec.map(r => ({ section: r.section, correctCount: r.correct_count, totalQuestions: r.total_questions, score: r.score, percentage: Number(r.percentage) }))
+        });
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Personalized report for a global test submission
+app.get('/api/global-test-submissions/:id/report', async (req, res) => {
+    try {
+        const [subs] = await pool.query('SELECT s.*, u.name as student_name, u.email as student_email FROM global_test_submissions s JOIN users u ON s.student_id = u.id WHERE s.id = ?', [req.params.id]);
+        if (subs.length === 0) return res.status(404).json({ error: 'Submission not found' });
+        const s = subs[0];
+        const [secRows] = await pool.query('SELECT * FROM section_results WHERE submission_id = ?', [s.id]);
+        const [qrRows] = await pool.query('SELECT * FROM question_results WHERE submission_id = ?', [s.id]);
+        const sectionResults = {};
+        secRows.forEach(r => { sectionResults[r.section] = { score: r.score, percentage: Number(r.percentage), correctCount: r.correct_count, totalQuestions: r.total_questions }; });
+        const bySection = {};
+        SECTIONS.forEach(sec => { bySection[sec] = qrRows.filter(r => r.section === sec); });
+        const weakAreas = [];
+        SECTIONS.forEach(sec => {
+            const data = sectionResults[sec];
+            if (data && data.percentage < 70) weakAreas.push(sec);
+        });
+        const report = {
+            studentInfo: { id: s.student_id, name: s.student_name, email: s.student_email },
+            testInfo: { id: s.test_id, title: s.test_title, date: s.submitted_at },
+            overallPerformance: { totalScore: s.total_score, percentage: Number(s.overall_percentage), status: s.status },
+            sectionWisePerformance: {
+                aptitude: sectionResults.aptitude || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
+                verbal: sectionResults.verbal || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
+                logical: sectionResults.logical || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
+                coding: sectionResults.coding || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
+                sql: sectionResults.sql || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 }
+            },
+            strengths: SECTIONS.filter(sec => sectionResults[sec] && sectionResults[sec].percentage >= 80).map(sec => `${sec} (${sectionResults[sec].percentage}%)`),
+            weaknesses: weakAreas.map(sec => `${sec} (${sectionResults[sec] ? sectionResults[sec].percentage : 0}%)`),
+            questionResultsBySection: bySection,
+            recommendations: weakAreas.length ? weakAreas.map(sec => `Focus on improving your ${sec} section.`) : ['Well done across all sections!']
+        };
+        res.json(report);
+    } catch (error) {
+        if (error.message && error.message.includes("doesn't exist")) {
+            return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // ==================== ADMIN & ANALYTICS ROUTES ====================
 
@@ -2587,16 +3194,125 @@ app.delete('/api/test-cases/:testCaseId', async (req, res) => {
     }
 });
 
+// Run code against inline test cases (for global test coding questions)
+const languageMap = {
+    'Python': { language: 'python', version: '3.10.0' },
+    'JavaScript': { language: 'javascript', version: '18.15.0' },
+    'Java': { language: 'java', version: '15.0.2' },
+    'C': { language: 'c', version: '10.2.0' },
+    'C++': { language: 'cpp', version: '10.2.0' },
+    'SQL': { language: 'sqlite3', version: '3.36.0' }
+};
+
+async function runInlineCodingTests(code, language, testCases) {
+    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+        return { passedCount: 0, total: 0, percentage: 0, isCorrect: false };
+    }
+    const runtime = languageMap[language] || { language: 'python', version: '3.10.0' };
+    let passedCount = 0;
+    for (const tc of testCases) {
+        const input = (tc.input != null ? tc.input : '').toString();
+        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString().trim();
+        try {
+            const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: runtime.language,
+                    version: runtime.version,
+                    files: [{ content: code }],
+                    stdin: input
+                })
+            });
+            const data = await response.json();
+            const actual = (data.run?.output || '').trim();
+            if (actual === expected) passedCount++;
+        } catch (_) { /* fail this case */ }
+    }
+    const total = testCases.length;
+    const percentage = total ? Math.round((passedCount / total) * 100) : 0;
+    return { passedCount, total, percentage, isCorrect: passedCount === total };
+}
+
+async function runSqlAndCompare(schema, query, expectedOutput) {
+    const expected = (expectedOutput || '').toString().trim().replace(/\r/g, '');
+    try {
+        const fullQuery = schema ? `${schema}\n\n${query}` : query;
+        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                language: 'sqlite3',
+                version: '3.36.0',
+                files: [{ content: fullQuery }]
+            })
+        });
+        const data = await response.json();
+        const actual = (data.run?.output || '').trim().replace(/\r/g, '');
+        const isCorrect = data.run?.code === 0 && (actual === expected || normalizeSqlOutput(actual) === normalizeSqlOutput(expected));
+        return { isCorrect, output: actual };
+    } catch (e) {
+        return { isCorrect: false, output: e.message };
+    }
+}
+
+function normalizeSqlOutput(s) {
+    return s.split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+}
+
+app.post('/api/run-inline-tests', async (req, res) => {
+    try {
+        const { code, language, testCases } = req.body;
+        const result = await runInlineCodingTests(code || '', language || 'Python', testCases || []);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/sql/run-and-compare', async (req, res) => {
+    try {
+        const { schema, query, expectedOutput } = req.body;
+        const result = await runSqlAndCompare(schema || '', query || '', expectedOutput);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Run code against all test cases
 app.post('/api/run-with-tests', async (req, res) => {
     try {
-        const { code, language, problemId, sqlSchema } = req.body;
+        const { code, language, problemId, sqlSchema, isGlobalTest } = req.body;
 
         // Get all test cases for this problem
-        const [testCases] = await pool.query(
-            'SELECT * FROM test_cases WHERE problem_id = ? ORDER BY created_at ASC',
-            [problemId]
-        );
+        let testCases = [];
+        if (isGlobalTest) {
+            const [rows] = await pool.query(
+                'SELECT test_cases FROM test_questions WHERE question_id = ?',
+                [problemId]
+            );
+            if (rows.length > 0) {
+                const raw = rows[0].test_cases;
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                const casesArray = Array.isArray(parsed) ? parsed : (parsed?.cases || []);
+                // Normalize for consistent processing
+                testCases = casesArray.map((tc, idx) => ({
+                    id: tc.id || `tc-${idx}`,
+                    input: tc.input || '',
+                    expected_output: tc.expected_output || tc.expectedOutput || '',
+                    is_hidden: tc.isHidden || tc.is_hidden || false,
+                    points: tc.points || 10,
+                    description: tc.description || ''
+                }));
+            }
+        } else {
+            const [rows] = await pool.query(
+                'SELECT * FROM test_cases WHERE problem_id = ? ORDER BY created_at ASC',
+                [problemId]
+            );
+            testCases = rows;
+        }
 
         // Language mapping for Piston
         const languageMap = {
@@ -2960,6 +3676,17 @@ app.post('/api/reports/student/:studentId', async (req, res) => {
             'SELECT COUNT(*) as completedProblems FROM problem_completions WHERE student_id = ?', [studentId]
         );
 
+        // Global Test Results
+        const [globalSubmissions] = await pool.query(`
+            SELECT * FROM global_test_submissions 
+            WHERE student_id = ?
+            ORDER BY submitted_at DESC
+        `, [studentId]);
+
+        const avgGlobalScore = globalSubmissions.length > 0
+            ? Math.round(globalSubmissions.reduce((a, s) => a + Number(s.overall_percentage), 0) / globalSubmissions.length) : 0;
+        const globalPassed = globalSubmissions.filter(s => s.status === 'passed').length;
+
         // Performance trends (last 30 days)
         const [trends] = await pool.query(`
             SELECT DATE(submitted_at) as date, AVG(score) as avgScore, COUNT(*) as count
@@ -2969,13 +3696,22 @@ app.post('/api/reports/student/:studentId', async (req, res) => {
 
         // Get leaderboard position
         const [leaderboard] = await pool.query(`
-            SELECT u.id, AVG(s.score) as avgScore
-            FROM users u LEFT JOIN submissions s ON u.id = s.student_id
-            WHERE u.role = 'student' GROUP BY u.id ORDER BY avgScore DESC
+            SELECT u.id, 
+                   (IFNULL(AVG(s.score), 0) + IFNULL(AVG(asub.score), 0) + IFNULL(AVG(g.overall_percentage), 0)) / 
+                   (CASE WHEN (AVG(s.score) IS NOT NULL AND AVG(asub.score) IS NOT NULL AND AVG(g.overall_percentage) IS NOT NULL) THEN 3 
+                         WHEN ((AVG(s.score) IS NOT NULL AND AVG(asub.score) IS NOT NULL) OR (AVG(s.score) IS NOT NULL AND AVG(g.overall_percentage) IS NOT NULL) OR (AVG(asub.score) IS NOT NULL AND AVG(g.overall_percentage) IS NOT NULL)) THEN 2
+                         ELSE 1 END) as avgScore
+            FROM users u 
+            LEFT JOIN submissions s ON u.id = s.student_id
+            LEFT JOIN aptitude_submissions asub ON u.id = asub.student_id
+            LEFT JOIN global_test_submissions g ON u.id = g.student_id
+            WHERE u.role = 'student' 
+            GROUP BY u.id 
+            ORDER BY avgScore DESC
         `);
         const rank = leaderboard.findIndex(l => l.id === studentId) + 1;
 
-        // Category analysis for aptitude
+        // Category analysis for aptitude AND global
         const [aptitudeDetails] = await pool.query(`
             SELECT aqr.category, COUNT(*) as total,
                    SUM(CASE WHEN aqr.is_correct = 'true' OR aqr.is_correct = 1 THEN 1 ELSE 0 END) as correct
@@ -2983,7 +3719,14 @@ app.post('/api/reports/student/:studentId', async (req, res) => {
             JOIN aptitude_submissions asub ON aqr.submission_id = asub.id
             WHERE asub.student_id = ?
             GROUP BY aqr.category
-        `, [studentId]);
+            UNION ALL
+            SELECT section as category, COUNT(*) as total,
+                   SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct
+            FROM question_results qr
+            JOIN global_test_submissions gts ON qr.submission_id = gts.id
+            WHERE gts.student_id = ?
+            GROUP BY section
+        `, [studentId, studentId]);
 
         const categoryAnalysis = aptitudeDetails.map(c => ({
             category: c.category || 'General',
@@ -3056,7 +3799,9 @@ Provide a JSON response with:
                 avgAptitudeScore,
                 overallAvgScore: Math.round((avgCodeScore + avgTaskScore + avgAptitudeScore) / 3),
                 leaderboardRank: rank,
-                totalStudents: leaderboard.length
+                totalStudents: leaderboard.length,
+                avgGlobalScore,
+                globalTestsCount: globalSubmissions.length
             },
             integrity: {
                 tabSwitches: totalTabSwitches,
@@ -3074,6 +3819,12 @@ Provide a JSON response with:
                 status: a.status,
                 difficulty: a.difficulty,
                 submittedAt: a.submitted_at
+            })),
+            globalResults: globalSubmissions.map(g => ({
+                testTitle: g.test_title,
+                score: g.overall_percentage,
+                status: g.status,
+                submittedAt: g.submitted_at
             })),
             recentSubmissions: submissions.slice(0, 10).map(s => ({
                 title: s.problemTitle || s.taskTitle || 'Unknown',
@@ -3124,6 +3875,115 @@ app.post('/api/reports/bulk', async (req, res) => {
         res.json({ reports, generatedAt: new Date().toISOString() });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== AI GENERATION FOR CODING & SQL ====================
+
+// Generate Coding Problem with AI
+app.post('/api/ai/generate-coding-problem', async (req, res) => {
+    try {
+        const { topic, difficulty, language } = req.body;
+
+        const systemPrompt = `You are an expert programming instructor and problem setter. Generate a coding problem based on the given topic and difficulty.
+
+Return a JSON object with:
+{
+    "question": "A detailed problem description with context, requirements, and examples",
+    "starterCode": "ONLY the function signature/boilerplate. DO NOT include the solution implementation.",
+    "testCases": [
+        { "input": "test input 1", "expected_output": "expected output 1" },
+        { "input": "test input 2", "expected_output": "expected output 2" }
+    ],
+    "solutionCode": "A reference solution (hidden from students)",
+    "hints": ["hint 1", "hint 2"],
+    "explanation": "Brief explanation of the approach"
+}
+
+Guidelines:
+- Problem should match the ${difficulty} difficulty level
+- Use ${language} syntax for starter code
+- Include 3-5 test cases covering edge cases
+- Problem should be clear and solvable in 15-30 minutes`;
+
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Topic: ${topic}\nDifficulty: ${difficulty}\nLanguage: ${language}` }
+        ], {
+            model: 'llama-3.3-70b',
+            temperature: 0.7,
+            max_tokens: 2000,
+            response_format: { type: 'json_object' }
+        });
+
+        const result = JSON.parse(chatCompletion.choices[0]?.message?.content || '{}');
+        res.json({ problem: { ...result, language, difficulty } });
+
+    } catch (error) {
+        console.error('Generate Coding Problem Error:', error);
+        // Fallback response
+        res.json({
+            problem: {
+                question: `Write a ${req.body.language || 'Python'} program to solve: ${req.body.topic || 'the given problem'}`,
+                starterCode: req.body.language === 'Python'
+                    ? '# Write your solution here\ndef solution():\n    pass\n\n# Test your code\nsolution()'
+                    : '// Write your solution here',
+                testCases: [{ input: '', expected_output: 'Enter expected output' }],
+                language: req.body.language || 'Python',
+                difficulty: req.body.difficulty || 'Medium'
+            }
+        });
+    }
+});
+
+// Generate SQL Problem with AI
+app.post('/api/ai/generate-sql-problem', async (req, res) => {
+    try {
+        const { topic, difficulty } = req.body;
+
+        const systemPrompt = `You are an expert SQL instructor and database problem setter. Generate a SQL problem based on the given topic and difficulty.
+
+Return a JSON object with:
+{
+    "question": "A detailed problem description explaining what query the student needs to write",
+    "schema": "Complete SQL schema with CREATE TABLE statements and sample INSERT statements (use SQLite syntax)",
+    "expectedOutput": "The exact expected output of the correct query (pipe-separated format)",
+    "solutionQuery": "The correct SQL query (hidden from students)",
+    "hints": ["hint 1", "hint 2"],
+    "explanation": "Brief explanation of the SQL concepts involved"
+}
+
+Guidelines:
+- Problem should match the ${difficulty} difficulty level
+- Use SQLite-compatible syntax
+- Schema should have 1-3 tables with meaningful sample data
+- Expected output should be in pipe-separated format with headers
+- Problem should test practical SQL skills`;
+
+        const chatCompletion = await cerebrasChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Topic: ${topic}\nDifficulty: ${difficulty}` }
+        ], {
+            model: 'llama-3.3-70b',
+            temperature: 0.7,
+            max_tokens: 2000,
+            response_format: { type: 'json_object' }
+        });
+
+        const result = JSON.parse(chatCompletion.choices[0]?.message?.content || '{}');
+        res.json({ problem: { ...result, difficulty } });
+
+    } catch (error) {
+        console.error('Generate SQL Problem Error:', error);
+        // Fallback response
+        res.json({
+            problem: {
+                question: `Write a SQL query to: ${req.body.topic || 'retrieve data from the database'}`,
+                schema: `-- Sample schema\nCREATE TABLE employees (\n    id INTEGER PRIMARY KEY,\n    name TEXT,\n    department TEXT,\n    salary INTEGER\n);\n\nINSERT INTO employees VALUES (1, 'John', 'Engineering', 50000);\nINSERT INTO employees VALUES (2, 'Jane', 'Marketing', 45000);`,
+                expectedOutput: 'id|name|department|salary\n1|John|Engineering|50000\n2|Jane|Marketing|45000',
+                difficulty: req.body.difficulty || 'Medium'
+            }
+        });
     }
 });
 

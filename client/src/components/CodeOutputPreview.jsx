@@ -4,12 +4,13 @@ import { Play, CheckCircle, XCircle, Clock, Eye, EyeOff, Trophy, AlertTriangle, 
 
 const API_BASE = 'http://localhost:3000/api'
 
-function CodeOutputPreview({ 
-    problemId, 
-    code, 
-    language, 
+function CodeOutputPreview({
+    problemId,
+    code,
+    language,
     onRunComplete,
-    showRunButton = true 
+    showRunButton = true,
+    isGlobalTest = false
 }) {
     const [running, setRunning] = useState(false)
     const [results, setResults] = useState(null)
@@ -24,7 +25,8 @@ function CodeOutputPreview({
             const res = await axios.post(`${API_BASE}/run-with-tests`, {
                 problemId,
                 code,
-                language
+                language,
+                isGlobalTest
             })
             setResults(res.data)
             if (onRunComplete) {
@@ -64,10 +66,10 @@ function CodeOutputPreview({
                 <button
                     onClick={runWithTests}
                     disabled={running || !code?.trim()}
-                    style={{ 
-                        marginBottom: '1rem', 
-                        display: 'flex', 
-                        alignItems: 'center', 
+                    style={{
+                        marginBottom: '1rem',
+                        display: 'flex',
+                        alignItems: 'center',
                         gap: '0.5rem',
                         width: '100%',
                         justifyContent: 'center',
@@ -150,7 +152,7 @@ function CodeOutputPreview({
                     {/* Summary Header */}
                     <div style={{
                         padding: '1rem',
-                        background: passedCount === totalCount 
+                        background: passedCount === totalCount
                             ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.1))'
                             : 'linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(234, 88, 12, 0.1))',
                         borderBottom: '1px solid var(--border-color)',
@@ -185,8 +187,8 @@ function CodeOutputPreview({
                                 </div>
                             )}
                             <div>
-                                <div style={{ 
-                                    fontSize: '1.25rem', 
+                                <div style={{
+                                    fontSize: '1.25rem',
                                     fontWeight: 700,
                                     color: passedCount === totalCount ? '#10b981' : '#f97316'
                                 }}>
@@ -201,9 +203,9 @@ function CodeOutputPreview({
                         {/* Stats */}
                         <div style={{ display: 'flex', gap: '1rem' }}>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
                                     gap: '0.25rem',
                                     color: '#10b981',
                                     fontWeight: 600
@@ -213,9 +215,9 @@ function CodeOutputPreview({
                                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Passed</div>
                             </div>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
                                     gap: '0.25rem',
                                     color: '#ef4444',
                                     fontWeight: 600
@@ -225,9 +227,9 @@ function CodeOutputPreview({
                                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Failed</div>
                             </div>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
                                     gap: '0.25rem',
                                     color: '#8b5cf6',
                                     fontWeight: 600
@@ -258,9 +260,9 @@ function CodeOutputPreview({
                                     textTransform: 'capitalize'
                                 }}
                             >
-                                {tab === 'all' ? `All (${totalCount})` : 
-                                 tab === 'passed' ? `Passed (${passedCount})` : 
-                                 `Failed (${totalCount - passedCount})`}
+                                {tab === 'all' ? `All (${totalCount})` :
+                                    tab === 'passed' ? `Passed (${passedCount})` :
+                                        `Failed (${totalCount - passedCount})`}
                             </button>
                         ))}
                     </div>
@@ -268,18 +270,18 @@ function CodeOutputPreview({
                     {/* Test Case Results */}
                     <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                         {getFilteredResults().map((testResult, index) => (
-                            <TestCaseResult 
-                                key={testResult.testCaseId || index} 
-                                result={testResult} 
+                            <TestCaseResult
+                                key={testResult.testCaseId || index}
+                                result={testResult}
                                 index={index + 1}
                             />
                         ))}
 
                         {getFilteredResults().length === 0 && (
-                            <div style={{ 
-                                padding: '2rem', 
-                                textAlign: 'center', 
-                                color: 'var(--text-muted)' 
+                            <div style={{
+                                padding: '2rem',
+                                textAlign: 'center',
+                                color: 'var(--text-muted)'
                             }}>
                                 No test cases in this category
                             </div>
@@ -384,8 +386,8 @@ function TestCaseResult({ result, index }) {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {result.executionTime && (
-                        <span style={{ 
-                            fontSize: '0.75rem', 
+                        <span style={{
+                            fontSize: '0.75rem',
                             color: 'var(--text-muted)',
                             display: 'flex',
                             alignItems: 'center',
@@ -483,7 +485,7 @@ function TestCaseResult({ result, index }) {
                     color: 'var(--text-muted)',
                     fontStyle: 'italic'
                 }}>
-                    {result.passed 
+                    {result.passed
                         ? '✓ Your code passed this hidden test case'
                         : '✗ Your code failed this hidden test case. Details are hidden.'}
                 </div>

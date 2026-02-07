@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
+import GlobalTestInterface from '../components/GlobalTestInterface'
 import AptitudeReportModal from '../components/AptitudeReportModal'
 import ProctoredCodeEditor from '../components/ProctoredCodeEditor'
 import CodeOutputPreview from '../components/CodeOutputPreview'
@@ -11,6 +12,7 @@ import SQLVisualizer from '../components/SQLVisualizer'
 import SQLDebugger from '../components/SQLDebugger'
 import { useAuth } from '../App'
 import axios from 'axios'
+import GlobalReportModal from '../components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
@@ -61,6 +63,10 @@ function StudentPortal() {
                 setTitle('Aptitude Tests')
                 setSubtitle('Test your reasoning and analytical skills')
                 break
+            case 'global-tests':
+                setTitle('Global Complete Tests')
+                setSubtitle('Aptitude, Verbal, Logical, Coding, SQL')
+                break
             case 'submissions':
                 setTitle('My Submissions')
                 setSubtitle('View your submission history and reports')
@@ -76,6 +82,7 @@ function StudentPortal() {
         { path: '/student/tasks', label: 'ML Tasks', icon: <ClipboardList size={20} /> },
         { path: '/student/assignments', label: 'Coding Problems', icon: <Code size={20} /> },
         { path: '/student/aptitude', label: 'Aptitude Tests', icon: <Brain size={20} /> },
+        { path: '/student/global-tests', label: 'Global Complete Tests', icon: <Layers size={20} /> },
         { path: '/student/submissions', label: 'My Submissions', icon: <Send size={20} /> }
     ]
 
@@ -86,6 +93,7 @@ function StudentPortal() {
                 <Route path="/tasks" element={<Tasks user={user} />} />
                 <Route path="/assignments" element={<Assignments user={user} />} />
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
+                <Route path="/global-tests" element={<GlobalTests user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
             </Routes>
         </DashboardLayout>
@@ -1369,31 +1377,47 @@ function CodeEditorModal({ problem, user, onClose }) {
 function Submissions({ user }) {
     const [submissions, setSubmissions] = useState([])
     const [aptitudeSubmissions, setAptitudeSubmissions] = useState([])
+    const [globalSubmissions, setGlobalSubmissions] = useState([])
     const [loading, setLoading] = useState(true)
     const [viewReport, setViewReport] = useState(null)
     const [activeTab, setActiveTab] = useState('all')
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
+    const [viewGlobalReport, setViewGlobalReport] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
 
     const fetchSubmissions = () => {
+        setLoading(true)
         Promise.all([
             axios.get(`${API_BASE}/submissions?studentId=${user.id}`),
-            axios.get(`${API_BASE}/aptitude-submissions?studentId=${user.id}`)
-        ]).then(([codeRes, aptRes]) => {
+            axios.get(`${API_BASE}/aptitude-submissions?studentId=${user.id}`),
+            axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`)
+        ]).then(([codeRes, aptRes, globalRes]) => {
             setSubmissions((codeRes.data || []).map(s => ({ ...s, subType: 'code' })))
             setAptitudeSubmissions((aptRes.data || []).map(s => ({ ...s, subType: 'aptitude', itemTitle: s.testTitle })))
+            setGlobalSubmissions((globalRes.data || []).map(s => ({
+                ...s,
+                subType: 'global',
+                itemTitle: s.testTitle,
+                score: s.overallPercentage // Use overallPercentage as score
+            })))
             setLoading(false)
-        }).catch(err => setLoading(false))
+        }).catch(err => {
+            console.error('Fetch submissions error:', err)
+            setLoading(false)
+        })
     }
 
     useEffect(() => {
         fetchSubmissions()
     }, [user.id])
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (sub) => {
         if (window.confirm('Are you sure you want to delete this submission?')) {
             try {
-                await axios.delete(`${API_BASE}/submissions/${id}`)
+                const endpoint = sub.subType === 'global'
+                    ? `${API_BASE}/global-test-submissions/${sub.id}`
+                    : `${API_BASE}/submissions/${sub.id}`;
+                await axios.delete(endpoint)
                 fetchSubmissions()
             } catch (error) {
                 alert('Error deleting submission')
@@ -1401,7 +1425,7 @@ function Submissions({ user }) {
         }
     }
 
-    const allSubmissions = [...submissions, ...aptitudeSubmissions]
+    const allSubmissions = [...submissions, ...aptitudeSubmissions, ...globalSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
     const getFilteredSubmissions = () => {
@@ -1409,7 +1433,9 @@ function Submissions({ user }) {
             ? allSubmissions
             : activeTab === 'code'
                 ? submissions
-                : aptitudeSubmissions
+                : activeTab === 'aptitude'
+                    ? aptitudeSubmissions
+                    : globalSubmissions
 
         return filtered.filter(s =>
             (s.itemTitle || s.testTitle || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1462,6 +1488,18 @@ function Submissions({ user }) {
                             fontWeight: 500
                         }}
                     >📝 Aptitude ({aptitudeSubmissions.length})</button>
+                    <button
+                        onClick={() => setActiveTab('global')}
+                        style={{
+                            padding: '0.6rem 1.2rem',
+                            background: activeTab === 'global' ? '#3b82f6' : 'rgba(59, 130, 246, 0.1)',
+                            border: activeTab === 'global' ? 'none' : '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            color: activeTab === 'global' ? 'white' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontWeight: 500
+                        }}
+                    >🌐 Global ({globalSubmissions.length})</button>
                 </div>
                 <div style={{ position: 'relative' }}>
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -1502,13 +1540,13 @@ function Submissions({ user }) {
                                             background: sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'var(--primary-alpha)',
                                             color: sub.subType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
                                         }}>
-                                            {sub.subType === 'aptitude' ? '📝 Aptitude' : '💻 Code'}
+                                            {sub.subType === 'aptitude' ? '📝 Aptitude' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
                                         </span>
                                     </td>
                                     <td><div style={{ color: 'var(--primary)', fontWeight: 500 }}>{sub.itemTitle || sub.testTitle}</div></td>
                                     <td>
                                         <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
-                                            {sub.subType === 'aptitude' ? 'N/A' : (sub.language?.toUpperCase() || 'N/A')}
+                                            {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language?.toUpperCase() || 'N/A')}
                                         </span>
                                     </td>
                                     <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>{sub.score}%</td>
@@ -1572,10 +1610,15 @@ function Submissions({ user }) {
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                                             {sub.subType === 'aptitude' ? (
                                                 <button onClick={() => setViewAptitudeResult(sub)} style={{ background: 'rgba(139, 92, 246, 0.1)', border: 'none', color: '#8b5cf6', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}><Eye size={14} /> Results</button>
+                                            ) : sub.subType === 'global' ? (
+                                                <>
+                                                    <button onClick={() => setViewGlobalReport(sub.id)} style={{ background: 'var(--primary-alpha)', border: 'none', color: 'var(--primary)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}><Eye size={14} /> Full Report</button>
+                                                    <button onClick={() => handleDelete(sub)} style={{ background: 'var(--danger-alpha)', border: 'none', color: 'var(--danger)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}><Trash2 size={14} /></button>
+                                                </>
                                             ) : (
                                                 <>
                                                     <button onClick={() => setViewReport(sub)} style={{ background: 'var(--primary-alpha)', border: 'none', color: 'var(--primary)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}><Eye size={14} /> Report</button>
-                                                    <button onClick={() => handleDelete(sub.id)} style={{ background: 'var(--danger-alpha)', border: 'none', color: 'var(--danger)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}><Trash2 size={14} /></button>
+                                                    <button onClick={() => handleDelete(sub)} style={{ background: 'var(--danger-alpha)', border: 'none', color: 'var(--danger)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}><Trash2 size={14} /></button>
                                                 </>
                                             )}
                                         </div>
@@ -1590,7 +1633,19 @@ function Submissions({ user }) {
 
             {/* Aptitude Results Modal */}
             {viewAptitudeResult && (
-                <AptitudeReportModal submission={viewAptitudeResult} onClose={() => setViewAptitudeResult(null)} isStudentView={true} />
+                <AptitudeReportModal
+                    submission={viewAptitudeResult}
+                    onClose={() => setViewAptitudeResult(null)}
+                    isStudentView={true}
+                />
+            )}
+
+            {viewGlobalReport && (
+                <GlobalReportModal
+                    submissionId={viewGlobalReport}
+                    onClose={() => setViewGlobalReport(null)}
+                    isStudentView={true}
+                />
             )}
         </>
     )
@@ -1820,6 +1875,207 @@ function SubmissionReportModal({ submission, user, onClose }) {
                     </div>
                 </div>
             </div>
+        </div>
+    )
+}
+
+// ==================== GLOBAL COMPLETE TESTS COMPONENT ====================
+function GlobalTests({ user }) {
+    const [tests, setTests] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [selectedTest, setSelectedTest] = useState(null)
+    const [showTestInterface, setShowTestInterface] = useState(false)
+    const [submissions, setSubmissions] = useState([])
+
+    useEffect(() => {
+        const fetchTests = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/global-tests?status=live`)
+                setTests(Array.isArray(res.data) ? res.data : [])
+            } catch (e) {
+                if (e.response?.status === 503) setTests([])
+                else console.error(e)
+            } finally {
+                setLoading(false)
+            }
+        }
+        const fetchSubs = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`)
+                setSubmissions(Array.isArray(res.data) ? res.data : [])
+            } catch (_) { setSubmissions([]) }
+        }
+        fetchTests()
+        fetchSubs()
+    }, [user.id])
+
+    const getAttemptCount = (testId) => submissions.filter(s => s.testId === testId).length
+    const getTestSubmission = (testId) => submissions.find(s => s.testId === testId)
+    const isTestCompleted = (testId, testData) => {
+        const hasPassed = submissions.some(s => s.testId === testId && s.status === 'passed')
+        const attemptCount = getAttemptCount(testId)
+        const maxAttempts = testData?.maxAttempts ?? 1
+        return hasPassed || (maxAttempts !== -1 && attemptCount >= maxAttempts)
+    }
+
+    const startTest = async (test) => {
+        if (test.startTime && new Date(test.startTime) > new Date()) {
+            alert('This test is not yet available.')
+            return
+        }
+        if (test.deadline && new Date(test.deadline) < new Date()) {
+            alert('This test has expired.')
+            return
+        }
+        const attemptCount = submissions.filter(s => s.testId === test.id).length
+        const maxAttempts = test.maxAttempts ?? 1
+        if (maxAttempts !== -1 && attemptCount >= maxAttempts) {
+            alert(`Max attempts (${maxAttempts}) reached for this test.`)
+            return
+        }
+        try {
+            const res = await axios.get(`${API_BASE}/global-tests/${test.id}`)
+            setSelectedTest(res.data)
+            setShowTestInterface(true)
+        } catch (e) {
+            alert(e.response?.data?.error || 'Failed to load test')
+        }
+    }
+
+    const handleComplete = () => {
+        setShowTestInterface(false)
+        setSelectedTest(null)
+        axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`).then(r => setSubmissions(Array.isArray(r.data) ? r.data : [])).catch(() => { })
+    }
+
+    if (loading) return <div className="loading-spinner"></div>
+
+    if (showTestInterface && selectedTest) {
+        return (
+            <GlobalTestInterface
+                test={selectedTest}
+                user={user}
+                onClose={() => { setShowTestInterface(false); setSelectedTest(null) }}
+                onComplete={handleComplete}
+            />
+        )
+    }
+
+    const completedCount = submissions.filter(s => s.status === 'passed').length
+    return (
+        <div className="animate-fadeIn">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Layers size={28} color="white" />
+                    </div>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Global Complete Tests</h2>
+                        <p style={{ margin: 0, color: 'var(--text-muted)' }}>Aptitude, Verbal, Logical, Coding, SQL – all in one test</p>
+                    </div>
+                </div>
+            </div>
+            {tests.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--bg-card)', borderRadius: '1rem', border: '1px solid var(--border-color)' }}>
+                    <p style={{ color: 'var(--text-muted)' }}>No global tests available. Check back later.</p>
+                </div>
+            ) : (
+                <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+                        <div className="stat-card glass">
+                            <div className="stat-icon" style={{ background: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4' }}><Layers size={24} /></div>
+                            <div className="stat-info">
+                                <span className="stat-label">Available</span>
+                                <span className="stat-value">{tests.length}</span>
+                            </div>
+                        </div>
+                        <div className="stat-card glass">
+                            <div className="stat-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><CheckCircle size={24} /></div>
+                            <div className="stat-info">
+                                <span className="stat-label">Submitted</span>
+                                <span className="stat-value">{submissions.length}</span>
+                            </div>
+                        </div>
+                        <div className="stat-card glass">
+                            <div className="stat-icon" style={{ background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6' }}><Award size={24} /></div>
+                            <div className="stat-info">
+                                <span className="stat-label">Passed</span>
+                                <span className="stat-value">{submissions.filter(s => s.status === 'passed').length}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
+                        {tests.map(t => {
+                            const completed = isTestCompleted(t.id, t)
+                            const submission = getTestSubmission(t.id)
+                            const attemptCount = getAttemptCount(t.id)
+                            const hasPassed = submission?.status === 'passed'
+                            const hasAttemptsLeft = t.maxAttempts === -1 || attemptCount < (t.maxAttempts || 1)
+                            const canRetry = !hasPassed && hasAttemptsLeft && attemptCount > 0
+
+                            return (
+                                <div key={t.id} className="card glass" style={{ padding: '1.5rem', position: 'relative', overflow: 'hidden' }}>
+                                    {/* Status Badge */}
+                                    {attemptCount > 0 && (
+                                        <div style={{ position: 'absolute', top: '1rem', right: '1rem', padding: '0.25rem 0.75rem', borderRadius: '20px', background: hasPassed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: hasPassed ? '#10b981' : '#ef4444', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            {hasPassed ? <><CheckCircle size={14} /> Passed</> : <><XCircle size={14} /> Failed</>}
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
+                                        <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <Layers size={24} color="white" />
+                                        </div>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>{t.title}</h3>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>
+                                                <span className={`difficulty-badge ${t.difficulty?.toLowerCase()}`}>{t.difficulty}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}><Clock size={14} /> {t.duration} min</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Target size={16} color="#06b6d4" /><span>{t.totalQuestions} Questions</span></div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Award size={16} color="#f59e0b" /><span>Pass: {t.passingScore}%</span></div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={16} color="#ef4444" /><span>Tab Limit: {t.maxTabSwitches || 3}</span></div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Zap size={16} color="#3b82f6" /><span>Attempts: {attemptCount}/{t.maxAttempts === -1 ? '∞' : (t.maxAttempts || 1)}</span></div>
+                                        {t.deadline && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: t.startTime && new Date(t.startTime) > new Date() ? '#f59e42' : t.deadline && new Date(t.deadline) < new Date() ? '#ef4444' : 'var(--text-muted)' }}>
+                                                <Clock size={16} color={t.startTime && new Date(t.startTime) > new Date() ? '#f59e42' : t.deadline && new Date(t.deadline) < new Date() ? '#ef4444' : '#10b981'} />
+                                                <span>{t.startTime && new Date(t.startTime) > new Date() ? `Not Yet Started` : t.deadline && new Date(t.deadline) < new Date() ? 'Expired' : t.deadline ? `Due: ${new Date(t.deadline).toLocaleDateString()}` : ''}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {attemptCount > 0 && submission && (
+                                        <div style={{ background: 'var(--bg-tertiary)', borderRadius: '12px', padding: '1rem', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Your Score</span>
+                                                <span style={{ fontSize: '1.5rem', fontWeight: 700, color: hasPassed ? '#10b981' : '#ef4444' }}>{submission.overallPercentage}%</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                        {completed ? (
+                                            <button disabled style={{ flex: 1, padding: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '10px', color: '#10b981', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'not-allowed' }}><CheckCircle size={18} /> Completed</button>
+                                        ) : canRetry ? (
+                                            <button onClick={() => startTest(t)} className="btn-create-new" style={{ flex: 1, padding: '0.75rem', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>Retry Test <RefreshCw size={18} /></button>
+                                        ) : t.startTime && new Date(t.startTime) > new Date() ? (
+                                            <div style={{ flex: 1, padding: '0.75rem', background: 'rgba(245, 158, 66, 0.15)', borderRadius: '10px', color: '#f59e42', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}><XCircle size={18} /> Not Yet Started</div>
+                                        ) : t.deadline && new Date(t.deadline) < new Date() ? (
+                                            <div style={{ flex: 1, padding: '0.75rem', background: 'rgba(107, 114, 128, 0.2)', borderRadius: '10px', color: '#6b7280', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}><XCircle size={18} /> Test Expired</div>
+                                        ) : (
+                                            <button onClick={() => startTest(t)} className="btn-create-new" style={{ flex: 1, padding: '0.75rem', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>Start Test <ChevronRight size={18} /></button>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </>
+            )}
         </div>
     )
 }
