@@ -2957,7 +2957,7 @@ function AptitudeTestsAdmin() {
     const handleToggleStatus = async (test) => {
         const newStatus = test.status === 'live' ? 'ended' : 'live';
         const action = newStatus === 'live' ? 'make this test visible to students' : 'hide this test from students';
-        
+
         if (window.confirm(`Are you sure you want to ${action}?`)) {
             try {
                 await axios.patch(`${API_BASE}/aptitude/${test.id}/status`, { status: newStatus })
@@ -3137,13 +3137,13 @@ function AptitudeTestsAdmin() {
                                             background: test.status === 'live'
                                                 ? 'rgba(16, 185, 129, 0.15)'
                                                 : test.status === 'ended'
-                                                ? 'rgba(239, 68, 68, 0.15)'
-                                                : 'rgba(107, 114, 128, 0.15)',
+                                                    ? 'rgba(239, 68, 68, 0.15)'
+                                                    : 'rgba(107, 114, 128, 0.15)',
                                             color: test.status === 'live'
                                                 ? '#10b981'
                                                 : test.status === 'ended'
-                                                ? '#ef4444'
-                                                : '#6b7280',
+                                                    ? '#ef4444'
+                                                    : '#6b7280',
                                             fontSize: '0.8rem',
                                             fontWeight: 500
                                         }}>
