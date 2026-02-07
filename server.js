@@ -2587,35 +2587,117 @@ app.get('/api/global-test-submissions/:id', async (req, res) => {
 // Personalized report for a global test submission
 app.get('/api/global-test-submissions/:id/report', async (req, res) => {
     try {
-        const [subs] = await pool.query('SELECT s.*, u.name as student_name, u.email as student_email FROM global_test_submissions s JOIN users u ON s.student_id = u.id WHERE s.id = ?', [req.params.id]);
+        const submissionId = req.params.id;
+        const [subs] = await pool.query('SELECT s.*, u.name as student_name, u.email as student_email FROM global_test_submissions s JOIN users u ON s.student_id = u.id WHERE s.id = ?', [submissionId]);
         if (subs.length === 0) return res.status(404).json({ error: 'Submission not found' });
         const s = subs[0];
-        const [secRows] = await pool.query('SELECT * FROM section_results WHERE submission_id = ?', [s.id]);
-        const [qrRows] = await pool.query('SELECT * FROM question_results WHERE submission_id = ?', [s.id]);
+
+        // Check if personalized report already exists
+        const [existingReport] = await pool.query('SELECT * FROM personalized_reports WHERE submission_id = ?', [submissionId]);
+
+        const [secRows] = await pool.query('SELECT * FROM section_results WHERE submission_id = ?', [submissionId]);
+        const [qrRows] = await pool.query('SELECT * FROM question_results WHERE submission_id = ?', [submissionId]);
+
         const sectionResults = {};
-        secRows.forEach(r => { sectionResults[r.section] = { score: r.score, percentage: Number(r.percentage), correctCount: r.correct_count, totalQuestions: r.total_questions }; });
+        secRows.forEach(r => {
+            sectionResults[r.section] = {
+                score: r.score,
+                percentage: Number(r.percentage),
+                correctCount: r.correct_count,
+                totalQuestions: r.total_questions
+            };
+        });
+
         const bySection = {};
         SECTIONS.forEach(sec => { bySection[sec] = qrRows.filter(r => r.section === sec); });
-        const weakAreas = [];
-        SECTIONS.forEach(sec => {
-            const data = sectionResults[sec];
-            if (data && data.percentage < 70) weakAreas.push(sec);
-        });
+
+        let aiPersonalizedAnalysis = null;
+        let needsRegeneration = existingReport.length > 0 && (!existingReport[0].report_data.questionInsights || !existingReport[0].report_data.questionInsights.Q1);
+
+        if (existingReport.length > 0 && !needsRegeneration) {
+            aiPersonalizedAnalysis = existingReport[0].report_data;
+        } else {
+            // Generate AI Analysis (or Regenerate if old format)
+            try {
+                const performanceSummary = SECTIONS.map(sec => {
+                    const data = sectionResults[sec] || { percentage: 0, correctCount: 0, totalQuestions: 0 };
+                    return `${sec.toUpperCase()}: ${data.percentage}% (${data.correctCount}/${data.totalQuestions})`;
+                }).join(', ');
+
+                // Prepare a sampled question list to avoid hitting token limits while giving AI enough context
+                const questionsContext = qrRows.map((q, i) => {
+                    return `Q${i + 1} [${q.section}]: ${q.is_correct ? 'CORRECT' : 'INCORRECT'}. Student Response: ${q.user_answer || 'No Answer'}. Correct Answer/Solution: ${q.correct_answer || 'N/A'}`;
+                }).join('\n\n');
+
+                const systemPrompt = `You are an elite educational consultant and technical mentor. Analyze a student's global assessment.
+                Student: ${s.student_name}
+                Overall: ${s.overall_percentage}%
+                Sections: ${performanceSummary}
+                
+                Generate a deeply personalized JSON report:
+                {
+                    "summary": "Overall interpretation of results",
+                    "strengths": ["...", "..."],
+                    "weaknesses": ["...", "..."],
+                    "actionPlan": ["Step 1", "Step 2"],
+                    "sectionAnalysis": { "aptitude": "...", "verbal": "...", "logical": "...", "coding": "...", "sql": "..." },
+                    "focusAreas": ["Topic A"],
+                    "questionInsights": {
+                        "Q1": { "diagnosis": "Analysis of their attempt", "misstep": "Why it failed or wasn't perfect", "recommendation": "Advice for next time" },
+                        "Q2": { ... }
+                    }
+                }
+                
+                IMPORTANT:
+                1. Provide insights for EVERY question (Q1, Q2, Q3...).
+                2. For CORRECT coding/SQL: Even if right, suggest optimizations (e.g., O(n) vs O(n^2)), cleaner code patterns, or edge case handling. Explain WHY it was good and how to reach the senior level.
+                3. For INCORRECT: Diagnose the logic gap and provide a clear path to mastery.
+                4. Tone: Encouraging, professional, and technical.`;
+
+                const chatCompletion = await cerebrasChat([
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: `Analyze this detailed submission data and provide insights for EACH question:\n\n${questionsContext}` }
+                ], {
+                    model: 'llama-3.3-70b',
+                    temperature: 0.7,
+                    max_tokens: 4000,
+                    response_format: { type: 'json_object' }
+                });
+
+                aiPersonalizedAnalysis = JSON.parse(chatCompletion.choices[0]?.message?.content || '{}');
+
+                if (needsRegeneration) {
+                    await pool.query('UPDATE personalized_reports SET report_data = ? WHERE submission_id = ?', [JSON.stringify(aiPersonalizedAnalysis), submissionId]);
+                } else {
+                    await pool.query(
+                        'INSERT INTO personalized_reports (id, student_id, test_id, submission_id, report_data) VALUES (?, ?, ?, ?, ?)',
+                        [`pr-${uuidv4().slice(0, 12)}`, s.student_id, s.test_id, submissionId, JSON.stringify(aiPersonalizedAnalysis)]
+                    );
+                }
+            } catch (aiError) {
+                console.error('AI Report Generation Error:', aiError);
+                aiPersonalizedAnalysis = {
+                    summary: `You achieved an overall score of ${s.overall_percentage}%. You performed best in ${SECTIONS.filter(sec => (sectionResults[sec]?.percentage || 0) >= 70).join(', ') || 'some areas'}.`,
+                    strengths: SECTIONS.filter(sec => (sectionResults[sec]?.percentage || 0) >= 75).map(sec => `Good performance in ${sec}`),
+                    weaknesses: SECTIONS.filter(sec => (sectionResults[sec]?.percentage || 0) < 60).map(sec => `Needs improvement in ${sec}`),
+                    actionPlan: ['Review incorrect answers', 'Practice more mock tests', 'Focus on time management'],
+                    sectionAnalysis: {},
+                    focusAreas: [],
+                    detailedQuestionAdvice: []
+                };
+            }
+        }
+
         const report = {
             studentInfo: { id: s.student_id, name: s.student_name, email: s.student_email },
             testInfo: { id: s.test_id, title: s.test_title, date: s.submitted_at },
             overallPerformance: { totalScore: s.total_score, percentage: Number(s.overall_percentage), status: s.status },
-            sectionWisePerformance: {
-                aptitude: sectionResults.aptitude || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
-                verbal: sectionResults.verbal || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
-                logical: sectionResults.logical || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
-                coding: sectionResults.coding || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 },
-                sql: sectionResults.sql || { score: 0, percentage: 0, correctCount: 0, totalQuestions: 0 }
-            },
-            strengths: SECTIONS.filter(sec => sectionResults[sec] && sectionResults[sec].percentage >= 80).map(sec => `${sec} (${sectionResults[sec].percentage}%)`),
-            weaknesses: weakAreas.map(sec => `${sec} (${sectionResults[sec] ? sectionResults[sec].percentage : 0}%)`),
+            sectionWisePerformance: sectionResults,
+            strengths: aiPersonalizedAnalysis.strengths || [],
+            weaknesses: aiPersonalizedAnalysis.weaknesses || [],
             questionResultsBySection: bySection,
-            recommendations: weakAreas.length ? weakAreas.map(sec => `Focus on improving your ${sec} section.`) : ['Well done across all sections!']
+            recommendations: aiPersonalizedAnalysis.actionPlan || [],
+            personalizedAnalysis: aiPersonalizedAnalysis
         };
         res.json(report);
     } catch (error) {

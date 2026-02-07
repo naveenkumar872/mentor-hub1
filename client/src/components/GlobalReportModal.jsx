@@ -3,8 +3,15 @@ import axios from 'axios'
 import {
     Globe, Target, CheckCircle, XCircle, X, AlertTriangle,
     Clock, Award, Brain, Code, Database, ChevronDown, ChevronUp,
-    Shield, BarChart2, Zap, TrendingUp
+    Shield, BarChart2, Zap, TrendingUp, Download, Lightbulb, ListChecks,
+    ArrowRight, Star
 } from 'lucide-react'
+import {
+    ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell
+} from 'recharts'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
 const API_BASE = 'http://localhost:3000/api'
 
@@ -43,6 +50,55 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
             ...prev,
             [section]: !prev[section]
         }))
+    }
+
+    const downloadPDF = async () => {
+        // Expand all for PDF
+        const originalState = { ...expandedSections };
+        const allExpanded = {
+            aptitude: true,
+            verbal: true,
+            logical: true,
+            coding: true,
+            sql: true
+        };
+        setExpandedSections(allExpanded);
+
+        // Give it a moment to render all sections
+        setTimeout(async () => {
+            const element = document.getElementById('report-content');
+            if (!element) return;
+
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                backgroundColor: '#0f172a',
+                useCORS: true,
+                logging: false
+            });
+
+            const imgData = canvas.toDataURL('image/png', 1.0);
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgWidth = 210;
+            const pageHeight = 297;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+
+            while (heightLeft >= 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+            }
+
+            pdf.save(`${report.studentInfo.name}_Assessment_Report.pdf`);
+
+            // Restore original state
+            setExpandedSections(originalState);
+        }, 1000);
     }
 
     const getScoreColor = (percentage) => {
@@ -123,20 +179,49 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                             </p>
                         </div>
                     </div>
-                    <button onClick={onClose} style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        padding: '0.6rem',
-                        cursor: 'pointer',
-                        color: '#94a3b8',
-                        transition: 'all 0.2s'
-                    }}
-                        onMouseOver={e => e.currentTarget.style.color = 'white'}
-                        onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}
-                    >
-                        <X size={24} />
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <button
+                            onClick={downloadPDF}
+                            disabled={loading || !report}
+                            style={{
+                                background: 'rgba(139, 92, 246, 0.15)',
+                                color: '#a78bfa',
+                                border: '1px solid rgba(139, 92, 246, 0.3)',
+                                borderRadius: '12px',
+                                padding: '0.6rem 1.2rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseOver={e => {
+                                e.currentTarget.style.background = '#8b5cf6';
+                                e.currentTarget.style.color = 'white';
+                            }}
+                            onMouseOut={e => {
+                                e.currentTarget.style.background = 'rgba(139, 92, 246, 0.15)';
+                                e.currentTarget.style.color = '#a78bfa';
+                            }}
+                        >
+                            <Download size={18} /> Download PDF
+                        </button>
+                        <button onClick={onClose} style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '0.6rem',
+                            cursor: 'pointer',
+                            color: '#94a3b8',
+                            transition: 'all 0.2s'
+                        }}
+                            onMouseOver={e => e.currentTarget.style.color = 'white'}
+                            onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Scrollable Content */}
@@ -172,7 +257,27 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                             }}>Close Modal</button>
                         </div>
                     ) : (
-                        <>
+                        <div id="report-content">
+                            {/* AI Summary Banner */}
+                            {report.personalizedAnalysis?.summary && (
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.1))',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                                    marginBottom: '2rem',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}>
+                                    <Sparkles style={{ position: 'absolute', right: '2rem', top: '1.5rem', opacity: 0.2 }} size={48} color="#8b5cf6" />
+                                    <h3 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#a78bfa', fontSize: '1.4rem' }}>
+                                        <Brain size={24} /> Executive Summary
+                                    </h3>
+                                    <p style={{ margin: 0, color: '#e2e8f0', fontSize: '1.1rem', lineHeight: 1.6, maxWidth: '90%' }}>
+                                        {report.personalizedAnalysis.summary}
+                                    </p>
+                                </div>
+                            )}
                             {/* Student & Test Overview */}
                             <div style={{
                                 display: 'grid',
@@ -243,67 +348,166 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                 </div>
                             </div>
 
-                            {/* Section breakdown cards */}
+                            {/* Section breakdown and Visualization */}
                             <div style={{
                                 display: 'grid',
-                                gridTemplateColumns: 'repeat(5, 1fr)',
-                                gap: '1rem',
+                                gridTemplateColumns: '1.5fr 1fr',
+                                gap: '1.5rem',
                                 marginBottom: '2.5rem'
                             }}>
-                                {Object.entries(report.sectionWisePerformance).map(([sec, data]) => (
-                                    <div key={sec} style={{
-                                        padding: '1.25rem',
-                                        background: 'rgba(30, 41, 59, 0.5)',
-                                        borderRadius: '16px',
-                                        border: '1px solid rgba(255, 255, 255, 0.05)',
-                                        textAlign: 'center',
-                                        transition: 'transform 0.2s',
-                                        cursor: 'pointer'
-                                    }}
-                                        onClick={() => toggleSection(sec)}
-                                        onMouseOver={e => e.currentTarget.style.transform = 'translateY(-5px)'}
-                                        onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
-                                    >
-                                        <div style={{
-                                            width: '40px',
-                                            height: '40px',
-                                            borderRadius: '10px',
-                                            background: 'rgba(255,255,255,0.05)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            margin: '0 auto 1rem',
-                                            color: getScoreColor(data.percentage)
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(3, 1fr)',
+                                    gap: '1rem'
+                                }}>
+                                    {Object.entries(report.sectionWisePerformance).map(([sec, data]) => (
+                                        <div key={sec} style={{
+                                            padding: '1.25rem',
+                                            background: 'rgba(30, 41, 59, 0.5)',
+                                            borderRadius: '16px',
+                                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                                            textAlign: 'center'
                                         }}>
-                                            {getSectionIcon(sec)}
+                                            <div style={{
+                                                width: '40px',
+                                                height: '40px',
+                                                borderRadius: '10px',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                margin: '0 auto 1rem',
+                                                color: getScoreColor(data.percentage)
+                                            }}>
+                                                {getSectionIcon(sec)}
+                                            </div>
+                                            <div style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.25rem' }}>{sec}</div>
+                                            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>{data.percentage}%</div>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>{data.correctCount}/{data.totalQuestions} Correct</div>
                                         </div>
-                                        <div style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.25rem' }}>{sec}</div>
-                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>{data.percentage}%</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>{data.correctCount}/{data.totalQuestions} Correct</div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    padding: '1.5rem',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <h4 style={{ margin: '0 0 1rem', color: '#94a3b8', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Section Performance Summary</h4>
+                                    <ResponsiveContainer width="100%" height={250}>
+                                        <BarChart data={
+                                            Object.entries(report.sectionWisePerformance).map(([name, data]) => ({
+                                                name: name.charAt(0).toUpperCase() + name.slice(1),
+                                                score: data.percentage
+                                            }))
+                                        } margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                            <XAxis
+                                                dataKey="name"
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                            />
+                                            <YAxis
+                                                domain={[0, 100]}
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                                tickFormatter={(v) => `${v}%`}
+                                            />
+                                            <RechartsTooltip
+                                                contentStyle={{ background: '#1e293b', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px' }}
+                                                itemStyle={{ color: '#white' }}
+                                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                            />
+                                            <Bar dataKey="score" radius={[8, 8, 0, 0]}>
+                                                {Object.entries(report.sectionWisePerformance).map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={getScoreColor(entry[1].percentage)} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
 
-                            {/* Recommendations & insights */}
+                            {/* AI Analysis Cards */}
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
-                                <div style={{ padding: '1.5rem', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                                    <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#10b981' }}>
-                                        <Award size={20} /> Strengths
+                                <div style={{ padding: '2rem', background: 'rgba(16, 185, 129, 0.03)', borderRadius: '24px', border: '1px solid rgba(16, 185, 129, 0.1)' }}>
+                                    <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#10b981', fontSize: '1.2rem' }}>
+                                        <Award size={24} /> Key Strengths
                                     </h4>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                        {report.strengths.length > 0 ? report.strengths.map((s, i) => (
-                                            <span key={i} style={{ padding: '0.4rem 0.8rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px', fontSize: '0.85rem', color: '#10b981', fontWeight: 600 }}>{s}</span>
-                                        )) : <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No specific strengths identified yet.</span>}
+                                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {report.strengths.map((s, i) => (
+                                            <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', color: '#e2e8f0', fontSize: '1rem' }}>
+                                                <div style={{ marginTop: '0.25rem', padding: '0.2rem', background: '#10b981', borderRadius: '50%' }}>
+                                                    <CheckCircle size={12} color="white" />
+                                                </div>
+                                                {s}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div style={{ padding: '2rem', background: 'rgba(239, 68, 68, 0.03)', borderRadius: '24px', border: '1px solid rgba(239, 68, 68, 0.1)' }}>
+                                    <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#f87171', fontSize: '1.2rem' }}>
+                                        <TrendingUp size={24} /> Areas for Growth
+                                    </h4>
+                                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {report.weaknesses.map((w, i) => (
+                                            <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', color: '#e2e8f0', fontSize: '1rem' }}>
+                                                <div style={{ marginTop: '0.25rem', padding: '0.2rem', background: '#f87171', borderRadius: '50%' }}>
+                                                    <ArrowRight size={12} color="white" />
+                                                </div>
+                                                {w}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Action Plan & Focus Areas */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                                <div style={{ padding: '2rem', background: 'rgba(59, 130, 246, 0.03)', borderRadius: '24px', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+                                    <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#60a5fa', fontSize: '1.2rem' }}>
+                                        <ListChecks size={24} /> Personalized Action Plan
+                                    </h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                        {report.recommendations.map((step, i) => (
+                                            <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                                                <div style={{
+                                                    width: '28px', height: '28px', borderRadius: '8px', background: '#3b82f6',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '0.8rem', flexShrink: 0
+                                                }}>{i + 1}</div>
+                                                <p style={{ margin: 0, color: '#e2e8f0', lineHeight: 1.5 }}>{step}</p>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                                <div style={{ padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                                    <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f87171' }}>
-                                        <TrendingUp size={20} /> Areas for Improvement
+                                <div style={{ padding: '2rem', background: 'rgba(245, 158, 11, 0.03)', borderRadius: '24px', border: '1px solid rgba(245, 158, 11, 0.1)' }}>
+                                    <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#f59e0b', fontSize: '1.2rem' }}>
+                                        <Lightbulb size={24} /> Critical Focus Areas
                                     </h4>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                        {report.weaknesses.length > 0 ? report.weaknesses.map((w, i) => (
-                                            <span key={i} style={{ padding: '0.4rem 0.8rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', fontSize: '0.85rem', color: '#f87171', fontWeight: 600 }}>{w}</span>
-                                        )) : <span style={{ color: '#64748b', fontSize: '0.9rem' }}>Excellent performance across all areas!</span>}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                        {report.personalizedAnalysis?.focusAreas?.map((area, i) => (
+                                            <div key={i} style={{
+                                                padding: '0.75rem 1.25rem',
+                                                background: 'rgba(245, 158, 11, 0.1)',
+                                                border: '1px solid rgba(245, 158, 11, 0.2)',
+                                                borderRadius: '12px',
+                                                color: '#f59e0b',
+                                                fontWeight: 600,
+                                                fontSize: '0.9rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem'
+                                            }}>
+                                                <Target size={16} /> {area}
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -340,7 +544,7 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                                 <div style={{ color: getScoreColor(report.sectionWisePerformance[section]?.percentage) }}>
                                                     {getSectionIcon(section)}
                                                 </div>
-                                                <span style={{ fontSize: '1.1rem', fontWeight: 700, textTransform: 'capitalize' }}>{section} Section</span>
+                                                <span style={{ fontSize: '1.1rem', fontWeight: 700, textTransform: 'capitalize' }}>{section} Analysis</span>
                                                 <span style={{
                                                     fontSize: '0.85rem',
                                                     padding: '0.2rem 0.6rem',
@@ -348,11 +552,29 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                                     borderRadius: '6px',
                                                     color: '#94a3b8'
                                                 }}>
-                                                    {report.sectionWisePerformance[section]?.percentage}% • {questions.length} Questions
+                                                    {report.sectionWisePerformance[section]?.percentage}% Accuraccy
                                                 </span>
                                             </div>
                                             {expandedSections[section] ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
                                         </button>
+
+                                        {expandedSections[section] && report.personalizedAnalysis?.sectionAnalysis?.[section] && (
+                                            <div style={{
+                                                margin: '0 1.5rem 1.5rem',
+                                                padding: '1.25rem',
+                                                background: 'rgba(139, 92, 246, 0.05)',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(139, 92, 246, 0.2)',
+                                                color: '#e2e8f0',
+                                                fontSize: '0.95rem',
+                                                lineHeight: 1.6
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px' }}>
+                                                    <Brain size={16} /> AI Performance Insight
+                                                </div>
+                                                {report.personalizedAnalysis.sectionAnalysis[section]}
+                                            </div>
+                                        )}
 
                                         {expandedSections[section] && (
                                             <div style={{ padding: '0 1.5rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -399,9 +621,41 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                                                     <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(139, 92, 246, 0.05)', borderRadius: '8px', borderLeft: '4px solid #8b5cf6' }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
                                                                             <Shield size={14} color="#8b5cf6" />
-                                                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase' }}>Explanation</span>
+                                                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase' }}>Conceptual Explanation</span>
                                                                         </div>
                                                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>{q.explanation}</p>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Individual Question AI Insight */}
+                                                                {report.personalizedAnalysis?.questionInsights?.[`Q${idx + 1}`] && (
+                                                                    <div style={{
+                                                                        marginTop: '1rem',
+                                                                        padding: '1.25rem',
+                                                                        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(139, 92, 246, 0.08))',
+                                                                        borderRadius: '12px',
+                                                                        border: '1px solid rgba(139, 92, 246, 0.2)',
+                                                                        position: 'relative'
+                                                                    }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem', color: '#06b6d4' }}>
+                                                                            <Lightbulb size={18} />
+                                                                            <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Mentor Insight</span>
+                                                                        </div>
+
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                                            <div>
+                                                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '2px' }}>DIAGNOSIS</span>
+                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem' }}>{report.personalizedAnalysis.questionInsights[`Q${idx + 1}`].diagnosis}</p>
+                                                                            </div>
+                                                                            <div>
+                                                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '2px' }}>THE MISSTEP</span>
+                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem' }}>{report.personalizedAnalysis.questionInsights[`Q${idx + 1}`].misstep}</p>
+                                                                            </div>
+                                                                            <div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
+                                                                                <span style={{ color: '#10b981', fontSize: '0.75rem', fontWeight: 800, display: 'block', marginBottom: '2px' }}>HOW TO EXCEL</span>
+                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 500 }}>{report.personalizedAnalysis.questionInsights[`Q${idx + 1}`].recommendation}</p>
+                                                                            </div>
+                                                                        </div>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -415,7 +669,7 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                     </div>
                                 ))}
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
