@@ -1412,8 +1412,8 @@ app.delete('/api/submissions/:id', async (req, res) => {
 
 // Reset all submissions (Admin only)
 app.delete('/api/submissions', async (req, res) => {
+    const connection = await pool.getConnection();
     try {
-
         // Disable FK checks to allow clean deletion regardless of order
         await connection.query('SET FOREIGN_KEY_CHECKS = 0');
         // Delete all code submissions
@@ -1441,6 +1441,8 @@ app.delete('/api/submissions', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
     }
 });
 
