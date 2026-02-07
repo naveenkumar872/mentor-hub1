@@ -16,7 +16,7 @@ import GlobalReportModal from '../components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -2114,14 +2114,69 @@ function AptitudeTests({ user }) {
         }
     }
 
+    // Helper function to check if test has started
+    const hasTestStarted = (test) => {
+        if (!test.startTime) return true // No start time = always available
+        
+        const startTime = new Date(test.startTime)
+        const now = new Date()
+        
+        // Ensure both dates are compared in the same timezone
+        // The backend stores dates in UTC, so we need to compare in UTC
+        const startTimeUTC = Date.UTC(
+            startTime.getUTCFullYear(),
+            startTime.getUTCMonth(),
+            startTime.getUTCDate(),
+            startTime.getUTCHours(),
+            startTime.getUTCMinutes()
+        )
+        
+        const nowUTC = Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            now.getUTCHours(),
+            now.getUTCMinutes()
+        )
+        
+        return nowUTC >= startTimeUTC
+    }
+
+    // Helper function to check if test has expired
+    const hasTestExpired = (test) => {
+        if (!test.deadline) return false // No deadline = never expires
+        
+        const deadline = new Date(test.deadline)
+        const now = new Date()
+        
+        const deadlineUTC = Date.UTC(
+            deadline.getUTCFullYear(),
+            deadline.getUTCMonth(),
+            deadline.getUTCDate(),
+            deadline.getUTCHours(),
+            deadline.getUTCMinutes()
+        )
+        
+        const nowUTC = Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            now.getUTCHours(),
+            now.getUTCMinutes()
+        )
+        
+        return nowUTC > deadlineUTC
+    }
+
+
     const startTest = async (test) => {
-        // Check if test has not started yet
-        if (test.startTime && new Date(test.startTime) > new Date()) {
+        // Check if test has not started yet (using helper with timezone tolerance)
+        if (!hasTestStarted(test)) {
             alert('This test is not yet available. Please check the start time.')
             return
         }
         // Check if deadline has passed
-        if (test.deadline && new Date(test.deadline) < new Date()) {
+        if (hasTestExpired(test)) {
             alert('This test has expired. The deadline has passed.')
             return
         }
@@ -2403,33 +2458,34 @@ function AptitudeTests({ user }) {
                                     <Zap size={16} color="#06b6d4" />
                                     <span>Attempts: {getAttemptCount(test.id)}/{test.maxAttempts === -1 ? '∞' : (test.maxAttempts || 1)}</span>
                                 </div>
+                                {test.startTime && (
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        color: !hasTestStarted(test) ? '#f59e42' : '#10b981'
+                                    }}>
+                                        <Clock size={16} color={!hasTestStarted(test) ? '#f59e42' : '#10b981'} />
+                                        <span>
+                                            {!hasTestStarted(test)
+                                                ? `Starts: ${new Date(test.startTime).toLocaleString()}`
+                                                : `Started: ${new Date(test.startTime).toLocaleDateString()}`
+                                            }
+                                        </span>
+                                    </div>
+                                )}
                                 {test.deadline && (
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '0.5rem',
-                                        color:
-                                            test.startTime && new Date(test.startTime) > new Date()
-                                                ? '#f59e42' // orange for not started
-                                                : test.deadline && new Date(test.deadline) < new Date()
-                                                    ? '#ef4444' // red for expired
-                                                    : 'var(--text-muted)'
+                                        color: hasTestExpired(test) ? '#ef4444' : 'var(--text-muted)'
                                     }}>
-                                        <Clock size={16} color={
-                                            test.startTime && new Date(test.startTime) > new Date()
-                                                ? '#f59e42'
-                                                : test.deadline && new Date(test.deadline) < new Date()
-                                                    ? '#ef4444'
-                                                    : '#10b981'
-                                        } />
+                                        <Clock size={16} color={hasTestExpired(test) ? '#ef4444' : '#10b981'} />
                                         <span>
-                                            {test.startTime && new Date(test.startTime) > new Date()
-                                                ? `Not Yet Started`
-                                                : test.deadline && new Date(test.deadline) < new Date()
-                                                    ? 'Expired'
-                                                    : test.deadline
-                                                        ? `Due: ${new Date(test.deadline).toLocaleDateString()}`
-                                                        : ''
+                                            {hasTestExpired(test)
+                                                ? 'Expired'
+                                                : `Due: ${new Date(test.deadline).toLocaleString()}`
                                             }
                                         </span>
                                     </div>
@@ -2472,7 +2528,7 @@ function AptitudeTests({ user }) {
 
                             <div style={{ display: 'flex', gap: '0.75rem' }}>
                                 {!completed ? (
-                                    test.startTime && new Date(test.startTime) > new Date() ? (
+                                    !hasTestStarted(test) ? (
                                         <div
                                             style={{
                                                 flex: 1,
@@ -2491,7 +2547,7 @@ function AptitudeTests({ user }) {
                                         >
                                             <XCircle size={18} /> Not Yet Started
                                         </div>
-                                    ) : test.deadline && new Date(test.deadline) < new Date() ? (
+                                    ) : hasTestExpired(test) ? (
                                         <div
                                             style={{
                                                 flex: 1,

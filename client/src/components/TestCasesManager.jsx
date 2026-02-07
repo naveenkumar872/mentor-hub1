@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Plus, Trash2, Eye, EyeOff, CheckCircle, Save, X, AlertTriangle, Play, Code } from 'lucide-react'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function TestCasesManager({ problemId, problemTitle, isReadOnly = false, onClose }) {
     const [testCases, setTestCases] = useState([])
@@ -281,12 +281,12 @@ function TestCasesManager({ problemId, problemTitle, isReadOnly = false, onClose
                                         <div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                    <span style={{ 
-                                                        width: '24px', height: '24px', 
-                                                        background: 'var(--primary)', 
-                                                        borderRadius: '50%', 
-                                                        display: 'flex', 
-                                                        alignItems: 'center', 
+                                                    <span style={{
+                                                        width: '24px', height: '24px',
+                                                        background: 'var(--primary)',
+                                                        borderRadius: '50%',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
                                                         justifyContent: 'center',
                                                         fontSize: '0.75rem',
                                                         fontWeight: 700
@@ -339,11 +339,11 @@ function TestCasesManager({ problemId, problemTitle, isReadOnly = false, onClose
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                                 <div>
                                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Input:</div>
-                                                    <code style={{ 
-                                                        display: 'block', 
-                                                        padding: '0.5rem', 
-                                                        background: 'var(--bg-dark)', 
-                                                        borderRadius: '6px', 
+                                                    <code style={{
+                                                        display: 'block',
+                                                        padding: '0.5rem',
+                                                        background: 'var(--bg-dark)',
+                                                        borderRadius: '6px',
                                                         fontSize: '0.8rem',
                                                         whiteSpace: 'pre-wrap',
                                                         maxHeight: '80px',
@@ -354,11 +354,11 @@ function TestCasesManager({ problemId, problemTitle, isReadOnly = false, onClose
                                                 </div>
                                                 <div>
                                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Expected Output:</div>
-                                                    <code style={{ 
-                                                        display: 'block', 
-                                                        padding: '0.5rem', 
-                                                        background: 'var(--bg-dark)', 
-                                                        borderRadius: '6px', 
+                                                    <code style={{
+                                                        display: 'block',
+                                                        padding: '0.5rem',
+                                                        background: 'var(--bg-dark)',
+                                                        borderRadius: '6px',
                                                         fontSize: '0.8rem',
                                                         color: '#4ade80',
                                                         whiteSpace: 'pre-wrap',

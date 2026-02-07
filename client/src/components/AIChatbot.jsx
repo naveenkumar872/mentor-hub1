@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, Send, Sparkles, X, Bot, User, Wand2, Loader, ChevronDown, ChevronUp, Copy, Check, Lightbulb } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // ==================== AI CHATBOT COMPONENT ====================
 function AIChatbot({ context = 'problem', onGenerate, isOpen, onClose }) {
@@ -51,7 +51,7 @@ function AIChatbot({ context = 'problem', onGenerate, isOpen, onClose }) {
                 if (genRes.data.success && genRes.data.generated) {
                     const generated = genRes.data.generated
                     const isSQLGenerated = generated.type === 'SQL' || generated.language === 'SQL'
-                    
+
                     let formattedResponse
                     if (context === 'task') {
                         formattedResponse = `✨ I've generated an ML task for you!\n\n**${generated.title}**\n\n📋 **Type:** ${generated.type}\n⚡ **Difficulty:** ${generated.difficulty}\n\n📝 **Description:**\n${generated.description}\n\n✅ **Requirements:**\n${generated.requirements}\n\n---\n*Click "Use This" to auto-fill the form, or ask me to modify it!*`

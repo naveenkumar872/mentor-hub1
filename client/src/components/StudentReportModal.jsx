@@ -8,7 +8,7 @@ import {
     Trophy, Activity
 } from 'lucide-react'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Inline styles for the modal
 const styles = {

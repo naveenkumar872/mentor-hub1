@@ -126,7 +126,8 @@ const pool = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0,
     enableKeepAlive: true,
-    keepAliveInitialDelay: 0
+    keepAliveInitialDelay: 0,
+    timezone: '+00:00'
 });
 
 // Test DB Connection
@@ -1712,8 +1713,8 @@ app.get('/api/aptitude', async (req, res) => {
             passingScore: t.passing_score,
             maxTabSwitches: t.max_tab_switches || 3,
             maxAttempts: t.max_attempts || 1,
-            startTime: t.start_time,
-            deadline: t.deadline,
+            startTime: t.start_time ? new Date(t.start_time).toISOString() : null,
+            deadline: t.deadline ? new Date(t.deadline).toISOString() : null,
             description: t.description || '',
             status: t.status,
             createdBy: t.created_by,
@@ -1754,8 +1755,8 @@ app.get('/api/aptitude/:id', async (req, res) => {
             passingScore: test.passing_score,
             maxTabSwitches: test.max_tab_switches || 3,
             maxAttempts: test.max_attempts || 1,
-            startTime: test.start_time,
-            deadline: test.deadline,
+            startTime: test.start_time ? new Date(test.start_time).toISOString() : null,
+            deadline: test.deadline ? new Date(test.deadline).toISOString() : null,
             description: test.description || '',
             status: test.status,
             createdBy: test.created_by,
@@ -1777,10 +1778,23 @@ app.post('/api/aptitude', async (req, res) => {
         const { title, difficulty, duration, passingScore, maxTabSwitches, maxAttempts, startTime, deadline, description, status, questions, createdBy } = req.body;
         const createdAt = new Date();
 
+        // Handle date inputs correctly
+        let formattedStartTime = null;
+        let formattedDeadline = null;
+        
+        if (startTime) {
+            // Parse the ISO string and ensure it's stored as UTC
+            formattedStartTime = new Date(startTime).toISOString().slice(0, 19).replace('T', ' ');
+        }
+        
+        if (deadline) {
+            formattedDeadline = new Date(deadline).toISOString().slice(0, 19).replace('T', ' ');
+        }
+
         // Insert the test (store new fields in JSON metadata column or separate columns if available)
         await connection.query(
             'INSERT INTO aptitude_tests (id, title, type, difficulty, duration, total_questions, passing_score, max_tab_switches, max_attempts, start_time, deadline, description, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [testId, title, 'aptitude', difficulty, duration || 30, questions.length, passingScore || 60, maxTabSwitches || 3, maxAttempts || 1, startTime || null, deadline || null, description || '', status || 'live', createdBy, createdAt]
+            [testId, title, 'aptitude', difficulty, duration || 30, questions.length, passingScore || 60, maxTabSwitches || 3, maxAttempts || 1, formattedStartTime, formattedDeadline, description || '', status || 'live', createdBy, createdAt]
         );
 
         // Insert questions
@@ -1906,6 +1920,32 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
         res.status(500).json({ error: error.message });
     } finally {
         connection.release();
+    }
+});
+
+// Update Aptitude Test Status
+app.patch('/api/aptitude/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const testId = req.params.id;
+
+        if (!status || !['live', 'ended'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status. Must be "live" or "ended"' });
+        }
+
+        const [result] = await pool.query(
+            'UPDATE aptitude_tests SET status = ? WHERE id = ?',
+            [status, testId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Test not found' });
+        }
+
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error('Update Status Error:', error);
+        res.status(500).json({ error: 'Failed to update test status' });
     }
 });
 
