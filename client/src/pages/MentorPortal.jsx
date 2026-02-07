@@ -9,9 +9,12 @@ import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
 import { useAuth } from '../App'
 import axios from 'axios'
+import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 function MentorPortal() {
@@ -1438,19 +1441,28 @@ function Leaderboard({ user }) {
 function AllSubmissions({ user }) {
     const [submissions, setSubmissions] = useState([])
     const [aptitudeSubmissions, setAptitudeSubmissions] = useState([])
+    const [globalSubmissions, setGlobalSubmissions] = useState([])
     const [loading, setLoading] = useState(true)
     const [viewReport, setViewReport] = useState(null)
     const [activeTab, setActiveTab] = useState('all')
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
+    const [viewGlobalReport, setViewGlobalReport] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
 
     const fetchSubmissions = () => {
         Promise.all([
             axios.get(`${API_BASE}/submissions?mentorId=${user.id}`),
-            axios.get(`${API_BASE}/aptitude-submissions?mentorId=${user.id}`)
-        ]).then(([codeRes, aptRes]) => {
+            axios.get(`${API_BASE}/aptitude-submissions?mentorId=${user.id}`),
+            axios.get(`${API_BASE}/global-test-submissions?mentorId=${user.id}`)
+        ]).then(([codeRes, aptRes, globalRes]) => {
             setSubmissions((codeRes.data || []).map(s => ({ ...s, subType: 'code' })))
             setAptitudeSubmissions((aptRes.data || []).map(s => ({ ...s, subType: 'aptitude', itemTitle: s.testTitle })))
+            setGlobalSubmissions((globalRes.data || []).map(s => ({
+                ...s,
+                subType: 'global',
+                itemTitle: s.testTitle,
+                score: s.overallPercentage
+            })))
             setLoading(false)
         }).catch(err => setLoading(false))
     }
@@ -1459,7 +1471,7 @@ function AllSubmissions({ user }) {
         fetchSubmissions()
     }, [user.id])
 
-    const allSubmissions = [...submissions, ...aptitudeSubmissions]
+    const allSubmissions = [...submissions, ...aptitudeSubmissions, ...globalSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
     const getFilteredSubmissions = () => {
@@ -1467,7 +1479,9 @@ function AllSubmissions({ user }) {
             ? allSubmissions
             : activeTab === 'code'
                 ? submissions
-                : aptitudeSubmissions
+                : activeTab === 'aptitude'
+                    ? aptitudeSubmissions
+                    : globalSubmissions
 
         return filtered.filter(s =>
             (s.studentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1521,6 +1535,18 @@ function AllSubmissions({ user }) {
                             fontWeight: 500
                         }}
                     >📝 Aptitude ({aptitudeSubmissions.length})</button>
+                    <button
+                        onClick={() => setActiveTab('global')}
+                        style={{
+                            padding: '0.6rem 1.2rem',
+                            background: activeTab === 'global' ? '#3b82f6' : 'rgba(59, 130, 246, 0.1)',
+                            border: activeTab === 'global' ? 'none' : '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            color: activeTab === 'global' ? 'white' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontWeight: 500
+                        }}
+                    >🌐 Global ({globalSubmissions.length})</button>
                 </div>
                 <div style={{ position: 'relative' }}>
                     <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -1560,13 +1586,13 @@ function AllSubmissions({ user }) {
                                         background: sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(59, 130, 246, 0.1)',
                                         color: sub.subType === 'aptitude' ? '#8b5cf6' : '#3b82f6'
                                     }}>
-                                        {sub.subType === 'aptitude' ? '📝 Aptitude' : '💻 Code'}
+                                        {sub.subType === 'aptitude' ? '📝 Aptitude' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
                                     </span>
                                 </td>
                                 <td><div style={{ color: 'var(--primary)', fontWeight: 500 }}>{sub.itemTitle || sub.testTitle}</div></td>
                                 <td>
                                     <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
-                                        {sub.subType === 'aptitude' ? 'N/A' : (sub.language?.toUpperCase() || 'N/A')}
+                                        {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language?.toUpperCase() || 'N/A')}
                                     </span>
                                 </td>
                                 <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>{sub.score}%</td>
@@ -1645,6 +1671,24 @@ function AllSubmissions({ user }) {
                                         >
                                             <Eye size={14} /> Results
                                         </button>
+                                    ) : sub.subType === 'global' ? (
+                                        <button
+                                            onClick={() => setViewGlobalReport(sub.id)}
+                                            style={{
+                                                background: 'rgba(59, 130, 246, 0.1)',
+                                                border: 'none',
+                                                color: '#3b82f6',
+                                                padding: '0.4rem 0.75rem',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.8rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}
+                                        >
+                                            <Eye size={14} /> Full Report
+                                        </button>
                                     ) : (
                                         <button
                                             onClick={() => setViewReport(sub)}
@@ -1679,6 +1723,14 @@ function AllSubmissions({ user }) {
             {/* Aptitude Results Modal */}
             {viewAptitudeResult && (
                 <AptitudeReportModal submission={viewAptitudeResult} onClose={() => setViewAptitudeResult(null)} />
+            )}
+
+            {viewGlobalReport && (
+                <GlobalReportModal
+                    submissionId={viewGlobalReport}
+                    onClose={() => setViewGlobalReport(null)}
+                    isStudentView={false}
+                />
             )}
         </>
     )

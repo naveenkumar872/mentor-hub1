@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
 import AptitudeReportModal from '../components/AptitudeReportModal'
 import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
+import LocalTestCasesManager from '../components/LocalTestCasesManager'
 import { useAuth } from '../App'
 import axios from 'axios'
+import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:3000/api'
+    : 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -54,6 +58,10 @@ function AdminPortal() {
                 setTitle('Aptitude Tests')
                 setSubtitle('Manage aptitude tests for all students')
                 break
+            case 'global-tests':
+                setTitle('Global Complete Tests')
+                setSubtitle('Aptitude, Verbal, Logical, Coding, SQL – create and manage')
+                break
             default:
                 setTitle('Dashboard')
                 setSubtitle('System Administration')
@@ -65,6 +73,7 @@ function AdminPortal() {
         { path: '/admin/global-tasks', label: 'Global Tasks', icon: <Globe size={20} /> },
         { path: '/admin/global-problems', label: 'Global Problems', icon: <FileCode size={20} /> },
         { path: '/admin/aptitude-tests', label: 'Aptitude Tests', icon: <Target size={20} /> },
+        { path: '/admin/global-tests', label: 'Global Complete Tests', icon: <ClipboardList size={20} /> },
         { path: '/admin/allocations', label: 'Allocations', icon: <Users size={20} /> },
         { path: '/admin/student-leaderboard', label: 'Student Ranks', icon: <Trophy size={20} /> },
         { path: '/admin/mentor-leaderboard', label: 'Mentor Ranks', icon: <Award size={20} /> },
@@ -78,6 +87,7 @@ function AdminPortal() {
                 <Route path="/global-tasks" element={<GlobalTasks />} />
                 <Route path="/global-problems" element={<GlobalProblems />} />
                 <Route path="/aptitude-tests" element={<AptitudeTestsAdmin />} />
+                <Route path="/global-tests" element={<GlobalTestsAdmin />} />
                 <Route path="/allocations" element={<Allocations />} />
                 <Route path="/student-leaderboard" element={<StudentLeaderboard />} />
                 <Route path="/mentor-leaderboard" element={<MentorLeaderboard />} />
@@ -1116,19 +1126,22 @@ function MentorLeaderboard() {
 function AllSubmissions() {
     const [submissions, setSubmissions] = useState([])
     const [aptitudeSubmissions, setAptitudeSubmissions] = useState([])
+    const [globalSubmissions, setGlobalSubmissions] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeTab, setActiveTab] = useState('all')
     const [viewReport, setViewReport] = useState(null)
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
+    const [viewGlobalReport, setViewGlobalReport] = useState(null)
     const [resetting, setResetting] = useState(false)
 
     const fetchSubmissions = () => {
         setLoading(true)
         Promise.all([
             axios.get(`${API_BASE}/submissions`),
-            axios.get(`${API_BASE}/aptitude-submissions`)
-        ]).then(([codeRes, aptRes]) => {
+            axios.get(`${API_BASE}/aptitude-submissions`),
+            axios.get(`${API_BASE}/global-test-submissions`)
+        ]).then(([codeRes, aptRes, globalRes]) => {
             const codeSubs = (codeRes.data || []).map(s => ({ ...s, subType: 'code' }))
             const aptSubs = (aptRes.data || []).map(s => ({
                 ...s,
@@ -1136,10 +1149,21 @@ function AllSubmissions() {
                 itemTitle: s.testTitle,
                 language: 'Aptitude'
             }))
+            const globalSubs = (globalRes.data || []).map(s => ({
+                ...s,
+                subType: 'global',
+                itemTitle: s.testTitle,
+                language: 'Mixed',
+                score: s.overallPercentage
+            }))
             setSubmissions(codeSubs)
             setAptitudeSubmissions(aptSubs)
+            setGlobalSubmissions(globalSubs)
             setLoading(false)
-        }).catch(err => setLoading(false))
+        }).catch(err => {
+            console.error('Fetch error:', err)
+            setLoading(false)
+        })
     }
 
     useEffect(() => {
@@ -1175,9 +1199,9 @@ function AllSubmissions() {
         const rows = dataToExport.map(sub => [
             sub.studentName || '',
             sub.studentEmail || '',
-            sub.subType === 'aptitude' ? 'Aptitude' : 'Code',
+            sub.subType === 'aptitude' ? 'Aptitude' : sub.subType === 'global' ? 'Global' : 'Code',
             sub.itemTitle || sub.testTitle || '',
-            sub.subType === 'aptitude' ? 'N/A' : (sub.language || 'N/A'),
+            sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language || 'N/A'),
             sub.score || 0,
             sub.status || '',
             sub.integrity?.tabSwitches || sub.tabSwitches || 0,
@@ -1239,7 +1263,8 @@ function AllSubmissions() {
             const response = await axios.delete(`${API_BASE}/submissions`)
             alert(`✅ Reset Complete!\n\n` +
                 `• Code submissions deleted: ${response.data.deletedCodeSubmissions}\n` +
-                `• Aptitude submissions deleted: ${response.data.deletedAptitudeSubmissions}`)
+                `• Aptitude submissions deleted: ${response.data.deletedAptitudeSubmissions}\n` +
+                `• Global test submissions deleted: ${response.data.deletedGlobalSubmissions || 0}`)
             fetchSubmissions() // Refresh the list
         } catch (err) {
             alert('❌ Failed to reset submissions: ' + (err.response?.data?.error || err.message))
@@ -1248,7 +1273,7 @@ function AllSubmissions() {
         }
     }
 
-    const allSubmissions = [...submissions, ...aptitudeSubmissions]
+    const allSubmissions = [...submissions, ...aptitudeSubmissions, ...globalSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
     const getFilteredSubmissions = () => {
@@ -1256,7 +1281,9 @@ function AllSubmissions() {
             ? allSubmissions
             : activeTab === 'code'
                 ? submissions
-                : aptitudeSubmissions
+                : activeTab === 'aptitude'
+                    ? aptitudeSubmissions
+                    : globalSubmissions
 
         return filtered.filter(s =>
             (s.studentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1311,6 +1338,17 @@ function AllSubmissions() {
                                 fontSize: '0.85rem'
                             }}
                         >📝 Aptitude ({aptitudeSubmissions.length})</button>
+                        <button
+                            onClick={() => setActiveTab('global')}
+                            style={{
+                                padding: '0.5rem 1rem',
+                                background: activeTab === 'global' ? '#3b82f6' : 'transparent',
+                                border: 'none',
+                                color: activeTab === 'global' ? 'white' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem'
+                            }}
+                        >🌐 Global ({globalSubmissions.length})</button>
                     </div>
                     <div style={{ position: 'relative' }}>
                         <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -1415,7 +1453,7 @@ function AllSubmissions() {
                                         background: sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(59, 130, 246, 0.1)',
                                         color: sub.subType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
                                     }}>
-                                        {sub.subType === 'aptitude' ? '📝 Aptitude' : '💻 Code'}
+                                        {sub.subType === 'aptitude' ? '📝 Aptitude' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
                                     </span>
                                 </td>
                                 <td>
@@ -1423,7 +1461,7 @@ function AllSubmissions() {
                                 </td>
                                 <td>
                                     <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
-                                        {sub.subType === 'aptitude' ? 'N/A' : (sub.language?.toUpperCase() || 'N/A')}
+                                        {sub.subType === 'aptitude' ? 'N/A' : sub.subType === 'global' ? 'Mixed' : (sub.language?.toUpperCase() || 'N/A')}
                                     </span>
                                 </td>
                                 <td style={{ fontWeight: 700, fontSize: '1.1rem' }}>{sub.score}%</td>
@@ -1502,6 +1540,24 @@ function AllSubmissions() {
                                         >
                                             <Eye size={14} /> Results
                                         </button>
+                                    ) : sub.subType === 'global' ? (
+                                        <button
+                                            onClick={() => setViewGlobalReport(sub.id)}
+                                            style={{
+                                                background: 'rgba(59, 130, 246, 0.1)',
+                                                border: 'none',
+                                                color: '#3b82f6',
+                                                padding: '0.4rem 0.75rem',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.8rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}
+                                        >
+                                            <Eye size={14} /> Full Report
+                                        </button>
                                     ) : (
                                         <button
                                             onClick={() => setViewReport(sub)}
@@ -1529,13 +1585,23 @@ function AllSubmissions() {
             </div>
 
             {/* Report Modal */}
-            {viewReport && (
-                <AdminSubmissionReportModal submission={viewReport} onClose={() => setViewReport(null)} />
-            )}
-
-            {/* Aptitude Results Modal */}
             {viewAptitudeResult && (
                 <AptitudeReportModal submission={viewAptitudeResult} onClose={() => setViewAptitudeResult(null)} />
+            )}
+
+            {viewGlobalReport && (
+                <GlobalReportModal
+                    submissionId={viewGlobalReport}
+                    onClose={() => setViewGlobalReport(null)}
+                    isStudentView={false}
+                />
+            )}
+
+            {viewReport && (
+                <AdminSubmissionReportModal
+                    submission={viewReport}
+                    onClose={() => setViewReport(null)}
+                />
             )}
         </div>
     )
@@ -2825,6 +2891,1267 @@ function GlobalProblems() {
     )
 }
 
+// ==================== GLOBAL COMPLETE TESTS ADMIN ====================
+const GLOBAL_SECTIONS = [
+    { id: 'aptitude', label: 'Aptitude', icon: '📊' },
+    { id: 'verbal', label: 'Verbal', icon: '📝' },
+    { id: 'logical', label: 'Logical', icon: '🧩' },
+    { id: 'coding', label: 'Coding', icon: '💻' },
+    { id: 'sql', label: 'SQL', icon: '🗄️' }
+];
+
+function GlobalTestsAdmin() {
+    const [tests, setTests] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [showModal, setShowModal] = useState(false)
+    const [modalStep, setModalStep] = useState(1)
+    const [editingId, setEditingId] = useState(null)
+    const [sectionTab, setSectionTab] = useState('aptitude')
+    const [managingTestCases, setManagingTestCases] = useState(null)
+    const [newTest, setNewTest] = useState({
+        title: '',
+        type: 'comprehensive',
+        difficulty: 'Medium',
+        duration: 180,
+        passingScore: 60,
+        description: '',
+        startTime: '',
+        deadline: '',
+        maxAttempts: 1,
+        maxTabSwitches: 3,
+        status: 'live',
+        sectionConfig: {
+            sections: [
+                { id: 'aptitude', enabled: true, order: 1, questionsCount: 20, timeMinutes: 30 },
+                { id: 'verbal', enabled: true, order: 2, questionsCount: 25, timeMinutes: 25 },
+                { id: 'logical', enabled: true, order: 3, questionsCount: 20, timeMinutes: 20 },
+                { id: 'coding', enabled: true, order: 4, questionsCount: 2, timeMinutes: 50 },
+                { id: 'sql', enabled: true, order: 5, questionsCount: 1, timeMinutes: 25 }
+            ],
+            totalDurationMinutes: 180,
+            sectionTimeMode: 'fixed'
+        }
+    })
+    const [questionsBySection, setQuestionsBySection] = useState({
+        aptitude: [], verbal: [], logical: [], coding: [], sql: []
+    })
+    const [manualQuestion, setManualQuestion] = useState({
+        question: '', options: ['', '', '', ''], correctAnswer: 0, category: 'general', explanation: ''
+    })
+    const [codingQuestion, setCodingQuestion] = useState({
+        question: '', starterCode: '', language: 'Python', testCases: [{ input: '', expected_output: '' }]
+    })
+    const [sqlQuestion, setSqlQuestion] = useState({
+        question: '', schema: '', expectedOutput: ''
+    })
+    const [submissions, setSubmissions] = useState([])
+    const [aiPrompt, setAiPrompt] = useState({ topic: '', difficulty: 'Medium', count: 5 })
+    const [generatedQuestions, setGeneratedQuestions] = useState([])
+    const [isGenerating, setIsGenerating] = useState(false)
+    // Enhanced Proctoring Settings
+    const [proctoringSettings, setProctoringSettings] = useState({
+        enabled: true,
+        trackTabSwitches: true,
+        maxTabSwitches: 3,
+        enableVideoAudio: true,
+        disableCopyPaste: true,
+        detectCameraBlocking: true,
+        detectPhoneUsage: true,
+        enforceFullscreen: true,
+        autoSubmitOnViolation: false
+    })
+    // AI Generation for Coding/SQL
+    const [codingAiPrompt, setCodingAiPrompt] = useState({ topic: '', difficulty: 'Medium', language: 'Python' })
+    const [sqlAiPrompt, setSqlAiPrompt] = useState({ topic: '', difficulty: 'Medium' })
+    const [generatedCodingProblems, setGeneratedCodingProblems] = useState([])
+    const [generatedSqlProblems, setGeneratedSqlProblems] = useState([])
+    const [isGeneratingCoding, setIsGeneratingCoding] = useState(false)
+    const [isGeneratingSql, setIsGeneratingSql] = useState(false)
+    const [enableProctoring, setEnableProctoring] = useState(true)
+
+    const fetchTests = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/global-tests`)
+            setTests(Array.isArray(res.data) ? res.data : [])
+        } catch (e) {
+            if (e.response?.status === 503) setTests([])
+            else console.error(e)
+        } finally {
+            setLoading(false)
+        }
+    }
+    const fetchSubmissions = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/global-test-submissions`)
+            setSubmissions(Array.isArray(res.data) ? res.data : [])
+        } catch (_) { setSubmissions([]) }
+    }
+
+    useEffect(() => { fetchTests(); fetchSubmissions() }, [])
+
+    const updateSectionConfig = (sectionId, field, value) => {
+        setNewTest(prev => ({
+            ...prev,
+            sectionConfig: {
+                ...prev.sectionConfig,
+                sections: prev.sectionConfig.sections.map(s =>
+                    s.id === sectionId ? { ...s, [field]: value } : s
+                )
+            }
+        }))
+    }
+    const toggleSection = (sectionId, enabled) => {
+        updateSectionConfig(sectionId, 'enabled', enabled)
+    }
+
+    const addManualQuestion = () => {
+        if (!manualQuestion.question.trim()) return
+        const opt = manualQuestion.options.map(o => o.trim()).filter(Boolean)
+        if (opt.length < 2) { alert('Add at least 2 options'); return }
+        const correctAnswer = opt[manualQuestion.correctAnswer] ?? opt[0]
+        setQuestionsBySection(prev => ({
+            ...prev,
+            [sectionTab]: [...(prev[sectionTab] || []), {
+                question: manualQuestion.question,
+                options: opt,
+                correctAnswer,
+                category: manualQuestion.category,
+                explanation: manualQuestion.explanation
+            }]
+        }))
+        setManualQuestion({ question: '', options: ['', '', '', ''], correctAnswer: 0, category: 'general', explanation: '' })
+    }
+
+    const removeQuestion = (section, index) => {
+        setQuestionsBySection(prev => ({
+            ...prev,
+            [section]: (prev[section] || []).filter((_, i) => i !== index)
+        }))
+    }
+
+    const buildQuestionPayload = (section, list) => {
+        if (section === 'coding') {
+            return list.map(q => ({
+                questionType: 'coding',
+                question: q.question,
+                starterCode: q.starterCode || '',
+                testCases: q.testCases || { language: 'Python', cases: [] },
+                points: q.points ?? 10
+            }))
+        }
+        if (section === 'sql') {
+            return list.map(q => ({
+                questionType: 'sql',
+                question: q.question,
+                starterCode: q.starterCode || '',
+                testCases: q.testCases || { expectedOutput: '' },
+                points: q.points ?? 10
+            }))
+        }
+        return list.map(q => ({
+            questionType: 'mcq',
+            question: q.question,
+            options: q.options || [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean),
+            correctAnswer: q.correctAnswer ?? q.options?.[q.correctAnswer],
+            category: q.category || 'general',
+            explanation: q.explanation || ''
+        }))
+    }
+
+    // AI Generation for Coding Problems
+    const generateCodingProblem = async () => {
+        if (!codingAiPrompt.topic.trim()) {
+            alert('Please enter a topic for the coding problem')
+            return
+        }
+        setIsGeneratingCoding(true)
+        try {
+            const res = await axios.post(`${API_BASE}/ai/generate-coding-problem`, {
+                topic: codingAiPrompt.topic,
+                difficulty: codingAiPrompt.difficulty,
+                language: codingAiPrompt.language
+            })
+            if (res.data.problem) {
+                setGeneratedCodingProblems([res.data.problem])
+            }
+        } catch (e) {
+            console.error('AI Generation error:', e)
+            // Fallback problem
+            setGeneratedCodingProblems([{
+                question: `Write a ${codingAiPrompt.language} program to solve: ${codingAiPrompt.topic}`,
+                starterCode: codingAiPrompt.language === 'Python'
+                    ? '# Write your solution here\ndef solution():\n    pass\n\n# Test your code\nsolution()'
+                    : '// Write your solution here',
+                testCases: [{ input: '', expected_output: '' }],
+                language: codingAiPrompt.language,
+                difficulty: codingAiPrompt.difficulty
+            }])
+        } finally {
+            setIsGeneratingCoding(false)
+        }
+    }
+
+    const addGeneratedCodingToSection = () => {
+        if (generatedCodingProblems.length === 0) return
+        const newProblems = generatedCodingProblems.map(p => ({
+            questionType: 'coding',
+            question: p.question,
+            starterCode: p.starterCode || '',
+            solutionCode: p.solutionCode || '',
+            language: p.language || codingAiPrompt.language,
+            testCases: {
+                language: p.language || codingAiPrompt.language,
+                cases: Array.isArray(p.testCases) ? p.testCases : (p.testCases?.cases || [])
+            },
+            hints: p.hints || [],
+            explanation: p.explanation || '',
+            points: 10
+        }))
+        setQuestionsBySection(prev => ({
+            ...prev,
+            coding: [...(prev.coding || []), ...newProblems]
+        }))
+        setGeneratedCodingProblems([])
+        setCodingAiPrompt({ topic: '', difficulty: 'Medium', language: 'Python' })
+    }
+
+    // AI Generation for SQL Problems
+    const generateSqlProblem = async () => {
+        if (!sqlAiPrompt.topic.trim()) {
+            alert('Please enter a topic for the SQL problem')
+            return
+        }
+        setIsGeneratingSql(true)
+        try {
+            const res = await axios.post(`${API_BASE}/ai/generate-sql-problem`, {
+                topic: sqlAiPrompt.topic,
+                difficulty: sqlAiPrompt.difficulty
+            })
+            if (res.data.problem) {
+                setGeneratedSqlProblems([res.data.problem])
+            }
+        } catch (e) {
+            console.error('AI Generation error:', e)
+            // Fallback problem
+            setGeneratedSqlProblems([{
+                question: `Write a SQL query to: ${sqlAiPrompt.topic}`,
+                schema: `-- Sample schema\nCREATE TABLE employees (\n    id INTEGER PRIMARY KEY,\n    name TEXT,\n    department TEXT,\n    salary INTEGER\n);\n\nINSERT INTO employees VALUES (1, 'John', 'Engineering', 50000);`,
+                expectedOutput: 'id|name|department|salary\n1|John|Engineering|50000',
+                difficulty: sqlAiPrompt.difficulty
+            }])
+        } finally {
+            setIsGeneratingSql(false)
+        }
+    }
+
+    const addGeneratedSqlToSection = () => {
+        if (generatedSqlProblems.length === 0) return
+        const newProblems = generatedSqlProblems.map(p => ({
+            questionType: 'sql',
+            question: p.question,
+            starterCode: `${p.schema || ''}\n\n-- Your query here:`,
+            testCases: { expectedOutput: p.expectedOutput || '' },
+            solutionQuery: p.solutionQuery || '',
+            hints: p.hints || [],
+            explanation: p.explanation || '',
+            points: 10
+        }))
+        setQuestionsBySection(prev => ({
+            ...prev,
+            sql: [...(prev.sql || []), ...newProblems]
+        }))
+        setGeneratedSqlProblems([])
+        setSqlAiPrompt({ topic: '', difficulty: 'Medium' })
+    }
+
+    const handleCreateOrUpdate = async () => {
+        if (!newTest.title.trim()) { alert('Enter test title'); return }
+        const codingEnabled = newTest.sectionConfig?.sections?.find(s => s.id === 'coding' && s.enabled)
+        const sqlEnabled = newTest.sectionConfig?.sections?.find(s => s.id === 'sql' && s.enabled)
+        const codingCount = (questionsBySection.coding || []).length
+        const sqlCount = (questionsBySection.sql || []).length
+        if (codingEnabled && codingCount < 2) { alert('Coding section requires at least 2 problems (minimum)'); return }
+        if (sqlEnabled && sqlCount < 1) { alert('SQL section requires at least 1 question (minimum)'); return }
+        const totalQ = Object.values(questionsBySection).reduce((sum, arr) => sum + arr.length, 0)
+        if (totalQ === 0) { alert('Add questions in sections'); return }
+        try {
+            // Format dates correctly for backend
+            let formattedStartTime = null;
+            if (newTest.startTime) {
+                const startD = new Date(newTest.startTime);
+                if (!isNaN(startD.getTime())) formattedStartTime = startD.toISOString();
+            }
+
+            let formattedDeadline = null;
+            if (newTest.deadline) {
+                const endD = new Date(newTest.deadline);
+                if (!isNaN(endD.getTime())) formattedDeadline = endD.toISOString();
+            }
+
+            const payload = {
+                ...newTest,
+                startTime: formattedStartTime,
+                deadline: formattedDeadline,
+                createdBy: editingId ? undefined : ADMIN_ID,
+                // Include enhanced proctoring settings
+                proctoring: proctoringSettings.enabled ? {
+                    enabled: true,
+                    trackTabSwitches: proctoringSettings.trackTabSwitches,
+                    maxTabSwitches: proctoringSettings.maxTabSwitches,
+                    enableVideoAudio: proctoringSettings.enableVideoAudio,
+                    disableCopyPaste: proctoringSettings.disableCopyPaste,
+                    detectCameraBlocking: proctoringSettings.detectCameraBlocking,
+                    detectPhoneUsage: proctoringSettings.detectPhoneUsage,
+                    enforceFullscreen: proctoringSettings.enforceFullscreen,
+                    autoSubmitOnViolation: proctoringSettings.autoSubmitOnViolation
+                } : { enabled: false },
+                maxTabSwitches: proctoringSettings.enabled && proctoringSettings.trackTabSwitches ? proctoringSettings.maxTabSwitches : 0
+            }
+            let testId = editingId
+            if (editingId) {
+                await axios.put(`${API_BASE}/global-tests/${editingId}`, {
+                    ...payload,
+                    createdBy: undefined
+                })
+                await axios.delete(`${API_BASE}/global-tests/${editingId}/questions`)
+            } else {
+                const res = await axios.post(`${API_BASE}/global-tests`, payload)
+                testId = res.data.id
+            }
+            for (const section of GLOBAL_SECTIONS) {
+                const list = questionsBySection[section.id] || []
+                if (list.length === 0) continue
+                const payload = buildQuestionPayload(section.id, list)
+                await axios.post(`${API_BASE}/global-tests/${testId}/questions`, { section: section.id, questions: payload })
+            }
+            setShowModal(false)
+            setModalStep(1)
+            setEditingId(null)
+            setQuestionsBySection({ aptitude: [], verbal: [], logical: [], coding: [], sql: [] })
+            setNewTest({
+                title: '', type: 'comprehensive', difficulty: 'Medium', duration: 180, passingScore: 60,
+                description: '', startTime: '', deadline: '', maxAttempts: 1, maxTabSwitches: 3, status: 'live',
+                sectionConfig: newTest.sectionConfig
+            })
+            fetchTests()
+        } catch (e) {
+            alert(e.response?.data?.error || 'Failed to save test')
+        }
+    }
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('Delete this global test? This cannot be undone.')) return
+        try {
+            await axios.delete(`${API_BASE}/global-tests/${id}`)
+            fetchTests()
+        } catch (e) {
+            alert(e.response?.data?.error || 'Delete failed')
+        }
+    }
+
+    const handleUpdateStatus = async (testId, newStatus) => {
+        try {
+            await axios.put(`${API_BASE}/global-tests/${testId}`, { status: newStatus })
+            fetchTests()
+        } catch (e) {
+            alert(e.response?.data?.error || 'Status update failed')
+        }
+    }
+
+    const openEdit = async (test) => {
+        try {
+            const [testRes, qRes] = await Promise.all([
+                axios.get(`${API_BASE}/global-tests/${test.id}`),
+                axios.get(`${API_BASE}/global-tests/${test.id}/questions`)
+            ])
+            const t = testRes.data
+            const qList = Array.isArray(qRes.data) ? qRes.data : []
+            const bySection = { aptitude: [], verbal: [], logical: [], coding: [], sql: [] }
+            qList.forEach(q => {
+                const opts = q.options || []
+                let correctAnswer = q.correctAnswer
+                if (q.questionType !== 'coding' && q.questionType !== 'sql') {
+                    if (typeof correctAnswer === 'number' && correctAnswer >= 0 && correctAnswer < 4) {
+                        correctAnswer = correctAnswer
+                    } else if (typeof correctAnswer === 'string' && opts.length) {
+                        const idx = opts.indexOf(correctAnswer)
+                        correctAnswer = idx >= 0 ? idx : (/^[0-3]$/.test(correctAnswer) ? parseInt(correctAnswer, 10) : 0)
+                    } else {
+                        correctAnswer = 0
+                    }
+                }
+                const item = {
+                    id: q.id,
+                    question: q.question,
+                    options: opts.length ? opts : ['', '', '', ''],
+                    correctAnswer,
+                    category: q.category,
+                    explanation: q.explanation,
+                    questionType: q.questionType || 'mcq',
+                    starterCode: q.starterCode,
+                    solutionCode: q.solutionCode,
+                    testCases: q.testCases,
+                    points: q.points
+                }
+                if (bySection[q.section]) bySection[q.section].push(item)
+            })
+            setEnableProctoring((t.maxTabSwitches ?? 0) > 0)
+            setNewTest({
+                title: t.title,
+                type: t.type || 'comprehensive',
+                difficulty: t.difficulty || 'Medium',
+                duration: t.duration ?? 180,
+                passingScore: t.passingScore ?? 60,
+                description: t.description || '',
+                startTime: t.startTime ? t.startTime.slice(0, 16) : '',
+                deadline: t.deadline ? t.deadline.slice(0, 16) : '',
+                maxAttempts: t.maxAttempts ?? 1,
+                maxTabSwitches: t.maxTabSwitches ?? 3,
+                status: t.status || 'draft',
+                sectionConfig: t.sectionConfig || newTest.sectionConfig
+            })
+            setQuestionsBySection(bySection)
+            setEditingId(t.id)
+            setModalStep(1)
+            setShowModal(true)
+        } catch (e) {
+            alert(e.response?.data?.error || 'Failed to load test')
+        }
+    }
+
+    const handleGenerateQuestions = async () => {
+        setIsGenerating(true)
+        try {
+            const res = await axios.post(`${API_BASE}/ai/generate-aptitude`, aiPrompt)
+            if (res.data.questions) setGeneratedQuestions(res.data.questions)
+        } catch (_) {
+            alert('Error generating questions')
+        } finally {
+            setIsGenerating(false)
+        }
+    }
+    const addGeneratedToSection = () => {
+        if (generatedQuestions.length === 0) return
+        setQuestionsBySection(prev => ({
+            ...prev,
+            [sectionTab]: [...(prev[sectionTab] || []), ...generatedQuestions.map(q => ({
+                question: q.question,
+                options: q.options || ['', '', '', ''],
+                correctAnswer: q.correctAnswer ?? 0,
+                category: q.category || 'general',
+                explanation: q.explanation || ''
+            }))]
+        }))
+        setGeneratedQuestions([])
+    }
+    const updateQuestionInSection = (section, index, field, value) => {
+        setQuestionsBySection(prev => {
+            const list = [...(prev[section] || [])]
+            if (!list[index]) return prev
+            if (field === 'options') {
+                list[index] = { ...list[index], options: value }
+            } else if (field === 'correctAnswer') {
+                list[index] = { ...list[index], correctAnswer: value }
+            } else {
+                list[index] = { ...list[index], [field]: value }
+            }
+            return { ...prev, [section]: list }
+        })
+    }
+    const addNewMcqToSection = () => {
+        setQuestionsBySection(prev => ({
+            ...prev,
+            [sectionTab]: [...(prev[sectionTab] || []), { question: '', options: ['', '', '', ''], correctAnswer: 0, category: 'general', explanation: '' }]
+        }))
+    }
+
+    const addCodingQuestion = () => {
+        if (!codingQuestion.question.trim()) { alert('Enter problem description'); return }
+        const cases = codingQuestion.testCases.filter(tc => tc.input !== undefined || tc.expected_output)
+        if (cases.length === 0 || !cases.some(c => (c.expected_output || '').trim())) { alert('Add at least one test case with expected output'); return }
+        setQuestionsBySection(prev => ({
+            ...prev,
+            coding: [...(prev.coding || []), {
+                questionType: 'coding',
+                question: codingQuestion.question,
+                starterCode: codingQuestion.starterCode,
+                testCases: { language: codingQuestion.language, cases: codingQuestion.testCases.map(c => ({ input: c.input || '', expected_output: c.expected_output || '' })) },
+                points: 10
+            }]
+        }))
+        setCodingQuestion({ question: '', starterCode: '', language: 'Python', testCases: [{ input: '', expected_output: '' }] })
+    }
+
+    const addSqlQuestion = () => {
+        if (!sqlQuestion.question.trim()) { alert('Enter question text'); return }
+        if (!sqlQuestion.schema.trim()) { alert('Enter database schema'); return }
+        if (!sqlQuestion.expectedOutput.trim()) { alert('Enter expected query result'); return }
+        setQuestionsBySection(prev => ({
+            ...prev,
+            sql: [...(prev.sql || []), {
+                questionType: 'sql',
+                question: sqlQuestion.question,
+                starterCode: sqlQuestion.schema,
+                testCases: { expectedOutput: sqlQuestion.expectedOutput },
+                points: 10
+            }]
+        }))
+        setSqlQuestion({ question: '', schema: '', expectedOutput: '' })
+    }
+
+    if (loading) return <div className="loading-spinner"></div>
+
+    return (
+        <div className="animate-fadeIn">
+            {/* Hero – same style as Global Problems */}
+            <div className="admin-hero-card glass" style={{
+                background: 'var(--bg-card)',
+                borderRadius: '1.5rem',
+                padding: '2rem',
+                marginBottom: '2rem',
+                border: '1px solid var(--border-color)',
+                position: 'relative',
+                overflow: 'hidden'
+            }}>
+                <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '200px', height: '200px', background: 'radial-gradient(circle, var(--primary-alpha) 0%, transparent 70%)', borderRadius: '50%' }}></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                            <div style={{ width: '50px', height: '50px', borderRadius: '1rem', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 32px var(--primary-alpha)' }}>
+                                <ClipboardList size={24} color="white" />
+                            </div>
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-main)' }}>Global Complete Tests</h2>
+                                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.95rem' }}>Aptitude, Verbal, Logical, Coding, SQL – create and manage</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => { setShowModal(true); setModalStep(1); setEditingId(null); setQuestionsBySection({ aptitude: [], verbal: [], logical: [], coding: [], sql: [] }); setGeneratedQuestions([]); setAiPrompt({ topic: '', difficulty: 'Medium', count: 5 }); }}
+                        className="btn-create-new premium-btn"
+                        style={{ padding: '1rem 2rem', background: 'var(--primary)', borderRadius: '1rem', fontSize: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        <Plus size={20} /> Create Global Test
+                    </button>
+                </div>
+            </div>
+
+            {/* Stats grid – like Global Problems */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div className="stat-card glass">
+                    <div className="stat-icon" style={{ background: 'var(--primary-alpha)', color: 'var(--primary)' }}><ClipboardList size={24} /></div>
+                    <div className="stat-info">
+                        <span className="stat-label">Total Tests</span>
+                        <span className="stat-value">{tests.length}</span>
+                    </div>
+                </div>
+                <div className="stat-card glass">
+                    <div className="stat-icon" style={{ background: 'var(--success-alpha)', color: 'var(--success)' }}><CheckCircle size={24} /></div>
+                    <div className="stat-info">
+                        <span className="stat-label">Live</span>
+                        <span className="stat-value">{tests.filter(t => t.status === 'live').length}</span>
+                    </div>
+                </div>
+                <div className="stat-card glass">
+                    <div className="stat-icon" style={{ background: 'var(--warning-alpha)', color: 'var(--warning)' }}><Target size={24} /></div>
+                    <div className="stat-info">
+                        <span className="stat-label">Submissions</span>
+                        <span className="stat-value">{submissions.length}</span>
+                    </div>
+                </div>
+            </div>
+
+            {tests.length === 0 && !loading ? (
+                <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.7 }}>
+                    <ClipboardList size={64} style={{ marginBottom: '1rem', opacity: 0.3 }} />
+                    <h3>No global tests yet</h3>
+                    <p style={{ color: 'var(--text-muted)' }}>Create one to add Aptitude, Verbal, Logical, Coding, and SQL sections.</p>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>If you see 503, run: <code>node migrate_global_tests.js</code></p>
+                </div>
+            ) : (
+                <div className="problem-list-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))' }}>
+                    {tests.map(t => (
+                        <div key={t.id} className="problem-card card glass" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2))', color: '#10b981', fontWeight: 700 }}>GLOBAL TEST</span>
+                                <span style={{
+                                    fontSize: '0.65rem',
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    textTransform: 'uppercase',
+                                    fontWeight: 700,
+                                    background: t.status === 'live' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                    color: t.status === 'live' ? '#10b981' : '#ef4444',
+                                    border: t.status === 'live' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)'
+                                }}>
+                                    {t.status === 'live' ? 'LIVE' : 'ENDED'}
+                                </span>
+                            </div>
+                            <h3 style={{ margin: '0.75rem 0', fontSize: '1.2rem' }}>{t.title}</h3>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '1rem' }}>
+                                {t.description || 'Aptitude, Verbal, Logical, Coding, SQL'}
+                            </p>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                                {t.duration} min · {t.totalQuestions ?? 0} questions · Pass {t.passingScore}%
+                            </div>
+                            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.type}</span>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => openEdit(t)}
+                                        style={{ background: '#1e3a8a', border: '1px solid #1d4ed8', color: '#93c5fd', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                        <Eye size={14} /> View
+                                    </button>
+
+                                    {t.status === 'live' ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleUpdateStatus(t.id, 'draft')}
+                                            style={{ background: '#451a03', border: '1px solid #b45309', color: '#fbbf24', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                            <XCircle size={14} /> End
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleUpdateStatus(t.id, 'live')}
+                                            style={{ background: '#064e3b', border: '1px solid #059669', color: '#6ee7b7', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                            <CheckCircle size={14} /> Activate
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDelete(t.id)}
+                                        style={{ background: '#450a0a', border: '1px solid #991b1b', color: '#f87171', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                        <Trash2 size={14} /> Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {showModal && (
+                <div className="modal-overlay" style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '1rem',
+                    zIndex: 1500,
+                    backdropFilter: 'blur(5px)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)'
+                }}>
+                    <div className="modal-content" style={{
+                        width: '100%',
+                        maxWidth: modalStep === 1 ? 'min(800px, calc(100vw - 2rem))' : 'min(900px, calc(100vw - 2rem))',
+                        maxHeight: '80vh', // Reduced to 80vh to ensure it stays well within screen
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        borderRadius: '16px',
+                        background: '#1e293b', // Solid background fallback
+                        backgroundImage: 'linear-gradient(145deg, rgba(30,41,59,1), rgba(15,23,42,1))', // opaque gradient
+                        border: '1px solid rgba(139,92,246,0.2)',
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.5)'
+                    }}>
+                        {/* Modal Header - Fixed */}
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '1rem 1.5rem',
+                            borderBottom: '1px solid rgba(139,92,246,0.15)',
+                            background: 'rgba(15, 23, 42, 0.95)', // Nearly opaque background
+                            backdropFilter: 'blur(10px)', // Blur for glass effect without text bleed
+                            flexShrink: 0,
+                            zIndex: 10
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ padding: '0.5rem', background: 'linear-gradient(135deg, rgba(139,92,246,0.2), rgba(6,182,212,0.2))', borderRadius: '10px' }}>
+                                    <Globe size={22} color="#a78bfa" />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{editingId ? 'Edit' : 'Create'} Global Test</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
+                                        {modalStep === 1 ? 'Step 1: Basic Settings & Sections' : 'Step 2: Add Questions to Sections'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => { setShowModal(false); setModalStep(1); setEditingId(null); }}
+                                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '10px', padding: '0.5rem', cursor: 'pointer', color: 'white', transition: 'all 0.2s' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Scrollable Content Area */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+
+                            {modalStep === 1 && (
+                                <>
+                                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                        <label className="form-label">Test Title</label>
+                                        <input type="text" placeholder="e.g. Global Complete Assessment - Feb 2026" value={newTest.title} onChange={e => setNewTest({ ...newTest, title: e.target.value })} style={{ width: '100%' }} />
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Duration (min) — default 180 for Coding+SQL</label>
+                                            <input type="number" min="30" max="300" value={newTest.duration} onChange={e => setNewTest({ ...newTest, duration: parseInt(e.target.value) || 180 })} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Passing Score (%)</label>
+                                            <input type="number" min="0" max="100" value={newTest.passingScore} onChange={e => setNewTest({ ...newTest, passingScore: parseInt(e.target.value) || 60 })} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Status</label>
+                                            <select value={newTest.status} onChange={e => setNewTest({ ...newTest, status: e.target.value })}>
+                                                <option value="draft">Draft</option>
+                                                <option value="live">Live</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                        <label className="form-label">Max Attempts</label>
+                                        <input type="number" min="1" max="10" value={newTest.maxAttempts} onChange={e => setNewTest({ ...newTest, maxAttempts: parseInt(e.target.value) || 1 })} />
+                                    </div>
+                                    {/* Enhanced Proctoring Settings */}
+                                    <div style={{ marginBottom: '1.5rem', padding: '1.25rem', background: 'linear-gradient(135deg, rgba(239,68,68,0.05), rgba(251,191,36,0.05))', borderRadius: '16px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                                            <div style={{ padding: '0.5rem', background: 'rgba(239,68,68,0.1)', borderRadius: '8px' }}>
+                                                <Shield size={20} color="#ef4444" />
+                                            </div>
+                                            <div>
+                                                <h4 style={{ margin: 0, fontSize: '1rem', color: '#ef4444' }}>Proctoring Settings</h4>
+                                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>Configure security measures for exam integrity</p>
+                                            </div>
+                                            <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <input type="checkbox" checked={proctoringSettings.enabled} onChange={e => setProctoringSettings({ ...proctoringSettings, enabled: e.target.checked })} />
+                                                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enable Proctoring</span>
+                                            </label>
+                                        </div>
+
+                                        {proctoringSettings.enabled && (
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                                                {/* Tab Switches */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.trackTabSwitches} onChange={e => setProctoringSettings({ ...proctoringSettings, trackTabSwitches: e.target.checked })} />
+                                                        <Eye size={16} color="#f59e0b" />
+                                                        Track Tab Switches
+                                                    </label>
+                                                    {proctoringSettings.trackTabSwitches && (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '1.5rem' }}>
+                                                            <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>Max:</span>
+                                                            <input type="number" min="1" max="10" value={proctoringSettings.maxTabSwitches} onChange={e => setProctoringSettings({ ...proctoringSettings, maxTabSwitches: parseInt(e.target.value) || 3 })} style={{ width: 50, padding: '0.25rem 0.5rem', fontSize: '0.85rem' }} />
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Video/Audio Recording */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.enableVideoAudio} onChange={e => setProctoringSettings({ ...proctoringSettings, enableVideoAudio: e.target.checked })} />
+                                                        <span style={{ fontSize: '1rem' }}>📹</span>
+                                                        Video/Audio Recording
+                                                    </label>
+                                                    <p style={{ margin: '0.25rem 0 0 1.5rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Record student during test</p>
+                                                </div>
+
+                                                {/* Camera Blocking Detection */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.detectCameraBlocking} onChange={e => setProctoringSettings({ ...proctoringSettings, detectCameraBlocking: e.target.checked })} />
+                                                        <span style={{ fontSize: '1rem' }}>🚫</span>
+                                                        Detect Camera Blocking
+                                                    </label>
+                                                    <p style={{ margin: '0.25rem 0 0 1.5rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Flag covered/blocked camera</p>
+                                                </div>
+
+                                                {/* Phone Detection */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.detectPhoneUsage} onChange={e => setProctoringSettings({ ...proctoringSettings, detectPhoneUsage: e.target.checked })} />
+                                                        <span style={{ fontSize: '1rem' }}>📱</span>
+                                                        AI Phone Detection
+                                                    </label>
+                                                    <p style={{ margin: '0.25rem 0 0 1.5rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Detect mobile phones in view</p>
+                                                </div>
+
+                                                {/* Copy/Paste Blocking */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.disableCopyPaste} onChange={e => setProctoringSettings({ ...proctoringSettings, disableCopyPaste: e.target.checked })} />
+                                                        <span style={{ fontSize: '1rem' }}>📋</span>
+                                                        Disable Copy/Paste
+                                                    </label>
+                                                    <p style={{ margin: '0.25rem 0 0 1.5rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Block clipboard actions</p>
+                                                </div>
+
+                                                {/* Fullscreen Enforcement */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.enforceFullscreen} onChange={e => setProctoringSettings({ ...proctoringSettings, enforceFullscreen: e.target.checked })} />
+                                                        <span style={{ fontSize: '1rem' }}>🖥️</span>
+                                                        Enforce Fullscreen
+                                                    </label>
+                                                    <p style={{ margin: '0.25rem 0 0 1.5rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Required during test</p>
+                                                </div>
+
+                                                {/* Auto Submit on Violation */}
+                                                <div style={{ padding: '0.75rem', background: 'rgba(239,68,68,0.1)', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                        <input type="checkbox" checked={proctoringSettings.autoSubmitOnViolation} onChange={e => setProctoringSettings({ ...proctoringSettings, autoSubmitOnViolation: e.target.checked })} />
+                                                        <AlertTriangle size={16} color="#ef4444" />
+                                                        Auto-Submit on Max Violations
+                                                    </label>
+                                                    <p style={{ margin: '0.25rem 0 0 1.5rem', fontSize: '0.7rem', color: 'rgba(239,68,68,0.7)' }}>Submit test when violations exceed limit</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                        <label className="form-label">Description (optional)</label>
+                                        <textarea placeholder="Instructions for students" value={newTest.description} onChange={e => setNewTest({ ...newTest, description: e.target.value })} rows={2} style={{ width: '100%', resize: 'vertical' }} />
+                                    </div>
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <h4 style={{ margin: '0 0 0.75rem' }}>Sections — Coding min 2, SQL min 1 (max set by you)</h4>
+                                        {(newTest.sectionConfig?.sections || []).map(s => (
+                                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 120 }}>
+                                                    <input type="checkbox" checked={!!s.enabled} onChange={e => toggleSection(s.id, e.target.checked)} />
+                                                    {GLOBAL_SECTIONS.find(g => g.id === s.id)?.icon} {GLOBAL_SECTIONS.find(g => g.id === s.id)?.label}
+                                                    {s.id === 'coding' && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(min 2)</span>}
+                                                    {s.id === 'sql' && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(min 1)</span>}
+                                                </label>
+                                                <input type="number" min={s.id === 'coding' ? 2 : s.id === 'sql' ? 1 : 0} placeholder="Count" value={s.questionsCount ?? ''} onChange={e => updateSectionConfig(s.id, 'questionsCount', parseInt(e.target.value) || 0)} style={{ width: 70 }} />
+                                                <input type="number" min="0" placeholder="Min" value={s.timeMinutes ?? ''} onChange={e => updateSectionConfig(s.id, 'timeMinutes', parseInt(e.target.value) || 0)} style={{ width: 70 }} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                        <button type="button" className="btn-reset" onClick={() => setShowModal(false)}>Cancel</button>
+                                        <button type="button" className="btn-create-new" onClick={() => setModalStep(2)}>Next: Add Questions</button>
+                                    </div>
+                                </>
+                            )}
+
+                            {modalStep === 2 && (
+                                <>
+                                    {/* Modern Section Tabs */}
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '0.5rem',
+                                        marginBottom: '1.5rem',
+                                        flexWrap: 'wrap',
+                                        padding: '0.5rem',
+                                        background: 'rgba(0,0,0,0.2)',
+                                        borderRadius: '14px',
+                                        border: '1px solid rgba(255,255,255,0.05)'
+                                    }}>
+                                        {GLOBAL_SECTIONS.map(s => {
+                                            const isActive = sectionTab === s.id
+                                            const count = (questionsBySection[s.id] || []).length
+                                            const sectionColors = {
+                                                aptitude: { bg: 'rgba(139,92,246,0.15)', border: 'rgba(139,92,246,0.4)', color: '#a78bfa' },
+                                                verbal: { bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.4)', color: '#60a5fa' },
+                                                logical: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', color: '#fbbf24' },
+                                                coding: { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.4)', color: '#34d399' },
+                                                sql: { bg: 'rgba(6,182,212,0.15)', border: 'rgba(6,182,212,0.4)', color: '#22d3ee' }
+                                            }
+                                            const colors = sectionColors[s.id] || sectionColors.aptitude
+                                            return (
+                                                <button
+                                                    key={s.id}
+                                                    type="button"
+                                                    onClick={() => setSectionTab(s.id)}
+                                                    style={{
+                                                        padding: '0.75rem 1.25rem',
+                                                        borderRadius: '10px',
+                                                        border: isActive ? `2px solid ${colors.border}` : '2px solid transparent',
+                                                        background: isActive ? colors.bg : 'transparent',
+                                                        color: isActive ? colors.color : 'rgba(255,255,255,0.6)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.5rem',
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: isActive ? 600 : 400,
+                                                        transition: 'all 0.2s ease',
+                                                        flex: '1 1 auto',
+                                                        justifyContent: 'center',
+                                                        minWidth: '120px'
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: '1.1rem' }}>{s.icon}</span>
+                                                    <span>{s.label}</span>
+                                                    <span style={{
+                                                        background: count > 0
+                                                            ? (isActive ? colors.color : 'rgba(255,255,255,0.2)')
+                                                            : 'rgba(255,255,255,0.1)',
+                                                        color: count > 0 ? (isActive ? '#0f172a' : 'rgba(255,255,255,0.8)') : 'rgba(255,255,255,0.4)',
+                                                        padding: '0.15rem 0.5rem',
+                                                        borderRadius: '6px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 700,
+                                                        minWidth: '24px',
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        {count}
+                                                    </span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+
+                                    {sectionTab === 'coding' && (
+                                        <>
+                                            {/* AI Coding Problem Generator */}
+                                            <div className="card glass" style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(6,182,212,0.05))', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '16px' }}>
+                                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem', fontSize: '1.1rem', color: '#10b981' }}>
+                                                    <Bot size={20} /> AI Coding Problem Generator
+                                                </h4>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>TOPIC / CONCEPT</label>
+                                                        <input type="text" placeholder="e.g., Two Sum, Binary Search, Linked Lists" value={codingAiPrompt.topic} onChange={e => setCodingAiPrompt({ ...codingAiPrompt, topic: e.target.value })} style={{ width: '100%' }} />
+                                                    </div>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>DIFFICULTY</label>
+                                                        <select value={codingAiPrompt.difficulty} onChange={e => setCodingAiPrompt({ ...codingAiPrompt, difficulty: e.target.value })}>
+                                                            <option value="Easy">Easy</option>
+                                                            <option value="Medium">Medium</option>
+                                                            <option value="Hard">Hard</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>LANGUAGE</label>
+                                                        <select value={codingAiPrompt.language} onChange={e => setCodingAiPrompt({ ...codingAiPrompt, language: e.target.value })}>
+                                                            <option value="Python">Python</option>
+                                                            <option value="JavaScript">JavaScript</option>
+                                                            <option value="Java">Java</option>
+                                                            <option value="C++">C++</option>
+                                                        </select>
+                                                    </div>
+                                                    <button type="button" className="btn-create-new" onClick={generateCodingProblem} disabled={isGeneratingCoding} style={{ background: 'linear-gradient(135deg, #10b981, #06b6d4)' }}>
+                                                        {isGeneratingCoding ? <><RefreshCw size={16} className="spin" /> Generating...</> : <><Wand2 size={16} /> Generate</>}
+                                                    </button>
+                                                </div>
+                                                {generatedCodingProblems.length > 0 && (
+                                                    <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(16,185,129,0.1)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.2)' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                                            <span style={{ fontWeight: 600, color: '#10b981' }}>✓ Generated {generatedCodingProblems.length} Problem(s)</span>
+                                                            <button type="button" className="btn-create-new" onClick={addGeneratedCodingToSection} style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
+                                                                <Plus size={16} /> Add to Section
+                                                            </button>
+                                                        </div>
+                                                        {generatedCodingProblems.map((p, i) => (
+                                                            <div key={i} style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginTop: '0.5rem' }}>
+                                                                <p style={{ margin: '0 0 0.5rem', fontWeight: 500, color: 'white' }}>{p.question?.substring(0, 150)}...</p>
+                                                                <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>{p.testCases?.length || 0} test cases</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Manual Entry Section */}
+                                            <div style={{ padding: '1.5rem', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+                                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem', fontSize: '1rem', color: 'var(--text)' }}>
+                                                    <Code size={18} /> Manual Entry
+                                                </h4>
+                                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Problem description</label>
+                                                    <textarea value={codingQuestion.question} onChange={e => setCodingQuestion({ ...codingQuestion, question: e.target.value })} placeholder="Describe the coding problem..." rows={3} style={{ width: '100%', resize: 'vertical' }} />
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Starter code (optional)</label>
+                                                    <textarea value={codingQuestion.starterCode} onChange={e => setCodingQuestion({ ...codingQuestion, starterCode: e.target.value })} placeholder="def solution():\n    pass" rows={4} style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical' }} />
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Language</label>
+                                                    <select value={codingQuestion.language} onChange={e => setCodingQuestion({ ...codingQuestion, language: e.target.value })}>
+                                                        <option value="Python">Python</option>
+                                                        <option value="JavaScript">JavaScript</option>
+                                                        <option value="Java">Java</option>
+                                                        <option value="C++">C++</option>
+                                                    </select>
+                                                </div>
+                                                <div style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Test cases (input → expected output)</label>
+                                                    {codingQuestion.testCases.map((tc, idx) => (
+                                                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                                                            <input type="text" placeholder="Sample Input" value={tc.input || ''} onChange={e => {
+                                                                const t = [...codingQuestion.testCases]; t[idx] = { ...t[idx], input: e.target.value }; setCodingQuestion({ ...codingQuestion, testCases: t })
+                                                            }} />
+                                                            <input type="text" placeholder="Sample Output" value={tc.expected_output || ''} onChange={e => {
+                                                                const t = [...codingQuestion.testCases]; t[idx] = { ...t[idx], expected_output: e.target.value }; setCodingQuestion({ ...codingQuestion, testCases: t })
+                                                            }} />
+                                                            <button type="button" onClick={() => setCodingQuestion({ ...codingQuestion, testCases: codingQuestion.testCases.filter((_, i) => i !== idx) })} className="btn-reset" style={{ color: 'var(--danger)' }}><X size={18} /></button>
+                                                        </div>
+                                                    ))}
+                                                    <button type="button" className="btn-reset" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }} onClick={() => setCodingQuestion({ ...codingQuestion, testCases: [...codingQuestion.testCases, { input: '', expected_output: '' }] })}>+ Add test case</button>
+                                                </div>
+                                                <button type="button" className="btn-create-new" onClick={addCodingQuestion}>Add this coding problem</button>
+                                            </div>
+
+                                            {/* Added Coding Questions List */}
+                                            <div style={{ marginTop: '2rem' }}>
+                                                {questionsBySection.coding?.length > 0 && <h4 style={{ color: 'white', marginBottom: '1rem', fontSize: '1rem' }}>Added Coding Problems ({questionsBySection.coding.length})</h4>}
+                                                {questionsBySection.coding?.map((q, idx) => (
+                                                    <div key={idx} className="card glass" style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '12px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                            <div>
+                                                                <h5 style={{ margin: '0 0 0.5rem', color: '#60a5fa', fontSize: '1rem' }}>{q.question?.substring(0, 100)}...</h5>
+                                                                <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>
+                                                                    {q.testCases?.language || (q.testCases?.cases || Array.isArray(q.testCases) ? 'Coding' : 'Python')} • {(Array.isArray(q.testCases) ? q.testCases : (q.testCases?.cases || [])).length} test cases
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                <button type="button" onClick={() => setManagingTestCases({ index: idx })} style={{ padding: '0.5rem 0.75rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                                    <ClipboardList size={16} /> Manage Test Cases
+                                                                </button>
+                                                                <button type="button" onClick={() => {
+                                                                    setQuestionsBySection(prev => ({ ...prev, coding: prev.coding.filter((_, i) => i !== idx) }))
+                                                                }} style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.2)', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }}>
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Local Test Cases Manager Modal */}
+                                            {managingTestCases && questionsBySection.coding?.[managingTestCases.index] && (
+                                                <LocalTestCasesManager
+                                                    title={questionsBySection.coding[managingTestCases.index].question?.substring(0, 50)}
+                                                    initialTestCases={(Array.isArray(questionsBySection.coding[managingTestCases.index].testCases)
+                                                        ? questionsBySection.coding[managingTestCases.index].testCases
+                                                        : (questionsBySection.coding[managingTestCases.index].testCases?.cases || [])).map(c => ({
+                                                            ...c,
+                                                            expectedOutput: c.expected_output || c.expectedOutput,
+                                                            isHidden: c.isHidden || false,
+                                                            points: c.points || 10,
+                                                            description: c.description || ''
+                                                        }))}
+                                                    onClose={() => setManagingTestCases(null)}
+                                                    onUpdate={(newCases) => {
+                                                        const denormalized = newCases.map(c => ({
+                                                            input: c.input,
+                                                            expected_output: c.expectedOutput,
+                                                            isHidden: c.isHidden,
+                                                            points: c.points,
+                                                            description: c.description
+                                                        }))
+                                                        setQuestionsBySection(prev => {
+                                                            const coding = [...(prev.coding || [])]
+                                                            if (coding[managingTestCases.index]) {
+                                                                const currentLang = coding[managingTestCases.index].testCases?.language || 'Python'
+                                                                coding[managingTestCases.index] = {
+                                                                    ...coding[managingTestCases.index],
+                                                                    testCases: {
+                                                                        language: currentLang,
+                                                                        cases: denormalized
+                                                                    }
+                                                                }
+                                                            }
+                                                            return { ...prev, coding }
+                                                        })
+                                                    }}
+                                                />
+                                            )}
+                                        </>
+                                    )}
+
+                                    {sectionTab === 'sql' && (
+                                        <>
+                                            {/* AI SQL Problem Generator */}
+                                            <div className="card glass" style={{ marginBottom: '1.5rem', padding: '1.5rem', background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(139,92,246,0.05))', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '16px' }}>
+                                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem', fontSize: '1.1rem', color: '#06b6d4' }}>
+                                                    <Bot size={20} /> AI SQL Problem Generator
+                                                </h4>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>TOPIC / CONCEPT</label>
+                                                        <input type="text" placeholder="e.g., JOINs, Aggregate Functions, Subqueries" value={sqlAiPrompt.topic} onChange={e => setSqlAiPrompt({ ...sqlAiPrompt, topic: e.target.value })} style={{ width: '100%' }} />
+                                                    </div>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>DIFFICULTY</label>
+                                                        <select value={sqlAiPrompt.difficulty} onChange={e => setSqlAiPrompt({ ...sqlAiPrompt, difficulty: e.target.value })}>
+                                                            <option value="Easy">Easy</option>
+                                                            <option value="Medium">Medium</option>
+                                                            <option value="Hard">Hard</option>
+                                                        </select>
+                                                    </div>
+                                                    <button type="button" className="btn-create-new" onClick={generateSqlProblem} disabled={isGeneratingSql} style={{ background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)' }}>
+                                                        {isGeneratingSql ? <><RefreshCw size={16} className="spin" /> Generating...</> : <><Wand2 size={16} /> Generate</>}
+                                                    </button>
+                                                </div>
+                                                {generatedSqlProblems.length > 0 && (
+                                                    <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(6,182,212,0.1)', borderRadius: '12px', border: '1px solid rgba(6,182,212,0.2)' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                                            <span style={{ fontWeight: 600, color: '#06b6d4' }}>✓ Generated {generatedSqlProblems.length} Problem(s)</span>
+                                                            <button type="button" className="btn-create-new" onClick={addGeneratedSqlToSection} style={{ background: 'linear-gradient(135deg, #06b6d4, #0891b2)' }}>
+                                                                <Plus size={16} /> Add to Section
+                                                            </button>
+                                                        </div>
+                                                        {generatedSqlProblems.map((p, i) => (
+                                                            <div key={i} style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginTop: '0.5rem' }}>
+                                                                <p style={{ margin: '0 0 0.5rem', fontWeight: 500, color: 'white' }}>{p.question?.substring(0, 150)}...</p>
+                                                                <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>Schema included</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Manual Entry Section */}
+                                            <div style={{ padding: '1.5rem', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+                                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem', fontSize: '1rem', color: 'var(--text)' }}>
+                                                    <Database size={18} /> Manual Entry
+                                                </h4>
+                                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Question / instruction</label>
+                                                    <textarea value={sqlQuestion.question} onChange={e => setSqlQuestion({ ...sqlQuestion, question: e.target.value })} placeholder="e.g. Write a query to return the top 5 employees by salary" rows={2} style={{ width: '100%', resize: 'vertical' }} />
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Database schema (CREATE TABLE + INSERT)</label>
+                                                    <textarea value={sqlQuestion.schema} onChange={e => setSqlQuestion({ ...sqlQuestion, schema: e.target.value })} placeholder="CREATE TABLE employees (id INT, name TEXT, salary INT);&#10;INSERT INTO employees VALUES (1,'A',100);" rows={6} style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical' }} />
+                                                </div>
+                                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                    <label className="form-label">Expected query result (exact output to match)</label>
+                                                    <textarea value={sqlQuestion.expectedOutput} onChange={e => setSqlQuestion({ ...sqlQuestion, expectedOutput: e.target.value })} placeholder="Paste the expected result as shown by SQLite" rows={4} style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical' }} />
+                                                </div>
+                                                <button type="button" className="btn-create-new" onClick={addSqlQuestion}>Add this SQL question</button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {sectionTab !== 'coding' && sectionTab !== 'sql' && (
+                                        <>
+                                            {/* AI Question Generator - same as Aptitude Tests */}
+                                            <div className="card glass" style={{ marginBottom: '1.5rem', padding: '1.25rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+                                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem', fontSize: '1rem' }}>
+                                                    <Sparkles size={18} style={{ color: 'var(--primary)' }} /> AI Question Generator
+                                                </h4>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '0.75rem', alignItems: 'end', flexWrap: 'wrap' }}>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label">TOPIC</label>
+                                                        <input type="text" placeholder="e.g., Number Series, Logical Reasoning" value={aiPrompt.topic} onChange={e => setAiPrompt({ ...aiPrompt, topic: e.target.value })} style={{ width: '100%' }} />
+                                                    </div>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label">DIFFICULTY</label>
+                                                        <select value={aiPrompt.difficulty} onChange={e => setAiPrompt({ ...aiPrompt, difficulty: e.target.value })}>
+                                                            <option value="Easy">Easy</option>
+                                                            <option value="Medium">Medium</option>
+                                                            <option value="Hard">Hard</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label">COUNT</label>
+                                                        <input type="number" min="1" max="20" value={aiPrompt.count} onChange={e => setAiPrompt({ ...aiPrompt, count: parseInt(e.target.value) || 1 })} style={{ width: 70 }} />
+                                                    </div>
+                                                    <button type="button" className="btn-create-new" onClick={handleGenerateQuestions} disabled={isGenerating} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <Sparkles size={16} /> {isGenerating ? 'Generating…' : 'Generate'}
+                                                    </button>
+                                                </div>
+                                                {generatedQuestions.length > 0 && (
+                                                    <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{generatedQuestions.length} question(s) generated.</span>
+                                                        <button type="button" className="btn-create-new" onClick={addGeneratedToSection} style={{ fontSize: '0.9rem' }}>Add All to Test</button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Questions - card UI like Aptitude */}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1rem' }}>
+                                                    <HelpCircle size={18} style={{ color: 'var(--text-muted)' }} /> Questions
+                                                </h4>
+                                                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{(questionsBySection[sectionTab] || []).length} questions</span>
+                                            </div>
+
+                                            <div style={{ maxHeight: '50vh', overflowY: 'auto', marginBottom: '1rem' }}>
+                                                {(questionsBySection[sectionTab] || []).map((q, idx) => (
+                                                    <div key={idx} className="card glass" style={{ marginBottom: '1rem', padding: '1.25rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                                                            <span style={{ background: 'var(--primary)', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem' }}>Q{idx + 1}</span>
+                                                            <button type="button" onClick={() => removeQuestion(sectionTab, idx)} className="btn-reset" style={{ color: 'var(--danger)', padding: '0.25rem' }} title="Delete question"><Trash2 size={18} /></button>
+                                                        </div>
+                                                        <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                                            <label className="form-label">QUESTION TEXT</label>
+                                                            <textarea value={q.question || ''} onChange={e => updateQuestionInSection(sectionTab, idx, 'question', e.target.value)} placeholder="Enter question text..." rows={2} style={{ width: '100%', resize: 'vertical' }} />
+                                                        </div>
+                                                        <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                                                            <label className="form-label">ANSWER OPTIONS</label>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                                                {[0, 1, 2, 3].map(i => {
+                                                                    const opts = q.options || ['', '', '', '']
+                                                                    const isCorrect = (q.correctAnswer ?? 0) === i
+                                                                    return (
+                                                                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                                            <button type="button" onClick={() => updateQuestionInSection(sectionTab, idx, 'correctAnswer', i)} style={{ minWidth: 36, height: 36, borderRadius: '8px', border: '2px solid ' + (isCorrect ? 'var(--success)' : 'var(--border-color)'), background: isCorrect ? 'var(--success-alpha)' : 'var(--bg-secondary)', color: isCorrect ? 'var(--success)' : 'var(--text-muted)', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                                                                                {String.fromCharCode(65 + i)}
+                                                                            </button>
+                                                                            <input type="text" value={opts[i] || ''} onChange={e => { const o = [...opts]; o[i] = e.target.value; updateQuestionInSection(sectionTab, idx, 'options', o); }} placeholder={`Option ${String.fromCharCode(65 + i)}`} style={{ flex: 1 }} />
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', background: 'var(--success-alpha)', borderRadius: '8px', border: '1px solid var(--success)' }}>
+                                                            <Check size={18} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                                                            <span style={{ fontSize: '0.9rem', color: 'var(--success)', fontWeight: 500 }}>Correct Answer:</span>
+                                                            <span style={{ background: 'var(--success)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.85rem' }}>Option {String.fromCharCode(65 + (q.correctAnswer ?? 0))}</span>
+                                                            <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Click any option badge to change</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <button type="button" onClick={addNewMcqToSection} style={{ width: '100%', padding: '1.25rem', border: '2px dashed var(--border-color)', borderRadius: '12px', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                                    <Plus size={20} /> Add New Question
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {(sectionTab === 'coding' || sectionTab === 'sql') && (
+                                        <div style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+                                            <strong>Added in {GLOBAL_SECTIONS.find(s => s.id === sectionTab)?.label}:</strong>
+                                            <ul style={{ margin: '0.5rem 0', paddingLeft: '1.5rem', maxHeight: 200, overflow: 'auto' }}>
+                                                {(questionsBySection[sectionTab] || []).map((q, i) => (
+                                                    <li key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>{q.question}</span>
+                                                        <button type="button" onClick={() => removeQuestion(sectionTab, i)} className="btn-reset" style={{ color: 'var(--danger)' }}><X size={16} /></button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
+                                        <button type="button" className="btn-reset" onClick={() => setModalStep(1)}>Back</button>
+                                        <button type="button" className="btn-create-new" onClick={handleCreateOrUpdate}>{editingId ? 'Update' : 'Create'} Test</button>
+                                    </div>
+                                </>
+                            )}
+                        </div> {/* End Scrollable Content Area */}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
 // ==================== APTITUDE TESTS ADMIN ====================
 function AptitudeTestsAdmin() {
     const [tests, setTests] = useState([])
@@ -2906,31 +4233,34 @@ function AptitudeTestsAdmin() {
     }
 
     const handleCreateTest = async (e) => {
-        e.preventDefault()
+        if (e) e.preventDefault()
+
         if (newTest.questions.length === 0) {
             alert('Please add at least one question')
             return
         }
-        // Validate all questions have content
-        const invalidQuestions = newTest.questions.filter(q =>
-            !q.question.trim() || q.options.some(opt => !opt.trim())
-        )
+
+        // Validate that all questions have content and options
+        const invalidQuestions = newTest.questions.filter(q => {
+            return !q.question.trim() || q.options.some(opt => !opt.trim())
+        })
+
         if (invalidQuestions.length > 0) {
             alert('Please fill in all questions and options')
             return
         }
+
         try {
             // Convert dates to ISO strings without timezone conversion
             // because datetime-local input is already in local time
             const testPayload = { ...newTest, createdBy: ADMIN_ID }
             if (testPayload.startTime) {
-                // Add timezone offset to convert local time to UTC
                 const date = new Date(testPayload.startTime)
-                testPayload.startTime = date.toISOString()
+                if (!isNaN(date.getTime())) testPayload.startTime = date.toISOString()
             }
             if (testPayload.deadline) {
                 const date = new Date(testPayload.deadline)
-                testPayload.deadline = date.toISOString()
+                if (!isNaN(date.getTime())) testPayload.deadline = date.toISOString()
             }
 
             await axios.post(`${API_BASE}/aptitude`, testPayload)
@@ -2950,7 +4280,8 @@ function AptitudeTestsAdmin() {
             })
             fetchTests()
         } catch (error) {
-            alert('Error creating test')
+            console.error(error)
+            alert(error.response?.data?.error || 'Error creating test')
         }
     }
 
@@ -2969,13 +4300,16 @@ function AptitudeTestsAdmin() {
     }
 
     const handleDeleteTest = async (id) => {
-        if (window.confirm('Delete this aptitude test?')) {
-            try {
-                await axios.delete(`${API_BASE}/aptitude/${id}`)
-                fetchTests()
-            } catch (error) {
-                alert('Error deleting test')
-            }
+        if (!window.confirm('Delete this aptitude test?')) {
+            return
+        }
+
+        try {
+            await axios.delete(`${API_BASE}/aptitude/${id}`)
+            fetchTests()
+        } catch (error) {
+            console.error(error)
+            alert('Error deleting test')
         }
     }
 
@@ -3243,7 +4577,7 @@ function AptitudeTestsAdmin() {
                             {/* Test Details */}
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                 <div className="form-group">
-                                    <label className="form-label"><span style={{ marginRight: '0.5rem' }}>H</span> Test Title</label>
+                                    <label className="form-label"><FileText size={14} style={{ marginRight: '0.5rem' }} /> Test Title</label>
                                     <input
                                         type="text"
                                         placeholder="Enter test title..."
