@@ -1892,6 +1892,32 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
     }
 });
 
+// Update Aptitude Test Status
+app.patch('/api/aptitude/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        const testId = req.params.id;
+
+        if (!status || !['live', 'ended'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status. Must be "live" or "ended"' });
+        }
+
+        const [result] = await pool.query(
+            'UPDATE aptitude_tests SET status = ? WHERE id = ?',
+            [status, testId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Test not found' });
+        }
+
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error('Update Status Error:', error);
+        res.status(500).json({ error: 'Failed to update test status' });
+    }
+});
+
 // Delete Aptitude Test
 app.delete('/api/aptitude/:id', async (req, res) => {
     const connection = await pool.getConnection();

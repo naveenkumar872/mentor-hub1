@@ -2942,6 +2942,7 @@ function AptitudeTestsAdmin() {
                 passingScore: 60,
                 maxTabSwitches: 3,
                 maxAttempts: 1,
+                startTime: '',
                 deadline: '',
                 description: '',
                 status: 'live',
@@ -2950,6 +2951,20 @@ function AptitudeTestsAdmin() {
             fetchTests()
         } catch (error) {
             alert('Error creating test')
+        }
+    }
+
+    const handleToggleStatus = async (test) => {
+        const newStatus = test.status === 'live' ? 'ended' : 'live';
+        const action = newStatus === 'live' ? 'make this test visible to students' : 'hide this test from students';
+        
+        if (window.confirm(`Are you sure you want to ${action}?`)) {
+            try {
+                await axios.patch(`${API_BASE}/aptitude/${test.id}/status`, { status: newStatus })
+                fetchTests()
+            } catch (error) {
+                alert('Error updating test status')
+            }
         }
     }
 
@@ -3121,8 +3136,14 @@ function AptitudeTestsAdmin() {
                                             borderRadius: '20px',
                                             background: test.status === 'live'
                                                 ? 'rgba(16, 185, 129, 0.15)'
+                                                : test.status === 'ended'
+                                                ? 'rgba(239, 68, 68, 0.15)'
                                                 : 'rgba(107, 114, 128, 0.15)',
-                                            color: test.status === 'live' ? '#10b981' : '#6b7280',
+                                            color: test.status === 'live'
+                                                ? '#10b981'
+                                                : test.status === 'ended'
+                                                ? '#ef4444'
+                                                : '#6b7280',
                                             fontSize: '0.8rem',
                                             fontWeight: 500
                                         }}>
@@ -3147,6 +3168,25 @@ function AptitudeTestsAdmin() {
                                                 }}
                                             >
                                                 View
+                                            </button>
+                                            <button
+                                                onClick={() => handleToggleStatus(test)}
+                                                style={{
+                                                    padding: '0.4rem 0.8rem',
+                                                    background: test.status === 'live'
+                                                        ? 'rgba(245, 158, 11, 0.1)'
+                                                        : 'rgba(16, 185, 129, 0.1)',
+                                                    border: test.status === 'live'
+                                                        ? '1px solid rgba(245, 158, 11, 0.3)'
+                                                        : '1px solid rgba(16, 185, 129, 0.3)',
+                                                    borderRadius: '6px',
+                                                    color: test.status === 'live' ? '#f59e0b' : '#10b981',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.8rem'
+                                                }}
+                                                title={test.status === 'live' ? 'End test (hide from students)' : 'Make test live (show to students)'}
+                                            >
+                                                {test.status === 'live' ? 'End' : 'Activate'}
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteTest(test.id)}
@@ -3275,6 +3315,8 @@ function AptitudeTestsAdmin() {
                                         <option value="Hard">Hard</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                 <div className="form-group">
                                     <label className="form-label">Passing Score (%)</label>
                                     <input
@@ -3284,6 +3326,16 @@ function AptitudeTestsAdmin() {
                                         value={newTest.passingScore}
                                         onChange={e => setNewTest({ ...newTest, passingScore: parseInt(e.target.value) })}
                                     />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label"><Settings size={14} style={{ marginRight: '0.5rem' }} /> Test Status</label>
+                                    <select
+                                        value={newTest.status}
+                                        onChange={e => setNewTest({ ...newTest, status: e.target.value })}
+                                    >
+                                        <option value="live">Live - Visible to students</option>
+                                        <option value="ended">Ended - Hidden from students</option>
+                                    </select>
                                 </div>
                             </div>
                             <div className="form-group" style={{ marginBottom: '1.5rem' }}>
