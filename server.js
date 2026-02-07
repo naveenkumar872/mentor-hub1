@@ -1679,6 +1679,7 @@ app.get('/api/aptitude', async (req, res) => {
             passingScore: t.passing_score,
             maxTabSwitches: t.max_tab_switches || 3,
             maxAttempts: t.max_attempts || 1,
+            startTime: t.start_time,
             deadline: t.deadline,
             description: t.description || '',
             status: t.status,
@@ -1720,6 +1721,7 @@ app.get('/api/aptitude/:id', async (req, res) => {
             passingScore: test.passing_score,
             maxTabSwitches: test.max_tab_switches || 3,
             maxAttempts: test.max_attempts || 1,
+            startTime: test.start_time,
             deadline: test.deadline,
             description: test.description || '',
             status: test.status,
@@ -1739,13 +1741,13 @@ app.post('/api/aptitude', async (req, res) => {
         await connection.beginTransaction();
 
         const testId = uuidv4();
-        const { title, difficulty, duration, passingScore, maxTabSwitches, maxAttempts, deadline, description, status, questions, createdBy } = req.body;
+        const { title, difficulty, duration, passingScore, maxTabSwitches, maxAttempts, startTime, deadline, description, status, questions, createdBy } = req.body;
         const createdAt = new Date();
 
         // Insert the test (store new fields in JSON metadata column or separate columns if available)
         await connection.query(
-            'INSERT INTO aptitude_tests (id, title, type, difficulty, duration, total_questions, passing_score, max_tab_switches, max_attempts, deadline, description, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [testId, title, 'aptitude', difficulty, duration || 30, questions.length, passingScore || 60, maxTabSwitches || 3, maxAttempts || 1, deadline || null, description || '', status || 'live', createdBy, createdAt]
+            'INSERT INTO aptitude_tests (id, title, type, difficulty, duration, total_questions, passing_score, max_tab_switches, max_attempts, start_time, deadline, description, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [testId, title, 'aptitude', difficulty, duration || 30, questions.length, passingScore || 60, maxTabSwitches || 3, maxAttempts || 1, startTime || null, deadline || null, description || '', status || 'live', createdBy, createdAt]
         );
 
         // Insert questions
@@ -1771,6 +1773,7 @@ app.post('/api/aptitude', async (req, res) => {
             passingScore: passingScore || 60,
             maxTabSwitches: maxTabSwitches || 3,
             maxAttempts: maxAttempts || 1,
+            startTime: startTime || null,
             deadline: deadline || null,
             description: description || '',
             status: status || 'live',

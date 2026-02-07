@@ -2844,6 +2844,7 @@ function AptitudeTestsAdmin() {
         passingScore: 60,
         maxTabSwitches: 3,
         maxAttempts: 1,
+        startTime: '',
         deadline: '',
         description: '',
         status: 'live',
@@ -3230,12 +3231,20 @@ function AptitudeTestsAdmin() {
                                     <label className="form-label"><AlertTriangle size={14} style={{ marginRight: '0.5rem' }} /> Max Tab Switches (Violations)</label>
                                     <input
                                         type="number"
-                                        min="1"
-                                        max="10"
+                                        min="0"
+                                        max="20"
                                         value={newTest.maxTabSwitches}
                                         onChange={e => setNewTest({ ...newTest, maxTabSwitches: parseInt(e.target.value) })}
                                     />
                                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Test auto-submits if exceeded</small>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label"><Calendar size={14} style={{ marginRight: '0.5rem' }} /> Start Time</label>
+                                    <input
+                                        type="datetime-local"
+                                        value={newTest.startTime}
+                                        onChange={e => setNewTest({ ...newTest, startTime: e.target.value })}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label"><Calendar size={14} style={{ marginRight: '0.5rem' }} /> End Time (Deadline)</label>
