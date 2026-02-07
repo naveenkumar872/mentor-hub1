@@ -13,9 +13,7 @@ import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:3000/api'
-    : 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -854,6 +852,7 @@ function StudentLeaderboard() {
     const [leaders, setLeaders] = useState([])
     const [loading, setLoading] = useState(true)
     const [reportStudent, setReportStudent] = useState(null)
+    const [searchTerm, setSearchTerm] = useState('')
 
     useEffect(() => {
         axios.get(`${API_BASE}/leaderboard`)
@@ -886,15 +885,36 @@ function StudentLeaderboard() {
     return (
         <div className="card animate-fadeIn" style={{ padding: '0', overflow: 'hidden' }}>
             <div style={{ padding: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-                    <Trophy size={32} className="text-primary" />
-                    <div>
-                        <h2 style={{ margin: 0 }}>Global Performance Ranking</h2>
-                        <p style={{ margin: 0, color: 'var(--text-muted)' }}>Real-time ranking of students across all mentors</p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <Trophy size={32} className="text-primary" />
+                        <div>
+                            <h2 style={{ margin: 0 }}>Global Performance Ranking</h2>
+                            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Real-time ranking of students across all mentors</p>
+                        </div>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input
+                            type="text"
+                            placeholder="Search students..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{
+                                padding: '0.75rem 1rem 0.75rem 2.75rem',
+                                borderRadius: '12px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                outline: 'none',
+                                width: '300px',
+                                fontSize: '0.9rem'
+                            }}
+                        />
                     </div>
                 </div>
 
-                <div className="table-container">
+                <div className="table-container" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                     <table>
                         <thead>
                             <tr>
@@ -908,7 +928,7 @@ function StudentLeaderboard() {
                             </tr>
                         </thead>
                         <tbody>
-                            {leaders.map((student, i) => {
+                            {leaders.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase())).map((student, i) => {
                                 const totalViolations = getTotalViolations(student)
                                 const hasIssues = totalViolations > 0 || student.violations?.plagiarism > 0
 

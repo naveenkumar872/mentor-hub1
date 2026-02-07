@@ -5,122 +5,32 @@ import {
     X, FileText, Code, Brain, CheckCircle, XCircle,
     AlertTriangle, TrendingUp, Award, Target, Clock, Download,
     BarChart3, PieChart, Zap, Star, ChevronRight, Eye,
-    Trophy, Activity
+    Trophy, Activity, Shield, Sparkles, ArrowRight, ListChecks,
+    Lightbulb, ChevronDown, ChevronUp, Globe, User, Calendar
 } from 'lucide-react'
+import {
+    ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, PieChart as RechartsPie, Pie, Legend,
+    AreaChart, Area
+} from 'recharts'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:3000/api'
-    : 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
-// Inline styles for the modal
-const styles = {
-    overlay: {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100000,
-        padding: 0
-    },
-    modal: {
-        width: '100vw',
-        height: '100vh',
-        backgroundColor: '#0f172a',
-        borderRadius: '0',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: 'none',
-        border: 'none',
-        overflow: 'hidden',
-        boxSizing: 'border-box'
-    },
-    header: {
-        padding: '15px 25px',
-        background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(6, 182, 212, 0.1))',
-        borderBottom: '1px solid rgba(139, 92, 246, 0.3)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexShrink: 0
-    },
-    content: {
-        flex: 1,
-        overflowY: 'auto',
-        padding: '20px 25px',
-        minHeight: 0
-    },
-    footer: {
-        padding: '15px 25px',
-        borderTop: '1px solid rgba(71, 85, 105, 0.3)',
-        background: 'rgba(30, 41, 59, 0.5)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        fontSize: '13px',
-        color: '#94a3b8',
-        flexShrink: 0
-    },
-    tabs: {
-        display: 'flex',
-        gap: '8px',
-        marginBottom: '20px',
-        padding: '8px',
-        background: 'rgba(30, 41, 59, 0.5)',
-        borderRadius: '12px',
-        flexWrap: 'wrap'
-    },
-    tab: {
-        flex: 1,
-        minWidth: '120px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        padding: '12px 16px',
-        border: 'none',
-        borderRadius: '8px',
-        fontWeight: 600,
-        fontSize: '14px',
-        cursor: 'pointer',
-        transition: 'all 0.2s'
-    },
-    tabActive: {
-        background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-        color: 'white'
-    },
-    tabInactive: {
-        background: 'transparent',
-        color: '#94a3b8'
-    },
-    card: {
-        padding: '20px',
-        background: 'rgba(30, 41, 59, 0.5)',
-        borderRadius: '14px',
-        border: '1px solid rgba(71, 85, 105, 0.3)',
-        marginBottom: '15px'
-    },
-    statsGrid: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '15px',
-        marginBottom: '20px'
-    },
-    statBox: {
-        padding: '20px',
-        borderRadius: '14px',
-        textAlign: 'center'
-    }
-}
+const CHART_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4']
 
 function StudentReportModal({ studentId, studentName, onClose, requestedBy, requestedByRole }) {
     const [loading, setLoading] = useState(true)
     const [report, setReport] = useState(null)
     const [error, setError] = useState(null)
     const [activeTab, setActiveTab] = useState('overview')
+    const [expandedSections, setExpandedSections] = useState({
+        aptitude: true,
+        code: false,
+        tasks: false
+    })
+    const reportRef = useRef(null)
 
     useEffect(() => {
         if (studentId) {
@@ -142,124 +52,54 @@ function StudentReportModal({ studentId, studentName, onClose, requestedBy, requ
         }
     }, [studentId])
 
-    const handleDownloadPDF = () => {
-        if (!report) return
+    const toggleSection = (section) => {
+        setExpandedSections(prev => ({
+            ...prev,
+            [section]: !prev[section]
+        }))
+    }
 
-        const printWindow = window.open('', '_blank')
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Student Report - ${report.student.name}</title>
-                <style>
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
-                    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #8b5cf6; }
-                    .header h1 { color: #8b5cf6; font-size: 28px; }
-                    .section { margin-bottom: 25px; page-break-inside: avoid; }
-                    .section h2 { color: #8b5cf6; font-size: 18px; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
-                    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-                    .stat-box { padding: 15px; background: #f8fafc; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0; }
-                    .stat-value { font-size: 24px; font-weight: 700; color: #8b5cf6; }
-                    .stat-label { font-size: 12px; color: #64748b; margin-top: 5px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-                    th { background: #f1f5f9; font-size: 12px; color: #64748b; }
-                    .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #e2e8f0; color: #64748b; font-size: 12px; }
-                    .print-btn {
-                        position: fixed; top: 20px; right: 20px;
-                        background: #8b5cf6; color: white; border: none; padding: 10px 20px;
-                        border-radius: 5px; cursor: pointer; font-weight: bold;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                        z-index: 1000;
-                    }
-                    .print-btn:hover { background: #7c3aed; }
-                    @media print { .print-btn { display: none; } }
-                </style>
-            </head>
-            <body>
-                <button onclick="window.print()" class="print-btn">🖨️ Print Report</button>
-                <div class="header">
-                    <h1>📊 Student Performance Report</h1>
-                    <p><strong>${report.student.name}</strong> | ${report.student.email}</p>
-                    <p style="font-size: 12px; margin-top: 5px;">Generated: ${new Date(report.generatedAt).toLocaleString()}</p>
-                </div>
+    const downloadPDF = async () => {
+        if (!report || !reportRef.current) return
 
-                <div class="section">
-                    <h2>📈 Performance Summary</h2>
-                    <div class="grid">
-                        <div class="stat-box"><div class="stat-value">${report.summary.overallAvgScore}%</div><div class="stat-label">Overall Score</div></div>
-                        <div class="stat-box"><div class="stat-value">#${report.summary.leaderboardRank}</div><div class="stat-label">Rank</div></div>
-                        <div class="stat-box"><div class="stat-value">${report.summary.totalSubmissions}</div><div class="stat-label">Submissions</div></div>
-                        <div class="stat-box"><div class="stat-value">${report.summary.aptitudeTests}</div><div class="stat-label">Aptitude Tests</div></div>
-                    </div>
-                    <div class="grid">
-                        <div class="stat-box"><div class="stat-value" style="color:#3b82f6">${report.summary.avgCodeScore}%</div><div class="stat-label">Code Score</div></div>
-                        <div class="stat-box"><div class="stat-value" style="color:#10b981">${report.summary.avgTaskScore}%</div><div class="stat-label">Task Score</div></div>
-                        <div class="stat-box"><div class="stat-value" style="color:#f59e0b">${report.summary.avgAptitudeScore}%</div><div class="stat-label">Aptitude Score</div></div>
-                        <div class="stat-box"><div class="stat-value">${report.summary.completedProblems}</div><div class="stat-label">Problems Solved</div></div>
-                    </div>
-                </div>
+        // Expand all sections for PDF
+        const originalState = { ...expandedSections }
+        setExpandedSections({ aptitude: true, code: true, tasks: true })
 
-                <div class="section">
-                    <h2>💻 Programming Languages</h2>
-                    ${report.languageBreakdown?.map(l => `<span style="display:inline-block;margin:5px;padding:8px 15px;background:#f1f5f9;border-radius:8px;"><strong>${l.language}</strong>: ${l.count} (${l.avgScore}%)</span>`).join('') || 'None'}
-                </div>
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(reportRef.current, {
+                    scale: 2,
+                    backgroundColor: '#0f172a',
+                    useCORS: true,
+                    logging: false
+                })
 
-                <div class="section">
-                    <h2>📝 Recent Submissions</h2>
-                    <table>
-                        <thead><tr><th>Title</th><th>Type</th><th>Language</th><th>Score</th><th>Status</th></tr></thead>
-                        <tbody>
-                            ${report.recentSubmissions?.slice(0, 10).map(s => `<tr><td>${s.title}</td><td>${s.type}</td><td>${s.language}</td><td>${s.score}%</td><td>${s.status}</td></tr>`).join('') || '<tr><td colspan="5">No submissions</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
+                const imgData = canvas.toDataURL('image/png', 1.0)
+                const pdf = new jsPDF('p', 'mm', 'a4')
+                const imgWidth = 210
+                const pageHeight = 297
+                const imgHeight = (canvas.height * imgWidth) / canvas.width
+                let heightLeft = imgHeight
+                let position = 0
 
-                <div class="section">
-                    <h2>🧠 Aptitude Tests</h2>
-                    <table>
-                        <thead><tr><th>Test</th><th>Difficulty</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
-                        <tbody>
-                            ${report.aptitudeResults?.map(t => `<tr><td>${t.testTitle}</td><td>${t.difficulty}</td><td>${t.score}%</td><td>${t.status}</td><td>${new Date(t.submittedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5">No tests taken</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+                heightLeft -= pageHeight
 
-                <div class="section">
-                    <h2>👁️ Proctoring Summary</h2>
-                    <div class="grid">
-                        <div class="stat-box"><div class="stat-value">${report.integrity?.tabSwitches || 0}</div><div class="stat-label">Tab Switches</div></div>
-                        <div class="stat-box"><div class="stat-value">${report.integrity?.copyPasteAttempts || 0}</div><div class="stat-label">Copy/Paste</div></div>
-                        <div class="stat-box"><div class="stat-value">${report.integrity?.cameraBlocked || 0}</div><div class="stat-label">Camera Issues</div></div>
-                        <div class="stat-box"><div class="stat-value">${report.integrity?.plagiarismCount || 0}</div><div class="stat-label">Plagiarism Flags</div></div>
-                    </div>
-                </div>
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight
+                    pdf.addPage()
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+                    heightLeft -= pageHeight
+                }
 
-                ${report.aiInsights ? `
-                <div class="section">
-                    <h2>🤖 AI Insights</h2>
-                    <p style="margin-bottom:15px">${report.aiInsights.overallAssessment || ''}</p>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                        <div style="background:#d1fae5;padding:15px;border-radius:8px">
-                            <h4 style="color:#065f46;margin-bottom:10px">✅ Strengths</h4>
-                            <ul style="padding-left:20px">${report.aiInsights.strengths?.map(s => `<li>${s}</li>`).join('') || ''}</ul>
-                        </div>
-                        <div style="background:#fef3c7;padding:15px;border-radius:8px">
-                            <h4 style="color:#92400e;margin-bottom:10px">📈 Areas for Growth</h4>
-                            <ul style="padding-left:20px">${report.aiInsights.areasForImprovement?.map(a => `<li>${a}</li>`).join('') || ''}</ul>
-                        </div>
-                    </div>
-                </div>
-                ` : ''}
+                pdf.save(`${report.student.name}_Performance_Report.pdf`)
+            } catch (e) {
+                console.error('PDF generation failed:', e)
+            }
 
-                <div class="footer">
-                    <p>Report generated by MentorHub | ${new Date().toLocaleString()}</p>
-                </div>
-            </body>
-            </html>
-        `)
-        printWindow.document.close()
+            setExpandedSections(originalState)
+        }, 500)
     }
 
     const getScoreColor = (score) => {
@@ -268,329 +108,701 @@ function StudentReportModal({ studentId, studentName, onClose, requestedBy, requ
         return '#ef4444'
     }
 
+    const getGradeLabel = (score) => {
+        if (score >= 90) return { label: 'Excellent', color: '#10b981' }
+        if (score >= 80) return { label: 'Very Good', color: '#22c55e' }
+        if (score >= 70) return { label: 'Good', color: '#84cc16' }
+        if (score >= 60) return { label: 'Average', color: '#f59e0b' }
+        if (score >= 50) return { label: 'Below Average', color: '#f97316' }
+        return { label: 'Needs Improvement', color: '#ef4444' }
+    }
+
     if (!studentId) return null
 
     const tabs = [
         { id: 'overview', label: 'Overview', icon: BarChart3 },
+        { id: 'performance', label: 'Performance', icon: TrendingUp },
         { id: 'code', label: 'Code Analysis', icon: Code },
         { id: 'aptitude', label: 'Aptitude', icon: Brain },
         { id: 'proctoring', label: 'Proctoring', icon: Eye },
         { id: 'insights', label: 'AI Insights', icon: Zap }
     ]
 
+    // Prepare chart data
+    const getPerformanceChartData = () => {
+        if (!report) return []
+        return [
+            { name: 'Code', score: report.summary?.avgCodeScore || 0, fullMark: 100 },
+            { name: 'Tasks', score: report.summary?.avgTaskScore || 0, fullMark: 100 },
+            { name: 'Aptitude', score: report.summary?.avgAptitudeScore || 0, fullMark: 100 }
+        ]
+    }
+
+    const getLanguageChartData = () => {
+        if (!report?.languageBreakdown) return []
+        return report.languageBreakdown.map((lang, idx) => ({
+            name: lang.language,
+            value: lang.count,
+            avgScore: lang.avgScore,
+            color: CHART_COLORS[idx % CHART_COLORS.length]
+        }))
+    }
+
+    const getCategoryChartData = () => {
+        if (!report?.categoryAnalysis) return []
+        return report.categoryAnalysis.map(cat => ({
+            name: cat.category,
+            accuracy: cat.accuracy,
+            correct: cat.correct,
+            total: cat.total
+        }))
+    }
+
     return ReactDOM.createPortal(
-        <div style={styles.overlay} onClick={onClose}>
-            <div style={styles.modal} onClick={e => e.stopPropagation()}>
-                {/* HEADER */}
-                <div style={styles.header}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            backdropFilter: 'blur(8px)'
+        }} onClick={onClose}>
+            <div
+                style={{
+                    width: '95%',
+                    maxWidth: '1200px',
+                    maxHeight: '95vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    background: '#0f172a',
+                    borderRadius: '24px',
+                    border: '1px solid rgba(139, 92, 246, 0.3)',
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                }}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div style={{
+                    padding: '1.5rem 2rem',
+                    borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.08))'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <div style={{
-                            width: '48px', height: '48px', borderRadius: '12px',
-                            background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '16px',
+                            background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 8px 24px rgba(139, 92, 246, 0.3)'
                         }}>
-                            <FileText size={24} color="white" />
+                            <Globe size={28} color="white" />
                         </div>
                         <div>
-                            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'white' }}>
-                                Student Performance Report
+                            <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'white' }}>
+                                Comprehensive Performance Report
                             </h2>
-                            <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>
+                            <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.95rem' }}>
                                 {studentName || 'Loading...'}
                             </p>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         {report && (
-                            <button onClick={handleDownloadPDF} style={{
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                padding: '10px 18px', background: 'linear-gradient(135deg, #10b981, #06b6d4)',
-                                border: 'none', borderRadius: '10px', color: 'white',
-                                fontWeight: 600, fontSize: '14px', cursor: 'pointer'
-                            }}>
+                            <button
+                                onClick={downloadPDF}
+                                style={{
+                                    background: 'linear-gradient(135deg, #10b981, #06b6d4)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    padding: '0.75rem 1.5rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    fontSize: '0.9rem',
+                                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
                                 <Download size={18} /> Download PDF
                             </button>
                         )}
                         <button onClick={onClose} style={{
-                            width: '40px', height: '40px', borderRadius: '10px', border: 'none',
-                            background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '0.75rem',
+                            cursor: 'pointer',
+                            color: '#94a3b8',
+                            transition: 'all 0.2s'
                         }}>
-                            <X size={20} />
+                            <X size={24} />
                         </button>
                     </div>
                 </div>
 
-                {/* CONTENT */}
-                <div style={styles.content}>
+                {/* Content */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '2rem' }} ref={reportRef}>
                     {loading ? (
-                        <div style={{ textAlign: 'center', padding: '60px' }}>
+                        <div style={{ textAlign: 'center', padding: '5rem' }}>
                             <div style={{
-                                width: '50px', height: '50px', border: '4px solid rgba(139, 92, 246, 0.3)',
-                                borderTop: '4px solid #8b5cf6', borderRadius: '50%',
-                                animation: 'spin 1s linear infinite', margin: '0 auto'
-                            }} />
+                                width: '60px',
+                                height: '60px',
+                                border: '4px solid rgba(139, 92, 246, 0.2)',
+                                borderTopColor: '#8b5cf6',
+                                borderRadius: '50%',
+                                animation: 'spin 1s linear infinite',
+                                margin: '0 auto'
+                            }}></div>
                             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                            <p style={{ color: '#94a3b8', marginTop: '20px' }}>Generating report...</p>
+                            <p style={{ color: '#94a3b8', marginTop: '1.5rem', fontWeight: 500, fontSize: '1.1rem' }}>
+                                Analyzing performance data...
+                            </p>
                         </div>
                     ) : error ? (
-                        <div style={{ textAlign: 'center', padding: '60px' }}>
-                            <AlertTriangle size={50} color="#ef4444" />
-                            <p style={{ color: '#ef4444', marginTop: '15px' }}>{error}</p>
+                        <div style={{ textAlign: 'center', padding: '5rem' }}>
+                            <AlertTriangle size={64} color="#ef4444" style={{ marginBottom: '1.5rem', opacity: 0.8 }} />
+                            <h3 style={{ color: 'white' }}>Oops! Something went wrong</h3>
+                            <p style={{ color: '#94a3b8' }}>{error}</p>
+                            <button onClick={onClose} style={{
+                                marginTop: '1.5rem',
+                                padding: '0.75rem 1.5rem',
+                                background: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '10px',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                            }}>Close Modal</button>
                         </div>
                     ) : report ? (
                         <>
-                            {/* TABS */}
-                            <div style={styles.tabs}>
-                                {tabs.map(tab => (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => setActiveTab(tab.id)}
-                                        style={{
-                                            ...styles.tab,
-                                            ...(activeTab === tab.id ? styles.tabActive : styles.tabInactive)
-                                        }}
-                                    >
-                                        <tab.icon size={16} />
-                                        {tab.label}
-                                    </button>
-                                ))}
+                            {/* AI Executive Summary Banner */}
+                            {report.aiInsights?.overallAssessment && (
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.1))',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                                    marginBottom: '2rem',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}>
+                                    <Sparkles style={{ position: 'absolute', right: '2rem', top: '1.5rem', opacity: 0.2 }} size={48} color="#8b5cf6" />
+                                    <h3 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#a78bfa', fontSize: '1.3rem' }}>
+                                        <Brain size={24} /> Executive Summary
+                                    </h3>
+                                    <p style={{ margin: 0, color: '#e2e8f0', fontSize: '1.05rem', lineHeight: 1.7, maxWidth: '90%' }}>
+                                        {report.aiInsights.overallAssessment}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Student Info & Score Overview */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr',
+                                gap: '1.5rem',
+                                marginBottom: '2rem'
+                            }}>
+                                {/* Student Card */}
+                                <div style={{
+                                    padding: '1.75rem',
+                                    background: 'rgba(30, 41, 59, 0.5)',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '1.5rem'
+                                }}>
+                                    <div style={{
+                                        width: '80px',
+                                        height: '80px',
+                                        borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '2rem',
+                                        fontWeight: 800,
+                                        color: 'white',
+                                        boxShadow: '0 8px 24px rgba(139, 92, 246, 0.3)'
+                                    }}>
+                                        {report.student.name?.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <h3 style={{ margin: 0, color: 'white', fontSize: '1.4rem', fontWeight: 700 }}>{report.student.name}</h3>
+                                        <p style={{ margin: '0.3rem 0', color: '#94a3b8', fontSize: '0.95rem' }}>{report.student.email}</p>
+                                        {report.mentor && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                                <User size={14} color="#8b5cf6" />
+                                                <span style={{ color: '#a78bfa', fontSize: '0.85rem' }}>Mentor: {report.mentor.name}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Overall Score Card */}
+                                <div style={{
+                                    padding: '1.75rem',
+                                    background: `linear-gradient(135deg, ${getScoreColor(report.summary.overallAvgScore)}15, ${getScoreColor(report.summary.overallAvgScore)}08)`,
+                                    borderRadius: '20px',
+                                    border: `1px solid ${getScoreColor(report.summary.overallAvgScore)}30`,
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                }}>
+                                    <div>
+                                        <div style={{
+                                            fontSize: '3.5rem',
+                                            fontWeight: 900,
+                                            color: getScoreColor(report.summary.overallAvgScore),
+                                            lineHeight: 1
+                                        }}>
+                                            {report.summary.overallAvgScore}%
+                                        </div>
+                                        <div style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Overall Score</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{
+                                            padding: '0.75rem 1.5rem',
+                                            borderRadius: '14px',
+                                            background: getScoreColor(report.summary.overallAvgScore),
+                                            color: 'white',
+                                            fontWeight: 800,
+                                            fontSize: '1rem',
+                                            boxShadow: `0 8px 20px ${getScoreColor(report.summary.overallAvgScore)}40`
+                                        }}>
+                                            {getGradeLabel(report.summary.overallAvgScore).label}
+                                        </div>
+                                        <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                            <Trophy size={16} color="#f59e0b" />
+                                            <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '1.1rem' }}>Rank #{report.summary.leaderboardRank}</span>
+                                            <span style={{ color: '#64748b', fontSize: '0.85rem' }}>of {report.summary.totalStudents}</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            {/* OVERVIEW TAB */}
-                            {activeTab === 'overview' && (
-                                <div>
-                                    {/* Student Card */}
-                                    <div style={{
-                                        ...styles.card,
-                                        display: 'flex', alignItems: 'center', gap: '20px',
-                                        background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)'
-                                    }}>
+                            {/* Stats Cards Row */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(4, 1fr)',
+                                gap: '1rem',
+                                marginBottom: '2rem'
+                            }}>
+                                <StatCard
+                                    icon={Code}
+                                    label="Code Submissions"
+                                    value={report.summary.codeSubmissions}
+                                    subLabel={`${report.summary.avgCodeScore}% avg score`}
+                                    color="#3b82f6"
+                                />
+                                <StatCard
+                                    icon={Target}
+                                    label="Tasks Completed"
+                                    value={report.summary.completedTasks}
+                                    subLabel={`${report.summary.avgTaskScore}% avg score`}
+                                    color="#10b981"
+                                />
+                                <StatCard
+                                    icon={Brain}
+                                    label="Aptitude Tests"
+                                    value={report.summary.aptitudeTests}
+                                    subLabel={`${report.summary.avgAptitudeScore}% avg score`}
+                                    color="#8b5cf6"
+                                />
+                                <StatCard
+                                    icon={Activity}
+                                    label="Total Activities"
+                                    value={report.summary.totalSubmissions}
+                                    subLabel={`${report.summary.completedProblems} problems solved`}
+                                    color="#06b6d4"
+                                />
+                            </div>
+
+                            {/* Performance Charts Section */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1.2fr 1fr',
+                                gap: '1.5rem',
+                                marginBottom: '2.5rem'
+                            }}>
+                                {/* Radar Chart - Performance Overview */}
+                                <div style={{
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    padding: '1.5rem'
+                                }}>
+                                    <h4 style={{ margin: '0 0 1rem', color: '#94a3b8', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <TrendingUp size={18} color="#8b5cf6" /> Performance Overview
+                                    </h4>
+                                    <ResponsiveContainer width="100%" height={280}>
+                                        <RadarChart data={getPerformanceChartData()}>
+                                            <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                                            <PolarAngleAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 13 }} />
+                                            <PolarRadiusAxis
+                                                angle={30}
+                                                domain={[0, 100]}
+                                                tick={{ fill: '#64748b', fontSize: 11 }}
+                                                tickFormatter={(v) => `${v}%`}
+                                            />
+                                            <Radar
+                                                name="Score"
+                                                dataKey="score"
+                                                stroke="#8b5cf6"
+                                                fill="#8b5cf6"
+                                                fillOpacity={0.4}
+                                                strokeWidth={2}
+                                            />
+                                            <Tooltip
+                                                contentStyle={{ background: '#1e293b', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px' }}
+                                                itemStyle={{ color: 'white' }}
+                                            />
+                                        </RadarChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                {/* Bar Chart - Section Scores */}
+                                <div style={{
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    padding: '1.5rem'
+                                }}>
+                                    <h4 style={{ margin: '0 0 1rem', color: '#94a3b8', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <BarChart3 size={18} color="#3b82f6" /> Score Breakdown
+                                    </h4>
+                                    <ResponsiveContainer width="100%" height={280}>
+                                        <BarChart data={getPerformanceChartData()} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                            <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => `${v}%`} />
+                                            <Tooltip
+                                                contentStyle={{ background: '#1e293b', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px' }}
+                                                itemStyle={{ color: 'white' }}
+                                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                            />
+                                            <Bar dataKey="score" radius={[8, 8, 0, 0]}>
+                                                {getPerformanceChartData().map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={getScoreColor(entry.score)} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+
+                            {/* Language & Category Analysis Row */}
+                            {(report.languageBreakdown?.length > 0 || report.categoryAnalysis?.length > 0) && (
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: report.languageBreakdown?.length > 0 && report.categoryAnalysis?.length > 0 ? '1fr 1fr' : '1fr',
+                                    gap: '1.5rem',
+                                    marginBottom: '2.5rem'
+                                }}>
+                                    {/* Language Distribution */}
+                                    {report.languageBreakdown?.length > 0 && (
                                         <div style={{
-                                            width: '70px', height: '70px', borderRadius: '50%',
-                                            background: 'linear-gradient(135deg, #8b5cf6, #06b6d4)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '28px', fontWeight: 700, color: 'white'
+                                            background: 'rgba(30, 41, 59, 0.4)',
+                                            borderRadius: '20px',
+                                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                                            padding: '1.5rem'
                                         }}>
-                                            {report.student.name?.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div style={{ flex: 1 }}>
-                                            <h3 style={{ margin: 0, fontSize: '22px', color: 'white' }}>{report.student.name}</h3>
-                                            <p style={{ margin: '5px 0', color: '#94a3b8' }}>{report.student.email}</p>
-                                            {report.mentor && <p style={{ margin: 0, color: '#8b5cf6' }}>Mentor: {report.mentor.name}</p>}
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontSize: '42px', fontWeight: 800, color: getScoreColor(report.summary.overallAvgScore) }}>
-                                                {report.summary.overallAvgScore}%
-                                            </div>
-                                            <div style={{ color: '#94a3b8' }}>Overall Score</div>
-                                        </div>
-                                    </div>
-
-                                    {/* Stats Grid */}
-                                    <div style={styles.statsGrid}>
-                                        <StatBox icon={Trophy} value={`#${report.summary.leaderboardRank}`} label={`of ${report.summary.totalStudents}`} color="#f59e0b" />
-                                        <StatBox icon={Code} value={report.summary.codeSubmissions} label="Code Submissions" color="#3b82f6" />
-                                        <StatBox icon={Brain} value={report.summary.aptitudeTests} label="Aptitude Tests" color="#8b5cf6" />
-                                        <StatBox icon={Activity} value={report.summary.totalSubmissions} label="Total Activities" color="#10b981" />
-                                    </div>
-
-                                    {/* Score Cards */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
-                                        <ScoreCard title="Code Performance" score={report.summary.avgCodeScore} details={[
-                                            { label: 'Submissions', value: report.summary.codeSubmissions },
-                                            { label: 'Problems Solved', value: report.summary.completedProblems }
-                                        ]} />
-                                        <ScoreCard title="Task Performance" score={report.summary.avgTaskScore} details={[
-                                            { label: 'Submissions', value: report.summary.taskSubmissions },
-                                            { label: 'Tasks Done', value: report.summary.completedTasks }
-                                        ]} />
-                                        <ScoreCard title="Aptitude Performance" score={report.summary.avgAptitudeScore} details={[
-                                            { label: 'Tests Taken', value: report.summary.aptitudeTests },
-                                            { label: 'Pass Rate', value: `${report.aptitudeResults?.length > 0 ? Math.round(report.aptitudeResults.filter(a => a.status === 'passed').length / report.aptitudeResults.length * 100) : 0}%` }
-                                        ]} />
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* CODE ANALYSIS TAB */}
-                            {activeTab === 'code' && (
-                                <div>
-                                    <div style={styles.card}>
-                                        <h3 style={{ margin: '0 0 15px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <PieChart size={20} color="#3b82f6" /> Language Proficiency
-                                        </h3>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                                            {report.languageBreakdown?.length > 0 ? report.languageBreakdown.map((lang, i) => (
-                                                <div key={i} style={{
-                                                    padding: '15px 20px', background: 'rgba(59, 130, 246, 0.1)',
-                                                    borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.2)'
-                                                }}>
-                                                    <div style={{ fontWeight: 700, color: 'white' }}>{lang.language}</div>
-                                                    <div style={{ fontSize: '14px', color: '#94a3b8' }}>{lang.count} submissions • {lang.avgScore}%</div>
-                                                </div>
-                                            )) : <p style={{ color: '#94a3b8' }}>No submissions yet</p>}
-                                        </div>
-                                    </div>
-
-                                    <div style={styles.card}>
-                                        <h3 style={{ margin: '0 0 15px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <Clock size={20} color="#8b5cf6" /> Recent Submissions
-                                        </h3>
-                                        {report.recentSubmissions?.length > 0 ? report.recentSubmissions.slice(0, 5).map((sub, i) => (
-                                            <div key={i} style={{
-                                                display: 'flex', alignItems: 'center', gap: '15px', padding: '12px',
-                                                background: 'rgba(15, 23, 42, 0.5)', borderRadius: '10px', marginBottom: '10px'
-                                            }}>
-                                                <div style={{
-                                                    width: '40px', height: '40px', borderRadius: '10px',
-                                                    background: sub.status === 'accepted' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                }}>
-                                                    {sub.status === 'accepted' ? <CheckCircle size={20} color="#10b981" /> : <XCircle size={20} color="#ef4444" />}
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 600, color: 'white' }}>{sub.title}</div>
-                                                    <div style={{ fontSize: '13px', color: '#94a3b8' }}>{sub.language} • {sub.type}</div>
-                                                </div>
-                                                <div style={{ fontSize: '18px', fontWeight: 700, color: getScoreColor(sub.score) }}>{sub.score}%</div>
-                                            </div>
-                                        )) : <p style={{ color: '#94a3b8' }}>No submissions yet</p>}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* APTITUDE TAB */}
-                            {activeTab === 'aptitude' && (
-                                <div>
-                                    {report.categoryAnalysis?.length > 0 && (
-                                        <div style={styles.card}>
-                                            <h3 style={{ margin: '0 0 15px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <Target size={20} color="#8b5cf6" /> Category Performance
-                                            </h3>
-                                            {report.categoryAnalysis.map((cat, i) => (
-                                                <div key={i} style={{ marginBottom: '15px' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                                        <span style={{ color: 'white' }}>{cat.category}</span>
-                                                        <span style={{ color: getScoreColor(cat.accuracy) }}>{cat.correct}/{cat.total} ({cat.accuracy}%)</span>
-                                                    </div>
-                                                    <div style={{ height: '8px', background: 'rgba(30, 41, 59, 0.8)', borderRadius: '4px' }}>
-                                                        <div style={{ width: `${cat.accuracy}%`, height: '100%', background: getScoreColor(cat.accuracy), borderRadius: '4px' }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    <div style={styles.card}>
-                                        <h3 style={{ margin: '0 0 15px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <Brain size={20} color="#8b5cf6" /> Test History
-                                        </h3>
-                                        {report.aptitudeResults?.length > 0 ? report.aptitudeResults.map((test, i) => (
-                                            <div key={i} style={{
-                                                display: 'flex', alignItems: 'center', gap: '15px', padding: '12px',
-                                                background: 'rgba(15, 23, 42, 0.5)', borderRadius: '10px', marginBottom: '10px'
-                                            }}>
-                                                <div style={{
-                                                    width: '45px', height: '45px', borderRadius: '10px',
-                                                    background: test.status === 'passed' ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                }}>
-                                                    {test.status === 'passed' ? <Award size={22} color="white" /> : <XCircle size={22} color="white" />}
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 600, color: 'white' }}>{test.testTitle || 'Unknown Test'}</div>
-                                                    <div style={{ fontSize: '13px', color: '#94a3b8' }}>{test.difficulty} • {new Date(test.submittedAt).toLocaleDateString()}</div>
-                                                </div>
-                                                <div style={{
-                                                    padding: '6px 14px', borderRadius: '8px', fontWeight: 700,
-                                                    background: test.status === 'passed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                                                    color: test.status === 'passed' ? '#10b981' : '#ef4444'
-                                                }}>{test.score}%</div>
-                                            </div>
-                                        )) : <p style={{ color: '#94a3b8', textAlign: 'center', padding: '30px' }}>No aptitude tests taken yet</p>}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* PROCTORING TAB */}
-                            {activeTab === 'proctoring' && (
-                                <div>
-                                    <div style={{ ...styles.card, textAlign: 'center', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                                        <Eye size={30} color="#3b82f6" style={{ marginBottom: '10px' }} />
-                                        <h3 style={{ margin: 0, color: 'white' }}>Proctoring Summary</h3>
-                                        <p style={{ margin: '5px 0 0', color: '#94a3b8' }}>Monitoring data from assessments</p>
-                                    </div>
-
-                                    <div style={styles.statsGrid}>
-                                        <ProctoringBox label="Tab Switches" value={report.integrity?.tabSwitches || 0} severity={report.integrity?.tabSwitches > 5 ? 'high' : report.integrity?.tabSwitches > 2 ? 'medium' : 'low'} />
-                                        <ProctoringBox label="Copy/Paste" value={report.integrity?.copyPasteAttempts || 0} severity={report.integrity?.copyPasteAttempts > 3 ? 'high' : report.integrity?.copyPasteAttempts > 1 ? 'medium' : 'low'} />
-                                        <ProctoringBox label="Camera Issues" value={report.integrity?.cameraBlocked || 0} severity={report.integrity?.cameraBlocked > 2 ? 'high' : report.integrity?.cameraBlocked > 0 ? 'medium' : 'low'} />
-                                        <ProctoringBox label="Plagiarism Flags" value={report.integrity?.plagiarismCount || 0} severity={report.integrity?.plagiarismCount > 0 ? 'high' : 'low'} />
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* AI INSIGHTS TAB */}
-                            {activeTab === 'insights' && (
-                                <div>
-                                    {report.aiInsights ? (
-                                        <>
-                                            <div style={{ ...styles.card, background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.1))', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
-                                                    <Zap size={24} color="#8b5cf6" />
-                                                    <h3 style={{ margin: 0, color: 'white' }}>AI Analysis</h3>
-                                                </div>
-                                                <p style={{ margin: 0, color: '#e2e8f0', lineHeight: 1.7 }}>{report.aiInsights.overallAssessment}</p>
-                                            </div>
-
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px', marginBottom: '15px' }}>
-                                                <div style={{ ...styles.card, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                                                    <h4 style={{ margin: '0 0 12px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}><Star size={18} /> Strengths</h4>
-                                                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#e2e8f0' }}>
-                                                        {report.aiInsights.strengths?.map((s, i) => <li key={i} style={{ marginBottom: '8px' }}>{s}</li>)}
-                                                    </ul>
-                                                </div>
-                                                <div style={{ ...styles.card, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                                                    <h4 style={{ margin: '0 0 12px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp size={18} /> Areas for Growth</h4>
-                                                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#e2e8f0' }}>
-                                                        {report.aiInsights.areasForImprovement?.map((a, i) => <li key={i} style={{ marginBottom: '8px' }}>{a}</li>)}
-                                                    </ul>
-                                                </div>
-                                            </div>
-
-                                            <div style={styles.card}>
-                                                <h4 style={{ margin: '0 0 12px', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '8px' }}><ChevronRight size={18} /> Recommendations</h4>
-                                                {report.aiInsights.recommendations?.map((r, i) => (
-                                                    <div key={i} style={{ display: 'flex', gap: '12px', padding: '12px', background: 'rgba(30, 41, 59, 0.5)', borderRadius: '10px', marginBottom: '10px' }}>
-                                                        <span style={{
-                                                            width: '24px', height: '24px', borderRadius: '50%',
-                                                            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            fontSize: '12px', fontWeight: 700, color: 'white', flexShrink: 0
-                                                        }}>{i + 1}</span>
-                                                        <span style={{ color: '#e2e8f0' }}>{r}</span>
+                                            <h4 style={{ margin: '0 0 1rem', color: '#94a3b8', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <Code size={18} color="#06b6d4" /> Language Distribution
+                                            </h4>
+                                            <ResponsiveContainer width="100%" height={200}>
+                                                <RechartsPie>
+                                                    <Pie
+                                                        data={getLanguageChartData()}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        innerRadius={50}
+                                                        outerRadius={80}
+                                                        paddingAngle={4}
+                                                        dataKey="value"
+                                                    >
+                                                        {getLanguageChartData().map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip
+                                                        contentStyle={{ background: '#1e293b', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px' }}
+                                                        itemStyle={{ color: 'white' }}
+                                                    />
+                                                </RechartsPie>
+                                            </ResponsiveContainer>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '1rem', justifyContent: 'center' }}>
+                                                {getLanguageChartData().map((lang, i) => (
+                                                    <div key={i} style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.5rem',
+                                                        padding: '0.5rem 1rem',
+                                                        background: 'rgba(255,255,255,0.05)',
+                                                        borderRadius: '8px'
+                                                    }}>
+                                                        <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: lang.color }} />
+                                                        <span style={{ color: 'white', fontWeight: 600, fontSize: '0.85rem' }}>{lang.name}</span>
+                                                        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{lang.value} ({lang.avgScore}%)</span>
                                                     </div>
                                                 ))}
                                             </div>
-                                        </>
-                                    ) : (
-                                        <div style={{ textAlign: 'center', padding: '60px' }}>
-                                            <Zap size={50} style={{ opacity: 0.3, color: '#94a3b8' }} />
-                                            <p style={{ color: '#94a3b8', marginTop: '15px' }}>AI insights not available</p>
                                         </div>
                                     )}
+
+                                    {/* Category Analysis */}
+                                    {report.categoryAnalysis?.length > 0 && (
+                                        <div style={{
+                                            background: 'rgba(30, 41, 59, 0.4)',
+                                            borderRadius: '20px',
+                                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                                            padding: '1.5rem'
+                                        }}>
+                                            <h4 style={{ margin: '0 0 1.5rem', color: '#94a3b8', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <Target size={18} color="#f59e0b" /> Category Performance
+                                            </h4>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                {report.categoryAnalysis.map((cat, i) => (
+                                                    <div key={i}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                                            <span style={{ color: 'white', fontWeight: 600, fontSize: '0.95rem' }}>{cat.category}</span>
+                                                            <span style={{ color: getScoreColor(cat.accuracy), fontWeight: 700 }}>{cat.correct}/{cat.total} ({cat.accuracy}%)</span>
+                                                        </div>
+                                                        <div style={{ height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden' }}>
+                                                            <div style={{
+                                                                width: `${cat.accuracy}%`,
+                                                                height: '100%',
+                                                                background: `linear-gradient(90deg, ${getScoreColor(cat.accuracy)}, ${getScoreColor(cat.accuracy)}cc)`,
+                                                                borderRadius: '5px',
+                                                                transition: 'width 0.5s ease'
+                                                            }} />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* AI Insights Section */}
+                            {report.aiInsights && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                                    {/* Strengths */}
+                                    <div style={{
+                                        padding: '2rem',
+                                        background: 'rgba(16, 185, 129, 0.03)',
+                                        borderRadius: '24px',
+                                        border: '1px solid rgba(16, 185, 129, 0.15)'
+                                    }}>
+                                        <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#10b981', fontSize: '1.2rem' }}>
+                                            <Award size={24} /> Key Strengths
+                                        </h4>
+                                        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                            {report.aiInsights.strengths?.map((s, i) => (
+                                                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', color: '#e2e8f0', fontSize: '0.95rem' }}>
+                                                    <div style={{ marginTop: '0.25rem', padding: '0.2rem', background: '#10b981', borderRadius: '50%' }}>
+                                                        <CheckCircle size={12} color="white" />
+                                                    </div>
+                                                    {s}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+
+                                    {/* Areas for Growth */}
+                                    <div style={{
+                                        padding: '2rem',
+                                        background: 'rgba(245, 158, 11, 0.03)',
+                                        borderRadius: '24px',
+                                        border: '1px solid rgba(245, 158, 11, 0.15)'
+                                    }}>
+                                        <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#f59e0b', fontSize: '1.2rem' }}>
+                                            <TrendingUp size={24} /> Areas for Growth
+                                        </h4>
+                                        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                            {report.aiInsights.areasForImprovement?.map((a, i) => (
+                                                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', color: '#e2e8f0', fontSize: '0.95rem' }}>
+                                                    <div style={{ marginTop: '0.25rem', padding: '0.2rem', background: '#f59e0b', borderRadius: '50%' }}>
+                                                        <ArrowRight size={12} color="white" />
+                                                    </div>
+                                                    {a}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Recommendations */}
+                            {report.aiInsights?.recommendations?.length > 0 && (
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'rgba(59, 130, 246, 0.03)',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(59, 130, 246, 0.15)',
+                                    marginBottom: '2.5rem'
+                                }}>
+                                    <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#60a5fa', fontSize: '1.2rem' }}>
+                                        <ListChecks size={24} /> Personalized Action Plan
+                                    </h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {report.aiInsights.recommendations.map((step, i) => (
+                                            <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+                                                <div style={{
+                                                    width: '32px',
+                                                    height: '32px',
+                                                    borderRadius: '10px',
+                                                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    color: 'white',
+                                                    fontWeight: 800,
+                                                    fontSize: '0.85rem',
+                                                    flexShrink: 0
+                                                }}>{i + 1}</div>
+                                                <p style={{ margin: 0, color: '#e2e8f0', lineHeight: 1.6, fontSize: '0.95rem' }}>{step}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Proctoring Summary */}
+                            {report.integrity && (
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    marginBottom: '2.5rem'
+                                }}>
+                                    <h4 style={{ margin: '0 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'white', fontSize: '1.2rem' }}>
+                                        <Shield size={24} color="#3b82f6" /> Proctoring & Integrity Summary
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+                                        <IntegrityCard
+                                            label="Tab Switches"
+                                            value={report.integrity.tabSwitches || 0}
+                                            severity={report.integrity.tabSwitches > 5 ? 'high' : report.integrity.tabSwitches > 2 ? 'medium' : 'low'}
+                                        />
+                                        <IntegrityCard
+                                            label="Copy/Paste"
+                                            value={report.integrity.copyPasteAttempts || 0}
+                                            severity={report.integrity.copyPasteAttempts > 3 ? 'high' : report.integrity.copyPasteAttempts > 1 ? 'medium' : 'low'}
+                                        />
+                                        <IntegrityCard
+                                            label="Camera Issues"
+                                            value={report.integrity.cameraBlocked || 0}
+                                            severity={report.integrity.cameraBlocked > 2 ? 'high' : report.integrity.cameraBlocked > 0 ? 'medium' : 'low'}
+                                        />
+                                        <IntegrityCard
+                                            label="Plagiarism Flags"
+                                            value={report.integrity.plagiarismCount || 0}
+                                            severity={report.integrity.plagiarismCount > 0 ? 'high' : 'low'}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Recent Submissions Section */}
+                            {report.recentSubmissions?.length > 0 && (
+                                <div style={{
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{
+                                        padding: '1.5rem 2rem',
+                                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.75rem'
+                                    }}>
+                                        <Clock size={20} color="#8b5cf6" />
+                                        <h4 style={{ margin: 0, color: 'white', fontSize: '1.1rem' }}>Recent Submissions</h4>
+                                    </div>
+                                    <div style={{ padding: '1rem' }}>
+                                        {report.recentSubmissions.slice(0, 8).map((sub, i) => (
+                                            <div key={i} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                padding: '1rem',
+                                                background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                                                borderRadius: '12px'
+                                            }}>
+                                                <div style={{
+                                                    width: '44px',
+                                                    height: '44px',
+                                                    borderRadius: '12px',
+                                                    background: sub.status === 'accepted' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}>
+                                                    {sub.status === 'accepted' ? <CheckCircle size={22} color="#10b981" /> : <XCircle size={22} color="#ef4444" />}
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontWeight: 600, color: 'white', fontSize: '0.95rem' }}>{sub.title}</div>
+                                                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>{sub.language} • {sub.type}</div>
+                                                </div>
+                                                <div style={{
+                                                    fontSize: '1.1rem',
+                                                    fontWeight: 700,
+                                                    color: getScoreColor(sub.score),
+                                                    padding: '0.4rem 1rem',
+                                                    background: `${getScoreColor(sub.score)}15`,
+                                                    borderRadius: '8px'
+                                                }}>{sub.score}%</div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </>
                     ) : null}
                 </div>
 
-                {/* FOOTER */}
+                {/* Footer */}
                 {report && (
-                    <div style={styles.footer}>
-                        <span>Generated: {new Date(report.generatedAt).toLocaleString()}</span>
-                        <span>Requested by: {report.requestedBy || 'System'}</span>
+                    <div style={{
+                        padding: '1rem 2rem',
+                        borderTop: '1px solid rgba(139, 92, 246, 0.2)',
+                        background: 'rgba(30, 41, 59, 0.5)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.85rem',
+                        color: '#64748b'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Calendar size={14} />
+                            <span>Generated: {new Date(report.generatedAt).toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <User size={14} />
+                            <span>Requested by: {report.requestedBy || 'System'}</span>
+                        </div>
                     </div>
                 )}
             </div>
@@ -600,39 +812,42 @@ function StudentReportModal({ studentId, studentName, onClose, requestedBy, requ
 }
 
 // Helper Components
-function StatBox({ icon: Icon, value, label, color }) {
+function StatCard({ icon: Icon, label, value, subLabel, color }) {
     return (
-        <div style={{ ...styles.statBox, background: `${color}15`, border: `1px solid ${color}30` }}>
-            <Icon size={24} color={color} style={{ marginBottom: '8px' }} />
-            <div style={{ fontSize: '26px', fontWeight: 800, color }}>{value}</div>
-            <div style={{ fontSize: '13px', color: '#94a3b8' }}>{label}</div>
+        <div style={{
+            padding: '1.5rem',
+            background: `linear-gradient(135deg, ${color}10, ${color}05)`,
+            borderRadius: '16px',
+            border: `1px solid ${color}20`,
+            textAlign: 'center',
+            transition: 'all 0.3s ease'
+        }}>
+            <Icon size={28} color={color} style={{ marginBottom: '0.75rem' }} />
+            <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white' }}>{value}</div>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>{label}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.5rem' }}>{subLabel}</div>
         </div>
     )
 }
 
-function ScoreCard({ title, score, details }) {
-    const getColor = (s) => s >= 80 ? '#10b981' : s >= 60 ? '#f59e0b' : '#ef4444'
-    return (
-        <div style={styles.card}>
-            <div style={{ fontWeight: 600, color: 'white', marginBottom: '10px' }}>{title}</div>
-            <div style={{ fontSize: '36px', fontWeight: 800, color: getColor(score), marginBottom: '12px' }}>{score}%</div>
-            {details.map((d, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '6px' }}>
-                    <span style={{ color: '#94a3b8' }}>{d.label}</span>
-                    <span style={{ fontWeight: 600, color: 'white' }}>{d.value}</span>
-                </div>
-            ))}
-        </div>
-    )
-}
-
-function ProctoringBox({ label, value, severity }) {
-    const colors = { low: '#10b981', medium: '#f59e0b', high: '#ef4444' }
+function IntegrityCard({ label, value, severity }) {
+    const colors = {
+        low: '#10b981',
+        medium: '#f59e0b',
+        high: '#ef4444'
+    }
     const color = colors[severity]
+
     return (
-        <div style={{ ...styles.statBox, background: `${color}10`, border: `1px solid ${color}30` }}>
-            <div style={{ fontSize: '32px', fontWeight: 800, color }}>{value}</div>
-            <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '5px' }}>{label}</div>
+        <div style={{
+            padding: '1.25rem',
+            background: `${color}10`,
+            borderRadius: '14px',
+            border: `1px solid ${color}20`,
+            textAlign: 'center'
+        }}>
+            <div style={{ fontSize: '2.25rem', fontWeight: 800, color }}>{value}</div>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>{label}</div>
         </div>
     )
 }

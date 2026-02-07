@@ -294,6 +294,7 @@ app.get('/api/mentors/:mentorId/students', async (req, res) => {
     }
 });
 
+
 // ==================== TASK ROUTES ====================
 
 // Get all tasks
@@ -3206,21 +3207,56 @@ app.get('/api/analytics/admin', async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
     try {
         const [rows] = await pool.query(`
-            SELECT u.id as studentId, u.name, 
-            COUNT(s.id) as totalSubmissions, 
-            AVG(s.score) as avgScore,
-            SUM(COALESCE(s.tab_switches, 0)) as totalTabSwitches,
-            SUM(COALESCE(s.copy_paste_attempts, 0)) as totalCopyPaste,
-            SUM(COALESCE(s.camera_blocked_count, 0)) as totalCameraBlocked,
-            SUM(COALESCE(s.phone_detection_count, 0)) as totalPhoneDetection,
-            SUM(CASE WHEN s.integrity_violation = 'true' THEN 1 ELSE 0 END) as integrityViolations,
-            SUM(CASE WHEN s.plagiarism_detected = 'true' THEN 1 ELSE 0 END) as plagiarismCount
-            FROM users u
-            JOIN submissions s ON u.id = s.student_id
-            WHERE u.role = 'student'
-            GROUP BY u.id
+            SELECT 
+                studentId, 
+                MAX(name) as name, 
+                COUNT(*) as totalSubmissions, 
+                AVG(score) as avgScore,
+                SUM(tabSwitches) as totalTabSwitches,
+                SUM(copyPaste) as totalCopyPaste,
+                SUM(cameraBlocked) as totalCameraBlocked,
+                SUM(phoneDetection) as totalPhoneDetection,
+                SUM(integrityViolations) as integrityViolations,
+                SUM(plagiarismCount) as plagiarismCount
+            FROM (
+                SELECT 
+                    s.student_id as studentId, 
+                    u.name, 
+                    COALESCE(s.score, 0) as score,
+                    COALESCE(s.tab_switches, 0) as tabSwitches,
+                    COALESCE(s.copy_paste_attempts, 0) as copyPaste,
+                    COALESCE(s.camera_blocked_count, 0) as cameraBlocked,
+                    COALESCE(s.phone_detection_count, 0) as phoneDetection,
+                    CASE WHEN s.integrity_violation = 'true' THEN 1 ELSE 0 END as integrityViolations,
+                    CASE WHEN s.plagiarism_detected = 'true' THEN 1 ELSE 0 END as plagiarismCount
+                FROM submissions s
+                JOIN users u ON s.student_id = u.id
+                WHERE u.role = 'student'
+
+                UNION ALL
+
+                SELECT 
+                    asub.student_id, 
+                    u.name, 
+                    COALESCE(asub.score, 0),
+                    0, 0, 0, 0, 0, 0
+                FROM aptitude_submissions asub
+                JOIN users u ON asub.student_id = u.id
+                WHERE u.role = 'student'
+
+                UNION ALL
+
+                SELECT 
+                    gts.student_id, 
+                    u.name, 
+                    COALESCE(gts.overall_percentage, 0),
+                    0, 0, 0, 0, 0, 0
+                FROM global_test_submissions gts
+                JOIN users u ON gts.student_id = u.id
+                WHERE u.role = 'student'
+            ) as combined_activity
+            GROUP BY studentId
             ORDER BY avgScore DESC, totalSubmissions DESC
-            LIMIT 50
         `);
 
         const leaderboard = rows.map(r => ({
