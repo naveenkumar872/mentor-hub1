@@ -2920,13 +2920,17 @@ function AptitudeTestsAdmin() {
             return
         }
         try {
-            // Convert dates to UTC ISO strings if present
+            // Convert dates to ISO strings without timezone conversion
+            // because datetime-local input is already in local time
             const testPayload = { ...newTest, createdBy: ADMIN_ID }
             if (testPayload.startTime) {
-                testPayload.startTime = new Date(testPayload.startTime).toISOString()
+                // Add timezone offset to convert local time to UTC
+                const date = new Date(testPayload.startTime)
+                testPayload.startTime = date.toISOString()
             }
             if (testPayload.deadline) {
-                testPayload.deadline = new Date(testPayload.deadline).toISOString()
+                const date = new Date(testPayload.deadline)
+                testPayload.deadline = date.toISOString()
             }
 
             await axios.post(`${API_BASE}/aptitude`, testPayload)

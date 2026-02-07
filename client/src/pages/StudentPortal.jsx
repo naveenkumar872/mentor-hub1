@@ -1858,20 +1858,58 @@ function AptitudeTests({ user }) {
         }
     }
 
-    // Helper function to check if test has started (with 5 min tolerance for timezone issues)
+    // Helper function to check if test has started
     const hasTestStarted = (test) => {
         if (!test.startTime) return true // No start time = always available
+        
         const startTime = new Date(test.startTime)
         const now = new Date()
-        // Add 5 minute tolerance to handle timezone differences
-        const tolerance = 5 * 60 * 1000 // 5 minutes in milliseconds
-        return now.getTime() >= startTime.getTime() - tolerance
+        
+        // Ensure both dates are compared in the same timezone
+        // The backend stores dates in UTC, so we need to compare in UTC
+        const startTimeUTC = Date.UTC(
+            startTime.getUTCFullYear(),
+            startTime.getUTCMonth(),
+            startTime.getUTCDate(),
+            startTime.getUTCHours(),
+            startTime.getUTCMinutes()
+        )
+        
+        const nowUTC = Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            now.getUTCHours(),
+            now.getUTCMinutes()
+        )
+        
+        return nowUTC >= startTimeUTC
     }
 
     // Helper function to check if test has expired
     const hasTestExpired = (test) => {
         if (!test.deadline) return false // No deadline = never expires
-        return new Date(test.deadline) < new Date()
+        
+        const deadline = new Date(test.deadline)
+        const now = new Date()
+        
+        const deadlineUTC = Date.UTC(
+            deadline.getUTCFullYear(),
+            deadline.getUTCMonth(),
+            deadline.getUTCDate(),
+            deadline.getUTCHours(),
+            deadline.getUTCMinutes()
+        )
+        
+        const nowUTC = Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+            now.getUTCHours(),
+            now.getUTCMinutes()
+        )
+        
+        return nowUTC > deadlineUTC
     }
 
 
@@ -2164,33 +2202,34 @@ function AptitudeTests({ user }) {
                                     <Zap size={16} color="#06b6d4" />
                                     <span>Attempts: {getAttemptCount(test.id)}/{test.maxAttempts === -1 ? '∞' : (test.maxAttempts || 1)}</span>
                                 </div>
+                                {test.startTime && (
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        color: !hasTestStarted(test) ? '#f59e42' : '#10b981'
+                                    }}>
+                                        <Clock size={16} color={!hasTestStarted(test) ? '#f59e42' : '#10b981'} />
+                                        <span>
+                                            {!hasTestStarted(test)
+                                                ? `Starts: ${new Date(test.startTime).toLocaleString()}`
+                                                : `Started: ${new Date(test.startTime).toLocaleDateString()}`
+                                            }
+                                        </span>
+                                    </div>
+                                )}
                                 {test.deadline && (
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '0.5rem',
-                                        color:
-                                            !hasTestStarted(test)
-                                                ? '#f59e42' // orange for not started
-                                                : hasTestExpired(test)
-                                                    ? '#ef4444' // red for expired
-                                                    : 'var(--text-muted)'
+                                        color: hasTestExpired(test) ? '#ef4444' : 'var(--text-muted)'
                                     }}>
-                                        <Clock size={16} color={
-                                            !hasTestStarted(test)
-                                                ? '#f59e42'
-                                                : hasTestExpired(test)
-                                                    ? '#ef4444'
-                                                    : '#10b981'
-                                        } />
+                                        <Clock size={16} color={hasTestExpired(test) ? '#ef4444' : '#10b981'} />
                                         <span>
-                                            {!hasTestStarted(test)
-                                                ? `Not Yet Started`
-                                                : hasTestExpired(test)
-                                                    ? 'Expired'
-                                                    : test.deadline
-                                                        ? `Due: ${new Date(test.deadline).toLocaleDateString()}`
-                                                        : ''
+                                            {hasTestExpired(test)
+                                                ? 'Expired'
+                                                : `Due: ${new Date(test.deadline).toLocaleString()}`
                                             }
                                         </span>
                                     </div>
