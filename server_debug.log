@@ -1,6 +1,0 @@
-[2026-02-04T06:47:27.889Z] Task Create Error: Column count doesn't match value count at row 1
-Body: {"title":"Text Classification Task","type":"machine_learning","difficulty":"medium","description":"Classify given text into predefined categories","requirements":{"dataset":"large text dataset with labels","model":"nlp model with high accuracy","metrics":["accuracy","f1-score"]},"deadline":"","mentorId":"admin-001"}
-
-[2026-02-04T06:53:45.524Z] Task Create Error: Column count doesn't match value count at row 1
-Body: {"title":"Text Classification Model","type":"machine_learning","difficulty":"intermediate","description":"Develop an NLP model to classify text into predefined categories","requirements":["Python programming skills","Experience with NLP libraries (e.g. NLTK, spaCy, TensorFlow)","Familiarity with text preprocessing techniques","Ability to work with large datasets"],"deadline":"","mentorId":"admin-001"}
-

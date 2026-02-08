@@ -2336,10 +2336,10 @@ app.delete('/api/global-tests/:id', async (req, res) => {
         if (subIds.length > 0) {
             await connection.query('DELETE FROM question_results WHERE submission_id IN (?)', [subIds]);
             await connection.query('DELETE FROM section_results WHERE submission_id IN (?)', [subIds]);
+            await connection.query('DELETE FROM personalized_reports WHERE submission_id IN (?)', [subIds]);
         }
         await connection.query('DELETE FROM global_test_submissions WHERE test_id = ?', [id]);
         await connection.query('DELETE FROM test_questions WHERE test_id = ?', [id]);
-        await connection.query('DELETE FROM personalized_reports WHERE test_id = ?', [id]);
         const [r] = await connection.query('DELETE FROM global_tests WHERE id = ?', [id]);
         await connection.commit();
         if (r.affectedRows === 0) return res.status(404).json({ error: 'Test not found' });
@@ -2712,7 +2712,11 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
 
                 // Prepare a sampled question list to avoid hitting token limits while giving AI enough context
                 const questionsContext = qrRows.map((q, i) => {
-                    return `Q${i + 1} [${q.section}]: ${q.is_correct ? 'CORRECT' : 'INCORRECT'}. Student Response: ${q.user_answer || 'No Answer'}. Correct Answer/Solution: ${q.correct_answer || 'N/A'}`;
+                    const userAnswer = q.user_answer || 'No Answer';
+                    const isNotAnswered = !q.user_answer || q.user_answer === 'Not Answered' || q.user_answer.trim() === '';
+                    const status = isNotAnswered ? 'NOT ANSWERED' : (q.is_correct ? 'CORRECT' : 'INCORRECT');
+                    const points = q.points_earned || 0;
+                    return `Q${i + 1} [${q.section}]: ${status} (${points} points). Student Response: ${userAnswer}. Correct Answer/Solution: ${q.correct_answer || 'N/A'}`;
                 }).join('\n\n');
 
                 const systemPrompt = `You are an elite educational consultant and technical mentor. Analyze a student's global assessment.
@@ -2736,9 +2740,11 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
                 
                 IMPORTANT:
                 1. Provide insights for EVERY question (Q1, Q2, Q3...).
-                2. For CORRECT coding/SQL: Even if right, suggest optimizations (e.g., O(n) vs O(n^2)), cleaner code patterns, or edge case handling. Explain WHY it was good and how to reach the senior level.
-                3. For INCORRECT: Diagnose the logic gap and provide a clear path to mastery.
-                4. Tone: Encouraging, professional, and technical.`;
+                2. For NOT ANSWERED questions: diagnosis should mention "Question was not attempted", misstep should be "Did not provide a solution", recommendation should encourage attempting the problem and provide hints about the approach.
+                3. For CORRECT coding/SQL: Even if right, suggest optimizations (e.g., O(n) vs O(n^2)), cleaner code patterns, or edge case handling. Explain WHY it was good and how to reach the senior level.
+                4. For INCORRECT: Diagnose the logic gap and provide a clear path to mastery.
+                5. Tone: Encouraging, professional, and technical.
+                6. NEVER say "Correct answer" or "Good job" for NOT ANSWERED or INCORRECT questions.`;
 
                 const chatCompletion = await cerebrasChat([
                     { role: 'system', content: systemPrompt },

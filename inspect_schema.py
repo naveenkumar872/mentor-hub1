@@ -28,13 +28,13 @@ try:
     print("Writing to schema_output.txt")
     inspector = inspect(engine)
     with open('schema_output.txt', 'w') as f:
-        f.write("Columns in 'aptitude_tests' table:\n")
+        f.write("Columns in 'users' table:\n")
         try:
-            columns_pt = inspector.get_columns('aptitude_tests')
+            columns_pt = inspector.get_columns('users')
             for column in columns_pt:
                 f.write(f"- {column['name']} ({column['type']})\n")
         except Exception as e:
-            f.write(f"Error inspecting aptitude_tests table: {e}\n")
+            f.write(f"Error inspecting users table: {e}\n")
     print("File written")
 
 except Exception as e:

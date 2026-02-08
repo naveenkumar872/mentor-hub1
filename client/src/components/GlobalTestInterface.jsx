@@ -467,6 +467,16 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
         // Fallback to test cases
         if (currentQ.testCases) {
+            // For SQL questions: testCases is { expectedOutput: "..." }
+            if (currentQ.questionType === 'sql' || currentQ.type === 'SQL') {
+                const expectedOutput = currentQ.testCases.expectedOutput || 'N/A'
+                return {
+                    input: 'N/A',
+                    output: String(expectedOutput)
+                }
+            }
+            
+            // For coding questions: testCases has cases array
             const cases = Array.isArray(currentQ.testCases) ? currentQ.testCases : (currentQ.testCases.cases || [])
             const sample = cases.find(c => !c.isHidden) || cases[0]
             if (sample) {
@@ -572,33 +582,56 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                 <div style={{ color: '#94a3b8', lineHeight: 1.8, fontSize: '1rem', letterSpacing: '-0.01em' }}>{currentQ.question}</div>
 
                                 {isSql && (
-                                    <div style={{ marginTop: '2rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: '#60a5fa' }}>
-                                            <Database size={18} />
-                                            <span style={{ fontWeight: 700, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Database Schema</span>
-                                        </div>
-                                        <div style={{
-                                            background: '#0f172a',
-                                            borderRadius: '12px',
-                                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                                            overflow: 'hidden',
-                                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-                                        }}>
-                                            <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.5rem 1rem', borderBottom: '1px solid rgba(59, 130, 246, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>schema.sql</span>
-                                                <Database size={12} color="rgba(255,255,255,0.3)" />
+                                    <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: '#60a5fa' }}>
+                                                <Database size={18} />
+                                                <span style={{ fontWeight: 700, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Database Schema</span>
                                             </div>
-                                            <pre style={{
-                                                margin: 0,
-                                                padding: '1.25rem',
-                                                fontSize: '0.85rem',
-                                                color: '#93c5fd',
-                                                overflowX: 'auto',
-                                                whiteSpace: 'pre-wrap',
-                                                fontFamily: '"Fira Code", "Source Code Pro", monospace',
-                                                lineHeight: 1.6
-                                            }}>{currentQ.sqlSchema || currentQ.starterCode || 'No schema provided'}</pre>
+                                            <div style={{
+                                                background: '#0f172a',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                                overflow: 'hidden',
+                                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                                            }}>
+                                                <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '0.5rem 1rem', borderBottom: '1px solid rgba(59, 130, 246, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>schema.sql</span>
+                                                    <Database size={12} color="rgba(255,255,255,0.3)" />
+                                                </div>
+                                                <pre style={{
+                                                    margin: 0,
+                                                    padding: '1.25rem',
+                                                    fontSize: '0.85rem',
+                                                    color: '#93c5fd',
+                                                    overflowX: 'auto',
+                                                    whiteSpace: 'pre-wrap',
+                                                    fontFamily: '"Fira Code", "Source Code Pro", monospace',
+                                                    lineHeight: 1.6
+                                                }}>{currentQ.sqlSchema || currentQ.starterCode || 'No schema provided'}</pre>
+                                            </div>
                                         </div>
+
+                                        {/* Expected Output for SQL */}
+                                        {samples.output && samples.output !== 'N/A' && (
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: '#10b981' }}>
+                                                    <CheckCircle size={16} />
+                                                    <span style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expected Output</span>
+                                                </div>
+                                                <div style={{
+                                                    background: 'rgba(16, 185, 129, 0.05)',
+                                                    padding: '1rem',
+                                                    borderRadius: '10px',
+                                                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                                                    fontFamily: '"Fira Code", monospace',
+                                                    fontSize: '0.9rem',
+                                                    color: '#4ade80',
+                                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                                                    whiteSpace: 'pre-wrap'
+                                                }}>{samples.output}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
