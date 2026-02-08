@@ -13,7 +13,7 @@ import {
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
     const [loading, setLoading] = useState(true)
@@ -519,7 +519,16 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                     Detailed Question Analysis
                                 </h3>
 
-                                {Object.entries(report.questionResultsBySection).map(([section, questions]) => (
+                                {/* Calculate global question index mapping */}
+                                {(() => {
+                                    let globalIdx = 0;
+                                    const sectionEntries = Object.entries(report.questionResultsBySection);
+                                    return sectionEntries.map(([section, questions]) => {
+                                        const sectionStartIdx = globalIdx;
+                                        globalIdx += questions.length;
+                                        return { section, questions, sectionStartIdx };
+                                    });
+                                })().map(({ section, questions, sectionStartIdx }) => (
                                     <div key={section} style={{
                                         background: 'rgba(30, 41, 59, 0.3)',
                                         borderRadius: '16px',
@@ -640,7 +649,7 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                                                 )}
 
                                                                 {/* Individual Question AI Insight */}
-                                                                {report.personalizedAnalysis?.questionInsights?.[`Q${idx + 1}`] && (
+                                                                {report.personalizedAnalysis?.questionInsights?.[`Q${sectionStartIdx + idx + 1}`] && (
                                                                     <div style={{
                                                                         marginTop: '1rem',
                                                                         padding: '1.25rem',
@@ -652,20 +661,21 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem', color: '#06b6d4' }}>
                                                                             <Lightbulb size={18} />
                                                                             <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Mentor Insight</span>
+                                                                            <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: '#64748b', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px' }}>Q{sectionStartIdx + idx + 1}</span>
                                                                         </div>
 
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                                                             <div>
                                                                                 <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '2px' }}>DIAGNOSIS</span>
-                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem' }}>{report.personalizedAnalysis.questionInsights[`Q${idx + 1}`].diagnosis}</p>
+                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem' }}>{report.personalizedAnalysis.questionInsights[`Q${sectionStartIdx + idx + 1}`].diagnosis}</p>
                                                                             </div>
                                                                             <div>
                                                                                 <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '2px' }}>THE MISSTEP</span>
-                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem' }}>{report.personalizedAnalysis.questionInsights[`Q${idx + 1}`].misstep}</p>
+                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem' }}>{report.personalizedAnalysis.questionInsights[`Q${sectionStartIdx + idx + 1}`].misstep}</p>
                                                                             </div>
                                                                             <div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
                                                                                 <span style={{ color: '#10b981', fontSize: '0.75rem', fontWeight: 800, display: 'block', marginBottom: '2px' }}>HOW TO EXCEL</span>
-                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 500 }}>{report.personalizedAnalysis.questionInsights[`Q${idx + 1}`].recommendation}</p>
+                                                                                <p style={{ margin: 0, color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 500 }}>{report.personalizedAnalysis.questionInsights[`Q${sectionStartIdx + idx + 1}`].recommendation}</p>
                                                                             </div>
                                                                         </div>
                                                                     </div>

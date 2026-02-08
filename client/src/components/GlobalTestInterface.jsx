@@ -9,7 +9,7 @@ import SQLValidator from './SQLValidator'
 import SQLVisualizer from './SQLVisualizer'
 import SQLDebugger from './SQLDebugger'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 
 
@@ -372,6 +372,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
         try {
             const timeSpent = (test.duration || 120) * 60 - timeLeftRef.current
+            console.log('[Submit] Sending submission...')
             const res = await axios.post(`${API_BASE}/global-tests/${test.id}/submit`, {
                 studentId: user.id,
                 answers: answersRef.current,
@@ -382,12 +383,23 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 phoneDetectionCount: phoneDetectionCountRef.current,
                 proctoringEnabled: proctoring.enabled || false
             })
-            setResult(res.data.submission)
-            setShowResult(true)
+            console.log('[Submit] Response:', res.data)
+
+            // Ensure we have valid result data
+            const submissionResult = res.data.submission || res.data
+            if (submissionResult) {
+                setResult(submissionResult)
+                setShowResult(true)
+                setIsSubmitting(false)
+            } else {
+                console.error('[Submit] No submission data in response')
+                setIsSubmitting(false)
+                alert('Test submitted but no result data received. Please refresh the page.')
+            }
         } catch (e) {
-            alert(e.response?.data?.error || 'Submit failed')
-        } finally {
+            console.error('[Submit] Error:', e)
             setIsSubmitting(false)
+            alert(e.response?.data?.error || 'Submit failed. Please try again.')
         }
     }
 
@@ -416,33 +428,182 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     }
 
     if (showResult && result) {
+        // Auto-exit fullscreen when showing result
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => { })
+        }
         const sectionScores = result.sectionScores || {}
+        const isPassed = result.status === 'passed'
         return (
-            <div style={{ position: 'fixed', inset: 0, background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', overflow: 'auto' }}>
-                <div style={{ background: 'rgba(30,41,59,0.95)', borderRadius: '24px', border: '1px solid rgba(139,92,246,0.3)', maxWidth: 800, width: '100%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid rgba(139,92,246,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h2 style={{ margin: 0, color: 'white' }}>Global Test Report – {test.title}</h2>
-                        <button type="button" onClick={() => { if (document.fullscreenElement) document.exitFullscreen(); onClose(); onComplete && onComplete(result) }} style={{ background: 'rgba(71,85,105,0.5)', border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: 'white' }}><X size={20} /></button>
+            <div style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                zIndex: 99999,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2rem',
+                overflow: 'auto',
+                animation: 'fadeIn 0.3s ease-out'
+            }}>
+                <style>{`
+                    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                    @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+                    @keyframes confetti { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(-100px) rotate(720deg); opacity: 0; } }
+                `}</style>
+
+                <div style={{
+                    background: 'rgba(30,41,59,0.98)',
+                    borderRadius: '24px',
+                    border: `2px solid ${isPassed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                    maxWidth: 800,
+                    width: '100%',
+                    maxHeight: '90vh',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: `0 25px 50px -12px ${isPassed ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
+                    animation: 'scaleIn 0.4s ease-out'
+                }}>
+                    {/* Header with success/fail indicator */}
+                    <div style={{
+                        padding: '2rem 2rem 1.5rem',
+                        background: isPassed ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.1))' : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(251, 146, 60, 0.1))',
+                        borderBottom: `1px solid ${isPassed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                        textAlign: 'center'
+                    }}>
+                        <div style={{
+                            width: '80px',
+                            height: '80px',
+                            borderRadius: '50%',
+                            background: isPassed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 1rem',
+                            boxShadow: `0 8px 24px ${isPassed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                            animation: isPassed ? 'pulse 2s ease-in-out infinite' : 'none'
+                        }}>
+                            {isPassed ? <Award size={40} color="white" /> : <XCircle size={40} color="white" />}
+                        </div>
+                        <h2 style={{ margin: '0 0 0.5rem', color: 'white', fontSize: '1.75rem', fontWeight: 800 }}>
+                            {isPassed ? '🎉 Congratulations!' : 'Test Completed'}
+                        </h2>
+                        <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '1rem' }}>
+                            {isPassed ? 'You have successfully passed the assessment!' : 'Keep practicing to improve your score.'}
+                        </p>
                     </div>
+
                     <div style={{ padding: '2rem', overflowY: 'auto' }}>
-                        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                            <div style={{ padding: '1.25rem', background: result.status === 'passed' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: 12, border: `1px solid ${result.status === 'passed' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, textAlign: 'center' }}>
-                                <div style={{ fontSize: '2rem', fontWeight: 800, color: result.status === 'passed' ? '#10b981' : '#ef4444' }}>{result.score ?? result.overallPercentage}%</div>
-                                <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>{result.status}</div>
+                        {/* Score Card */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '1.5rem',
+                            marginBottom: '2rem',
+                            flexWrap: 'wrap',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                padding: '1.5rem 2.5rem',
+                                background: isPassed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                                borderRadius: 16,
+                                border: `2px solid ${isPassed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+                                textAlign: 'center',
+                                minWidth: '180px'
+                            }}>
+                                <div style={{
+                                    fontSize: '3.5rem',
+                                    fontWeight: 900,
+                                    color: isPassed ? '#10b981' : '#ef4444',
+                                    lineHeight: 1
+                                }}>
+                                    {result.score ?? result.overallPercentage}%
+                                </div>
+                                <div style={{
+                                    fontSize: '0.9rem',
+                                    color: 'rgba(255,255,255,0.6)',
+                                    marginTop: '0.5rem',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '2px',
+                                    fontWeight: 600
+                                }}>
+                                    Overall Score
+                                </div>
+                            </div>
+                            <div style={{
+                                padding: '1.5rem 2rem',
+                                background: 'rgba(139, 92, 246, 0.1)',
+                                borderRadius: 16,
+                                border: '1px solid rgba(139, 92, 246, 0.3)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#a78bfa' }}>
+                                    {result.correctCount || 0}/{result.totalQuestions || 0}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.25rem' }}>
+                                    Correct Answers
+                                </div>
                             </div>
                         </div>
-                        <h3 style={{ margin: '0 0 1rem', color: 'white' }}>Section-wise</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
-                            {Object.entries(sectionScores).map(([sec, score]) => (
-                                <div key={sec} style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)', textAlign: 'center' }}>
-                                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>{score}%</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{sec}</div>
-                                </div>
-                            ))}
+
+                        {/* Section Scores */}
+                        <h3 style={{ margin: '0 0 1rem', color: 'white', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Layers size={18} color="#8b5cf6" /> Section-wise Performance
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.75rem' }}>
+                            {Object.entries(sectionScores).map(([sec, score]) => {
+                                const scoreColor = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+                                return (
+                                    <div key={sec} style={{
+                                        padding: '1rem',
+                                        background: 'rgba(30, 41, 59, 0.8)',
+                                        borderRadius: 12,
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        textAlign: 'center'
+                                    }}>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: scoreColor }}>{score}%</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize', marginTop: '0.25rem' }}>{sec}</div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
-                    <div style={{ padding: '1rem 2rem', borderTop: '1px solid rgba(139,92,246,0.2)', display: 'flex', justifyContent: 'center' }}>
-                        <button type="button" className="btn-create-new" onClick={() => { onClose(); onComplete && onComplete(result) }}>Close</button>
+
+                    {/* Footer */}
+                    <div style={{
+                        padding: '1.25rem 2rem',
+                        borderTop: '1px solid rgba(139,92,246,0.2)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: '1rem',
+                        background: 'rgba(15, 23, 42, 0.5)'
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (document.fullscreenElement) document.exitFullscreen();
+                                onClose();
+                                onComplete && onComplete(result);
+                            }}
+                            style={{
+                                padding: '0.85rem 2.5rem',
+                                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                border: 'none',
+                                borderRadius: '12px',
+                                color: 'white',
+                                fontWeight: 700,
+                                fontSize: '1rem',
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 14px rgba(139, 92, 246, 0.4)',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseOver={e => e.target.style.transform = 'translateY(-2px)'}
+                            onMouseOut={e => e.target.style.transform = 'translateY(0)'}
+                        >
+                            Close & View Results
+                        </button>
                     </div>
                 </div>
             </div>
@@ -475,7 +636,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                     output: String(expectedOutput)
                 }
             }
-            
+
             // For coding questions: testCases has cases array
             const cases = Array.isArray(currentQ.testCases) ? currentQ.testCases : (currentQ.testCases.cases || [])
             const sample = cases.find(c => !c.isHidden) || cases[0]
@@ -500,7 +661,38 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 </div>
             )}
 
-            {/* HEADER */}
+            {/* Submitting Overlay */}
+            {isSubmitting && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    zIndex: 100000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '1.5rem'
+                }}>
+                    <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        border: '4px solid rgba(139, 92, 246, 0.2)',
+                        borderTopColor: '#8b5cf6',
+                        animation: 'spin 1s linear infinite'
+                    }}></div>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                    <h2 style={{ margin: 0, color: 'white', fontSize: '1.5rem', fontWeight: 700 }}>Submitting Your Test...</h2>
+                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '0.95rem' }}>Please wait while we evaluate your answers</p>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#8b5cf6', animation: 'pulse 1.5s ease-in-out infinite' }}></div>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#8b5cf6', animation: 'pulse 1.5s ease-in-out 0.2s infinite' }}></div>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#8b5cf6', animation: 'pulse 1.5s ease-in-out 0.4s infinite' }}></div>
+                    </div>
+                    <style>{`@keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } }`}</style>
+                </div>
+            )}
             <header style={{ padding: '1rem 2rem', borderBottom: '1px solid rgba(139,92,246,0.2)', background: 'rgba(15,23,42,0.95)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -614,22 +806,84 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
                                         {/* Expected Output for SQL */}
                                         {samples.output && samples.output !== 'N/A' && (
-                                            <div>
+                                            <div style={{ marginTop: '1rem' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: '#10b981' }}>
-                                                    <CheckCircle size={16} />
+                                                    <Target size={16} />
                                                     <span style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expected Output</span>
+                                                    <span style={{ fontSize: '0.7rem', color: 'rgba(16, 185, 129, 0.6)', marginLeft: 'auto' }}>Your query should produce this result</span>
                                                 </div>
                                                 <div style={{
-                                                    background: 'rgba(16, 185, 129, 0.05)',
-                                                    padding: '1rem',
-                                                    borderRadius: '10px',
-                                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                                    fontFamily: '"Fira Code", monospace',
-                                                    fontSize: '0.9rem',
-                                                    color: '#4ade80',
-                                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
-                                                    whiteSpace: 'pre-wrap'
-                                                }}>{samples.output}</div>
+                                                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 182, 212, 0.05))',
+                                                    borderRadius: '12px',
+                                                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                                                    overflow: 'hidden',
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                                                }}>
+                                                    {/* Parse and display as table if pipe-separated */}
+                                                    {samples.output.includes('|') ? (
+                                                        <div style={{ overflowX: 'auto' }}>
+                                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: '"Fira Code", monospace', fontSize: '0.85rem' }}>
+                                                                <tbody>
+                                                                    {samples.output.split('\n').filter(Boolean).map((row, rowIdx) => {
+                                                                        const cells = row.split('|').map(c => c.trim());
+                                                                        const isHeader = rowIdx === 0 && cells.every(c => /^[a-zA-Z_\s]+$/.test(c));
+                                                                        return (
+                                                                            <tr key={rowIdx} style={{
+                                                                                background: isHeader ? 'rgba(16, 185, 129, 0.15)' : rowIdx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                                                            }}>
+                                                                                {cells.map((cell, cellIdx) => (
+                                                                                    isHeader ? (
+                                                                                        <th key={cellIdx} style={{
+                                                                                            padding: '0.75rem 1rem',
+                                                                                            textAlign: 'left',
+                                                                                            color: '#10b981',
+                                                                                            fontWeight: 700,
+                                                                                            borderBottom: '2px solid rgba(16, 185, 129, 0.3)',
+                                                                                            whiteSpace: 'nowrap'
+                                                                                        }}>{cell}</th>
+                                                                                    ) : (
+                                                                                        <td key={cellIdx} style={{
+                                                                                            padding: '0.65rem 1rem',
+                                                                                            color: '#4ade80',
+                                                                                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                                                                            whiteSpace: 'nowrap'
+                                                                                        }}>{cell}</td>
+                                                                                    )
+                                                                                ))}
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    ) : (
+                                                        /* Plain text display for non-table output */
+                                                        <pre style={{
+                                                            margin: 0,
+                                                            padding: '1rem',
+                                                            fontFamily: '"Fira Code", monospace',
+                                                            fontSize: '0.85rem',
+                                                            color: '#4ade80',
+                                                            whiteSpace: 'pre-wrap',
+                                                            lineHeight: 1.6
+                                                        }}>{samples.output}</pre>
+                                                    )}
+                                                </div>
+                                                <div style={{
+                                                    marginTop: '0.5rem',
+                                                    padding: '0.5rem 0.75rem',
+                                                    background: 'rgba(245, 158, 11, 0.1)',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(245, 158, 11, 0.2)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.5rem'
+                                                }}>
+                                                    <Lightbulb size={14} color="#f59e0b" />
+                                                    <span style={{ fontSize: '0.75rem', color: '#fbbf24' }}>
+                                                        Tip: Your output should match both the data values and ordering. Column headers may vary.
+                                                    </span>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

@@ -12,7 +12,7 @@ import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 function MentorPortal() {

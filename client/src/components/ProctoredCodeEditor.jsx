@@ -5,7 +5,7 @@ import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
 import * as cocoSsd from '@tensorflow-models/coco-ssd'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations
 const LANGUAGE_CONFIG = {

@@ -2144,6 +2144,7 @@ app.get('/api/global-tests/:id', async (req, res) => {
         SECTIONS.forEach(sec => { bySection[sec] = []; });
         questions.forEach(q => {
             const opt = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            const parsedTestCases = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
             const item = {
                 id: q.question_id,
                 question: q.question,
@@ -2153,7 +2154,7 @@ app.get('/api/global-tests/:id', async (req, res) => {
                 category: q.category,
                 questionType: q.question_type,
                 section: q.section,
-                testCases: q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null,
+                testCases: parsedTestCases,
                 starterCode: q.starter_code,
                 solutionCode: q.solution_code,
                 points: q.points ?? 1,
@@ -2507,7 +2508,10 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
                 const result = await runSqlAndCompare(schema, userAns, expectedOutput);
                 isCorrect = result.isCorrect;
                 pointsEarned = isCorrect ? (q.points ?? 10) : 0;
-                correctAnswerText = result.output || 'Expected result';
+                // Store the expected output as correctAnswerText for LLM evaluation, with user's actual output for context
+                correctAnswerText = isCorrect
+                    ? `Correct! Expected: ${expectedOutput.substring(0, 200)}${expectedOutput.length > 200 ? '...' : ''}`
+                    : `Expected: ${expectedOutput.substring(0, 200)}${expectedOutput.length > 200 ? '...' : ''} | User Output: ${(result.output || 'Error/No output').substring(0, 150)}`;
             } else {
                 const correctText = q.correct_answer;
                 isCorrect = options.length ? (userAns === correctText || (options[Number(correctText)] !== undefined && userAns === options[Number(correctText)])) : (userAns === correctText);
@@ -2698,10 +2702,23 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
         SECTIONS.forEach(sec => { bySection[sec] = qrRows.filter(r => r.section === sec); });
 
         let aiPersonalizedAnalysis = null;
-        let needsRegeneration = existingReport.length > 0 && (!existingReport[0].report_data.questionInsights || !existingReport[0].report_data.questionInsights.Q1);
 
-        if (existingReport.length > 0 && !needsRegeneration) {
-            aiPersonalizedAnalysis = existingReport[0].report_data;
+        // Parse existing report if available
+        let existingReportData = null;
+        if (existingReport.length > 0) {
+            try {
+                existingReportData = typeof existingReport[0].report_data === 'string'
+                    ? JSON.parse(existingReport[0].report_data)
+                    : existingReport[0].report_data;
+            } catch (e) {
+                console.error('Failed to parse existing report_data:', e);
+            }
+        }
+
+        let needsRegeneration = existingReportData && (!existingReportData.questionInsights || !existingReportData.questionInsights.Q1);
+
+        if (existingReportData && !needsRegeneration) {
+            aiPersonalizedAnalysis = existingReportData;
         } else {
             // Generate AI Analysis (or Regenerate if old format)
             try {
@@ -3458,7 +3475,14 @@ async function runSqlAndCompare(schema, query, expectedOutput) {
         });
         const data = await response.json();
         const actual = (data.run?.output || '').trim().replace(/\r/g, '');
-        const isCorrect = data.run?.code === 0 && (actual === expected || normalizeSqlOutput(actual) === normalizeSqlOutput(expected));
+
+        // Smart comparison: check exact match, normalized match, or data-only match
+        let isCorrect = false;
+        if (data.run?.code === 0) {
+            isCorrect = actual === expected ||
+                normalizeSqlOutput(actual) === normalizeSqlOutput(expected) ||
+                compareSqlDataOnly(actual, expected);
+        }
         return { isCorrect, output: actual };
     } catch (e) {
         return { isCorrect: false, output: e.message };
@@ -3467,6 +3491,53 @@ async function runSqlAndCompare(schema, query, expectedOutput) {
 
 function normalizeSqlOutput(s) {
     return s.split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+}
+
+// Compare SQL output by extracting just the data values, ignoring column headers
+function compareSqlDataOnly(actual, expected) {
+    try {
+        // Extract values from pipe-separated or newline format
+        const extractValues = (str) => {
+            // Replace pipes with newlines for uniform processing
+            const normalized = str.replace(/\|/g, '\n').replace(/\r/g, '');
+            // Split by newlines and filter out empty lines
+            const lines = normalized.split('\n').map(l => l.trim()).filter(Boolean);
+            // Extract just numeric values and data (not column names which typically contain letters only)
+            const dataValues = lines.filter(line => {
+                // Keep lines that have numbers or are clearly data rows
+                return /\d/.test(line) || line.includes('|');
+            });
+            // Also try to extract just the values from each line
+            const allValues = lines.flatMap(line => {
+                // Split by common delimiters and get values
+                return line.split(/[\|\s]+/).map(v => v.trim()).filter(Boolean);
+            });
+            return {
+                dataLines: dataValues.join('|').toLowerCase(),
+                allValues: allValues.map(v => v.toLowerCase()).sort().join('|')
+            };
+        };
+
+        const actualData = extractValues(actual);
+        const expectedData = extractValues(expected);
+
+        // Compare data lines (ignoring column headers)
+        if (actualData.dataLines === expectedData.dataLines) return true;
+
+        // Compare all extracted values (for different formatting)
+        if (actualData.allValues === expectedData.allValues) return true;
+
+        // Try comparing just the numeric/data portions
+        const extractNumbers = (str) => {
+            const nums = str.match(/[\d.]+/g) || [];
+            return nums.sort().join(',');
+        };
+        if (extractNumbers(actual) === extractNumbers(expected)) return true;
+
+        return false;
+    } catch (e) {
+        return false;
+    }
 }
 
 app.post('/api/run-inline-tests', async (req, res) => {
