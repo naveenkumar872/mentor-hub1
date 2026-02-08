@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Play, CheckCircle, XCircle, Clock, Eye, EyeOff, Trophy, AlertTriangle, Terminal, Code2 } from 'lucide-react'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function CodeOutputPreview({
     problemId,

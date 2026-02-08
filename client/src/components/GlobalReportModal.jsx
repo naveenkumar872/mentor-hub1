@@ -13,7 +13,7 @@ import {
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
     const [loading, setLoading] = useState(true)
