@@ -3,8 +3,8 @@ import axios from 'axios'
 import { MessageSquare, Send, Search, ArrowLeft, Paperclip, Clock, CheckCheck, User, Circle, X, FileText, Image as ImageIcon, Download, Users } from 'lucide-react'
 import io from 'socket.io-client'
 
-const API_BASE = 'http://localhost:3000/api'
-const SOCKET_URL = 'http://localhost:3000'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const SOCKET_URL = 'https://mentor-hub-backend-tkil.onrender.com'
 
 const cardStyle = { background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', transition: 'all 0.3s ease' }
 const inputStyle = { width: '100%', padding: '0.7rem 1rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }

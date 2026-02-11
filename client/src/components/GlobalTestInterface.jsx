@@ -9,7 +9,7 @@ import SQLValidator from './SQLValidator'
 import SQLVisualizer from './SQLVisualizer'
 import SQLDebugger from './SQLDebugger'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 
 

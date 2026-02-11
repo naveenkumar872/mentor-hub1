@@ -1,5 +1,0 @@
-id,test_id,test_title,student_id,correct_count,total_questions,score,status,time_spent,tab_switches,submitted_at
-apt-sub-1062c6a0,apt-001,Quantitative & Logical Reasoning,student-008,0,10,0,failed,0,0,2026-02-04T02:49:37.407Z
-apt-sub-56d94b9a,apt-001,Quantitative & Logical Reasoning,student-008,0,10,0,failed,0,0,2026-02-04T02:49:37.423Z
-apt-sub-78284fac,apt-002,Verbal Ability & Reasoning,student-008,1,8,13,failed,13,0,2026-02-04T03:08:44.758Z
-apt-sub-ea5c5660,apt-002,Verbal Ability & Reasoning,student-008,0,8,0,failed,7,0,2026-02-04T03:59:38.122Z

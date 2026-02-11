@@ -1,5 +1,0 @@
-id,title,type,difficulty,duration,total_questions,passing_score,status,created_by,created_at
-apt-001,Quantitative & Logical Reasoning,aptitude,Medium,30,10,60,live,admin-001,2026-02-01T10:00:00Z
-apt-002,Verbal Ability & Reasoning,aptitude,Easy,20,8,60,live,admin-001,2026-02-02T10:00:00Z
-apt-d009770a,Aptitude,aptitude,Medium,30,5,60,live,admin-001,2026-02-04T04:02:47.635Z
-apt-18a36bca,Logical,aptitude,Medium,30,5,60,live,admin-001,2026-02-04T04:08:39.057Z

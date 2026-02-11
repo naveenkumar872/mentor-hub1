@@ -165,9 +165,7 @@ pool.getConnection()
 // Middleware - CORS configuration
 const allowedOrigins = [
     'http://localhost:5173', // Vite Frontend
-    'http://localhost:3000', // Backend/Frontend if served together
-    // 'https://mentor-hub-backend-tkil.onrender.com', 
-    // /\.onrender\.com$/  
+    'https://mentor-hub-backend-tkil.onrender.com', // Production Backend
 ];
 
 app.use(cors({
@@ -359,7 +357,7 @@ app.get('/api/tasks', async (req, res) => {
             ...t,
             mentorId: t.mentor_id,
             createdAt: t.created_at,
-            completedBy: t.completed_by_students 
+            completedBy: t.completed_by_students
                 ? t.completed_by_students.split(',').filter(s => s)
                 : [],
             completionCount: t.completion_count || 0
@@ -480,7 +478,7 @@ app.get('/api/problems', async (req, res) => {
         `;
         let countQuery = 'SELECT COUNT(DISTINCT p.id) as total FROM problems p WHERE 1=1';
         const params = [];
-        
+
         if (mentorId) {
             query += ' AND p.mentor_id = ?';
             countQuery += ' AND p.mentor_id = ?';
@@ -491,9 +489,9 @@ app.get('/api/problems', async (req, res) => {
             countQuery += ' AND p.status = ?';
             params.push(status);
         }
-        
+
         query += ' GROUP BY p.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
-        
+
         const [[{ total }]] = await pool.query(countQuery, params);
         const [problems] = await pool.query(query, [...params, pageSize, offset]);
 
@@ -505,8 +503,8 @@ app.get('/api/problems', async (req, res) => {
             sqlSchema: p.sql_schema,
             expectedQueryResult: p.expected_query_result,
             createdAt: p.created_at,
-            completedBy: p.completed_by_students 
-                ? p.completed_by_students.split(',').filter(s => s) 
+            completedBy: p.completed_by_students
+                ? p.completed_by_students.split(',').filter(s => s)
                 : [],
             completionCount: p.completion_count || 0,
             proctoring: {
@@ -527,7 +525,7 @@ app.get('/api/problems', async (req, res) => {
             page: pageNum,
             limit: pageSize
         });
-        
+
         res.json(response);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -4348,7 +4346,7 @@ app.post('/api/reports/bulk', async (req, res) => {
         const reports = [];
         for (const studentId of studentIds) {
             try {
-                const response = await axios.post(`http://localhost:${PORT}/api/reports/student/${studentId}`, {
+                const response = await axios.post(`https://mentor-hub-backend-tkil.onrender.com/api/reports/student/${studentId}`, {
                     requestedBy,
                     requestedByRole
                 });
@@ -6630,9 +6628,9 @@ io.on('connection', (socket) => {
     // Handle mentor/admin joining live monitoring
     socket.on('join_monitoring', (data) => {
         const { userId, role, mentorId } = data; // userId: current user, mentorId: mentor being monitored (for admin)
-        
+
         socket.userData = { userId, role, mentorId };
-        
+
         if (role === 'mentor') {
             if (!activeConnections.mentors.has(userId)) {
                 activeConnections.mentors.set(userId, []);
@@ -6657,7 +6655,7 @@ io.on('connection', (socket) => {
             console.log(`👤 Student ${userId} joined`);
         }
 
-        socket.emit('monitoring_connected', { 
+        socket.emit('monitoring_connected', {
             status: 'connected',
             role: role,
             timestamp: new Date()
@@ -6667,7 +6665,7 @@ io.on('connection', (socket) => {
     // Handle submission events (Feature 24: Live Student Monitoring)
     socket.on('submission_started', (data) => {
         const { studentId, studentName, problemId, problemTitle, mentorId, isProctored } = data;
-        
+
         const event = {
             type: 'submission_started',
             studentId,
@@ -6690,7 +6688,7 @@ io.on('connection', (socket) => {
 
     socket.on('submission_completed', (data) => {
         const { studentId, studentName, problemId, problemTitle, mentorId, status, score } = data;
-        
+
         const event = {
             type: 'submission_completed',
             studentId,
@@ -6713,7 +6711,7 @@ io.on('connection', (socket) => {
     socket.on('proctoring_violation', (data) => {
         const { studentId, studentName, violationType, severity, mentorId } = data;
         // violationType: 'face_not_detected', 'multiple_faces', 'phone_detected', 'window_switch', 'copy_attempt'
-        
+
         const alert = {
             type: 'proctoring_alert',
             studentId,
@@ -6734,7 +6732,7 @@ io.on('connection', (socket) => {
     // Real-time progress update
     socket.on('progress_update', (data) => {
         const { studentId, studentName, problemId, progress, mentorId } = data; // progress: 0-100
-        
+
         const update = {
             type: 'progress_update',
             studentId,
@@ -6753,7 +6751,7 @@ io.on('connection', (socket) => {
     // Test case failure notification
     socket.on('test_failed', (data) => {
         const { studentId, studentName, problemId, testname, mentorId } = data;
-        
+
         const notification = {
             type: 'test_failed',
             studentId,
@@ -6773,7 +6771,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         if (socket.userData) {
             const { userId, role } = socket.userData;
-            
+
             if (role === 'mentor' && activeConnections.mentors.has(userId)) {
                 const sockets = activeConnections.mentors.get(userId);
                 const idx = sockets.indexOf(socket);

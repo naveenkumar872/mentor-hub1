@@ -7,7 +7,7 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd'
 import * as blazeface from '@tensorflow-models/blazeface'
 import socketService from '../services/socketService'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Language configurations
 const LANGUAGE_CONFIG = {

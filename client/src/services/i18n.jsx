@@ -694,7 +694,7 @@ export function useI18n() {
         return {
             t: (key) => key,
             locale: 'en',
-            setLocale: () => {},
+            setLocale: () => { },
             languages: LANGUAGES
         }
     }
