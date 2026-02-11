@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone, Database, Layers, Shield } from 'lucide-react'
+import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone, Database, Layers, Shield, Users } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
 import * as cocoSsd from '@tensorflow-models/coco-ssd'
+import * as blazeface from '@tensorflow-models/blazeface'
+import socketService from '../services/socketService'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations
 const LANGUAGE_CONFIG = {
@@ -45,6 +47,14 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const [phoneDetected, setPhoneDetected] = useState(false)
     const [phoneDetectionCount, setPhoneDetectionCount] = useState(0)
     const [modelLoaded, setModelLoaded] = useState(false)
+    
+    // Face Detection state (NEW - BlazeFace)
+    const [faceDetected, setFaceDetected] = useState(true)
+    const [multipleFaces, setMultipleFaces] = useState(false)
+    const [faceLookawayCount, setFaceLookawayCount] = useState(0)
+    const [faceNotDetectedCount, setFaceNotDetectedCount] = useState(0)
+    const [multipleFacesDetectionCount, setMultipleFacesDetectionCount] = useState(0)
+    
     const videoRef = useRef(null)
     const canvasRef = useRef(null)
     const cameraCheckIntervalRef = useRef(null)
@@ -52,6 +62,11 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const phoneDetectedRef = useRef(false)
     const objectDetectorRef = useRef(null)
     const phoneCheckIntervalRef = useRef(null)
+    
+    // Face Detection refs (NEW - BlazeFace)
+    const faceDetectorRef = useRef(null)
+    const faceCheckIntervalRef = useRef(null)
+    const faceDetectedRef = useRef(true)
 
     const proctoring = problem.proctoring || {}
     const maxTabSwitches = proctoring.maxTabSwitches || 3
@@ -116,6 +131,10 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             startCameraCheck()
             // Load AI model for phone detection
             loadObjectDetectionModel()
+            // Load AI model for face detection (NEW - BlazeFace) - only if face detection is enabled
+            if (proctoring.enableFaceDetection || proctoring.detectMultipleFaces || proctoring.trackFaceLookaway) {
+                loadFaceDetectionModel()
+            }
         } catch (err) {
             console.error('Failed to access camera/microphone:', err)
             setWarningMessage('⚠️ Camera/Microphone access required for proctoring')
@@ -128,6 +147,8 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         stopCameraCheck()
         // Stop phone detection
         stopPhoneDetection()
+        // Stop face detection (NEW - BlazeFace)
+        stopFaceDetection()
         // Stop all media tracks (camera + microphone)
         if (mediaStream) {
             mediaStream.getTracks().forEach(track => {
@@ -237,6 +258,16 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             setCameraBlocked(true)
             setCameraBlockedCount(prev => {
                 const newCount = prev + 1
+                
+                // 📊 EMIT: Camera blocked violation
+                socketService.emitProctoringViolation(
+                    user.id,
+                    user.name || user.email,
+                    'camera_blocked',
+                    'critical',
+                    problem.mentorId
+                )
+                
                 setWarningMessage(`🚫 Camera obstruction detected! (${newCount} times) Please uncover your camera.`)
                 setShowWarning(true)
                 return newCount
@@ -312,6 +343,16 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 setPhoneDetected(true)
                 setPhoneDetectionCount(prev => {
                     const newCount = prev + 1
+                    
+                    // 📊 EMIT: Phone detected violation
+                    socketService.emitProctoringViolation(
+                        user.id,
+                        user.name || user.email,
+                        'phone_detected',
+                        newCount > 2 ? 'critical' : 'warning',
+                        problem.mentorId
+                    )
+                    
                     setWarningMessage(`📱 Mobile phone detected! (${newCount} times) Remove all electronic devices from view.`)
                     setShowWarning(true)
                     return newCount
@@ -331,6 +372,148 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         }
     }
 
+    // ============ FACE DETECTION (BlazeFace) ============
+
+    // Load BlazeFace model for face detection
+    const loadFaceDetectionModel = async () => {
+        try {
+            console.log('👁️ Loading BlazeFace model...')
+            const detector = await blazeface.load()
+            faceDetectorRef.current = detector
+            console.log('✅ BlazeFace model loaded successfully')
+            startFaceDetection()
+        } catch (error) {
+            console.error('❌ Failed to load BlazeFace model:', error)
+        }
+    }
+
+    // Detect if student is looking away from screen (using face coordinates)
+    const isLookingAway = (prediction) => {
+        if (!prediction || !prediction.start || !prediction.end) return false
+
+        // Get face position
+        const [faceX1, faceY1] = prediction.start
+        const [faceX2, faceY2] = prediction.end
+        const faceCenterX = (faceX1 + faceX2) / 2
+        const faceCenterY = (faceY1 + faceY2) / 2
+
+        // Video center
+        const videoCenterX = videoRef.current.videoWidth / 2
+        const videoCenterY = videoRef.current.videoHeight / 2
+
+        // Calculate deviation from center
+        const horizontalDeviation = Math.abs(faceCenterX - videoCenterX)
+        const verticalDeviation = Math.abs(faceCenterY - videoCenterY)
+
+        // If face is off-center, student is looking away
+        const DEVIATION_THRESHOLD = 150
+        const isAway = horizontalDeviation > DEVIATION_THRESHOLD || verticalDeviation > DEVIATION_THRESHOLD
+
+        return isAway
+    }
+
+    // Detect face in video stream
+    const detectFace = async () => {
+        if (!videoRef.current || !faceDetectorRef.current) return
+
+        try {
+            const predictions = await faceDetectorRef.current.estimateFaces(
+                videoRef.current,
+                false  // returnTensors = false
+            )
+
+            console.log(`👁️ Face detection result: ${predictions.length} face(s)`)
+
+            // Check face detection status
+            if (predictions.length === 0) {
+                // Face not detected
+                if (proctoring.enableFaceDetection) {
+                    setFaceDetected(false)
+                    setFaceNotDetectedCount(prev => {
+                        // 📊 EMIT: Face not detected violation
+                        socketService.emitProctoringViolation(
+                            user.id,
+                            user.name || user.email,
+                            'face_not_detected',
+                            'warning',
+                            problem.mentorId
+                        )
+                        return prev + 1
+                    })
+                    console.log('⚠️ Face not detected')
+                }
+            } else if (predictions.length === 1) {
+                // Single face detected - GOOD
+                setFaceDetected(true)
+                setMultipleFaces(false)
+                console.log('✅ Single face detected')
+
+                // Check if student is looking away (only if trackFaceLookaway is enabled)
+                if (proctoring.trackFaceLookaway && isLookingAway(predictions[0])) {
+                    setFaceLookawayCount(prev => {
+                        // 📊 EMIT: Face lookaway violation
+                        socketService.emitProctoringViolation(
+                            user.id,
+                            user.name || user.email,
+                            'face_lookaway',
+                            'warning',
+                            problem.mentorId
+                        )
+                        return prev + 1
+                    })
+                    console.log('⚠️ Face is off-center (looking away)')
+                }
+            } else if (predictions.length >= 2) {
+                // Multiple faces detected - CHEATING (only if detectMultipleFaces is enabled)
+                if (proctoring.detectMultipleFaces) {
+                    setFaceDetected(true)
+                    setMultipleFaces(true)
+                    setMultipleFacesDetectionCount(prev => {
+                        // 📊 EMIT: Multiple faces detected (critical violation)
+                        socketService.emitProctoringViolation(
+                            user.id,
+                            user.name || user.email,
+                            'multiple_faces',
+                            'critical',
+                            problem.mentorId
+                        )
+                        return prev + 1
+                    })
+                    setWarningMessage(`👥 Multiple people detected! (${predictions.length} faces) - Automatic violation!`)
+                    setShowWarning(true)
+                    console.log('🚨 Multiple faces detected - CHEATING')
+                }
+            }
+        } catch (error) {
+            console.error('❌ Face detection inference failed:', error)
+            setFaceDetected(false)
+        }
+    }
+
+    // Start periodic face detection
+    const startFaceDetection = () => {
+        if (!faceDetectorRef.current) {
+            console.error('❌ Face detector not loaded yet')
+            return
+        }
+
+        // Run face detection every 1 second
+        faceCheckIntervalRef.current = setInterval(() => {
+            detectFace()
+        }, 1000)
+
+        console.log('👁️ Face detection started (1s intervals)')
+    }
+
+    // Stop face detection
+    const stopFaceDetection = () => {
+        if (faceCheckIntervalRef.current) {
+            clearInterval(faceCheckIntervalRef.current)
+            faceCheckIntervalRef.current = null
+            console.log('👁️ Face detection stopped')
+        }
+    }
+
     // Tab switch detection and fullscreen re-request
     useEffect(() => {
         if (!proctoring.enabled || !proctoring.trackTabSwitches) return
@@ -339,6 +522,15 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             if (document.hidden && !isDisqualified) {
                 setTabSwitches(prev => {
                     const newCount = prev + 1
+
+                    // 📊 EMIT: Window/Tab switch violation
+                    socketService.emitProctoringViolation(
+                        user.id,
+                        user.name || user.email,
+                        'window_switch',
+                        newCount >= maxTabSwitches ? 'critical' : 'warning',
+                        problem.mentorId
+                    )
 
                     if (newCount >= maxTabSwitches) {
                         setWarningMessage(`🚫 Maximum tab switches reached (${newCount}/${maxTabSwitches}). This will be reported.`)
@@ -373,7 +565,17 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         const handleCopyPaste = (e) => {
             if (e.type === 'paste' || (e.ctrlKey && (e.key === 'v' || e.key === 'c'))) {
                 e.preventDefault()
-                setCopyPasteAttempts(prev => prev + 1)
+                setCopyPasteAttempts(prev => {
+                    // 📊 EMIT: Copy/Paste attempt violation
+                    socketService.emitProctoringViolation(
+                        user.id,
+                        user.name || user.email,
+                        'copy_attempt',
+                        'warning',
+                        problem.mentorId
+                    )
+                    return prev + 1
+                })
                 setWarningMessage('🚫 Copy/Paste is disabled for this problem!')
                 setShowWarning(true)
                 setTimeout(() => setShowWarning(false), 3000)
@@ -406,8 +608,30 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 sqlSchema: problem.sqlSchema  // Pass SQL schema for execution
             })
             setOutput(res.data.output || res.data.error || 'No output')
+            
+            // Emit test execution event to socket
+            if (res.data.error || res.data.output?.includes('FAILED') || res.data.output?.includes('Error')) {
+                // Test failed
+                socketService.emitTestFailed(
+                    user.id,
+                    user.name || user.email,
+                    problem.id,
+                    `Run Test - ${problem.title}`,
+                    problem.mentorId
+                )
+            }
         } catch (err) {
-            setOutput('Error running code: ' + (err.response?.data?.error || err.message))
+            const errorMsg = 'Error running code: ' + (err.response?.data?.error || err.message)
+            setOutput(errorMsg)
+            
+            // Emit test failed event
+            socketService.emitTestFailed(
+                user.id,
+                user.name || user.email,
+                problem.id,
+                `Run Error - ${problem.title}`,
+                problem.mentorId
+            )
         } finally {
             setIsRunning(false)
         }
@@ -438,6 +662,16 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
         setIsSubmitting(true)
         const timeSpent = Math.round((Date.now() - startTime) / 1000)
 
+        // 📊 EMIT: Submission started event
+        socketService.emitSubmissionStarted(
+            user.id,
+            user.name || user.email,
+            problem.id,
+            problem.title,
+            problem.mentorId,
+            proctoring.enabled || false
+        )
+
         try {
             const response = await axios.post(`${API_BASE}/submissions/proctored`, {
                 studentId: user.id,
@@ -449,9 +683,24 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 copyPasteAttempts,
                 cameraBlockedCount,
                 phoneDetectionCount,
+                // Face Detection Metrics (NEW - BlazeFace)
+                faceNotDetectedCount,
+                multipleFacesDetectionCount,
+                faceLookawayCount,
                 timeSpent,
                 proctored: proctoring.enabled
             })
+
+            // 📊 EMIT: Submission completed event
+            socketService.emitSubmissionCompleted(
+                user.id,
+                user.name || user.email,
+                problem.id,
+                problem.title,
+                problem.mentorId,
+                response.data?.status || 'success',
+                response.data?.score || 100
+            )
 
             // Stop all media (camera, microphone, recording)
             stopAllMedia()
@@ -461,6 +710,17 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             }
             onClose()
         } catch (err) {
+            // 📊 EMIT: Submission failed event
+            socketService.emitSubmissionCompleted(
+                user.id,
+                user.name || user.email,
+                problem.id,
+                problem.title,
+                problem.mentorId,
+                'error',
+                0
+            )
+            
             alert('Submission failed: ' + (err.response?.data?.error || err.message))
         } finally {
             setIsSubmitting(false)
@@ -495,6 +755,9 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                             {copyPasteAttempts > 0 && <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 600 }}>📋 {copyPasteAttempts} copy attempts</span>}
                             {cameraBlockedCount > 0 && <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 600 }}>📹 {cameraBlockedCount} cam blocks</span>}
                             {phoneDetectionCount > 0 && <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 600 }}>📱 {phoneDetectionCount} phone detected</span>}
+                            {faceNotDetectedCount > 0 && <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 600 }}>👤 {faceNotDetectedCount} face missing</span>}
+                            {multipleFacesDetectionCount > 0 && <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 600 }}>👥 {multipleFacesDetectionCount} multi-face</span>}
+                            {faceLookawayCount > 0 && <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 600 }}>👀 {faceLookawayCount} lookaway</span>}
                         </div>
                     </div>
                 </div>

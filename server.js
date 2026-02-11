@@ -10,10 +10,33 @@ const multer = require('multer');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const http = require('http');
+const socketIO = require('socket.io');
 require('dotenv').config();
+
+// Performance optimization imports
+const { paginatedResponse } = require('./utils/pagination');
+const { cacheManager } = require('./utils/cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Create HTTP server and initialize Socket.io
+const httpServer = http.createServer(app);
+const io = socketIO(httpServer, {
+    cors: {
+        origin: process.env.CORS_ORIGIN || '*',
+        methods: ['GET', 'POST'],
+        credentials: true
+    }
+});
+
+// Store active connections by user type and ID
+const activeConnections = {
+    mentors: new Map(), // { mentorId: [socket1, socket2, ...] }
+    admins: new Map(),  // { adminId: [socket1, socket2, ...] }
+    students: new Map() // { studentId: [socket1, socket2, ...] }
+};
 
 // Setup multer for video uploads
 const uploadDir = path.join(__dirname, 'uploads', 'proctoring');
@@ -118,15 +141,11 @@ const pool = mysql.createPool({
     password: dbUrl.password,
     database: dbUrl.pathname.slice(1), // Remove leading slash
     port: Number(dbUrl.port) || 4000,
-    ssl: {
-        minVersion: 'TLSv1.2',
-        rejectUnauthorized: true
-    },
+    ssl: {},
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
     enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
     timezone: '+00:00'
 });
 
@@ -248,21 +267,25 @@ app.get('/api/users/:id', async (req, res) => {
 app.get('/api/users', async (req, res) => {
     try {
         const { role } = req.query;
-        let query = 'SELECT * FROM users';
+        let query = `
+            SELECT u.*, GROUP_CONCAT(msa.student_id) as allocated_students
+            FROM users u
+            LEFT JOIN mentor_student_allocations msa ON u.id = msa.mentor_id
+        `;
         const params = [];
         if (role) {
-            query += ' WHERE role = ?';
+            query += ' WHERE u.role = ?';
             params.push(role);
         }
+        query += ' GROUP BY u.id';
 
         const [users] = await pool.query(query, params);
 
-        const enrichedUsers = await Promise.all(users.map(async u => {
+        const enrichedUsers = users.map(u => {
             const { password: _, ...userWithoutPassword } = u;
             let extras = {};
-            if (u.role === 'mentor') {
-                const [students] = await pool.query('SELECT student_id FROM mentor_student_allocations WHERE mentor_id = ?', [u.id]);
-                extras.allocatedStudents = students.map(s => s.student_id);
+            if (u.role === 'mentor' && u.allocated_students) {
+                extras.allocatedStudents = u.allocated_students.split(',').filter(s => s);
             }
             return {
                 ...userWithoutPassword,
@@ -270,7 +293,7 @@ app.get('/api/users', async (req, res) => {
                 createdAt: u.created_at,
                 ...extras
             };
-        }));
+        });
 
         res.json(enrichedUsers);
     } catch (error) {
@@ -300,32 +323,56 @@ app.get('/api/mentors/:mentorId/students', async (req, res) => {
 // Get all tasks
 app.get('/api/tasks', async (req, res) => {
     try {
-        const { mentorId, status } = req.query;
-        let query = 'SELECT * FROM tasks WHERE 1=1';
+        const { mentorId, status, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, parseInt(page));
+        const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+        const offset = (pageNum - 1) * pageSize;
+
+        let query = `
+            SELECT t.*,
+                   GROUP_CONCAT(tc.student_id) as completed_by_students,
+                   COUNT(tc.student_id) as completion_count
+            FROM tasks t
+            LEFT JOIN task_completions tc ON t.id = tc.task_id
+            WHERE 1=1
+        `;
+        let countQuery = 'SELECT COUNT(DISTINCT t.id) as total FROM tasks t WHERE 1=1';
         const params = [];
 
         if (mentorId) {
-            query += ' AND mentor_id = ?';
+            query += ' AND t.mentor_id = ?';
+            countQuery += ' AND t.mentor_id = ?';
             params.push(mentorId);
         }
         if (status) {
-            query += ' AND status = ?';
+            query += ' AND t.status = ?';
+            countQuery += ' AND t.status = ?';
             params.push(status);
         }
 
-        const [tasks] = await pool.query(query, params);
+        query += ' GROUP BY t.id ORDER BY t.created_at DESC LIMIT ? OFFSET ?';
 
-        const enrichedTasks = await Promise.all(tasks.map(async t => {
-            const [completions] = await pool.query('SELECT student_id FROM task_completions WHERE task_id = ?', [t.id]);
-            return {
-                ...t,
-                mentorId: t.mentor_id,
-                createdAt: t.created_at,
-                completedBy: completions.map(c => c.student_id)
-            };
+        const [[{ total }]] = await pool.query(countQuery, params);
+        const [tasks] = await pool.query(query, [...params, pageSize, offset]);
+
+        const enrichedTasks = tasks.map(t => ({
+            ...t,
+            mentorId: t.mentor_id,
+            createdAt: t.created_at,
+            completedBy: t.completed_by_students 
+                ? t.completed_by_students.split(',').filter(s => s)
+                : [],
+            completionCount: t.completion_count || 0
         }));
 
-        res.json(enrichedTasks);
+        const response = await paginatedResponse({
+            data: enrichedTasks,
+            total,
+            page: pageNum,
+            limit: pageSize
+        });
+
+        res.json(response);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -418,43 +465,70 @@ app.delete('/api/tasks/:id', async (req, res) => {
 // Get all problems
 app.get('/api/problems', async (req, res) => {
     try {
-        const { mentorId, status } = req.query;
-        let query = 'SELECT * FROM problems WHERE 1=1';
-        const params = [];
+        const { mentorId, status, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, parseInt(page));
+        const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+        const offset = (pageNum - 1) * pageSize;
 
+        let query = `
+            SELECT p.*, 
+                   GROUP_CONCAT(pc.student_id) as completed_by_students,
+                   COUNT(pc.student_id) as completion_count
+            FROM problems p
+            LEFT JOIN problem_completions pc ON p.id = pc.problem_id
+            WHERE 1=1
+        `;
+        let countQuery = 'SELECT COUNT(DISTINCT p.id) as total FROM problems p WHERE 1=1';
+        const params = [];
+        
         if (mentorId) {
-            query += ' AND mentor_id = ?';
+            query += ' AND p.mentor_id = ?';
+            countQuery += ' AND p.mentor_id = ?';
             params.push(mentorId);
         }
         if (status) {
-            query += ' AND status = ?';
+            query += ' AND p.status = ?';
+            countQuery += ' AND p.status = ?';
             params.push(status);
         }
+        
+        query += ' GROUP BY p.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
+        
+        const [[{ total }]] = await pool.query(countQuery, params);
+        const [problems] = await pool.query(query, [...params, pageSize, offset]);
 
-        const [problems] = await pool.query(query, params);
-
-        const enrichedProblems = await Promise.all(problems.map(async p => {
-            const [completions] = await pool.query('SELECT student_id FROM problem_completions WHERE problem_id = ?', [p.id]);
-            return {
-                ...p,
-                mentorId: p.mentor_id,
-                sampleInput: p.sample_input,
-                expectedOutput: p.expected_output,
-                sqlSchema: p.sql_schema,
-                expectedQueryResult: p.expected_query_result,
-                createdAt: p.created_at,
-                completedBy: completions.map(c => c.student_id),
-                proctoring: {
-                    enabled: p.enable_proctoring === 'true',
-                    videoAudio: p.enable_video_audio === 'true',
-                    disableCopyPaste: p.disable_copy_paste === 'true',
-                    trackTabSwitches: p.track_tab_switches === 'true',
-                    maxTabSwitches: p.max_tab_switches || 3
-                }
-            };
+        const enrichedProblems = problems.map(p => ({
+            ...p,
+            mentorId: p.mentor_id,
+            sampleInput: p.sample_input,
+            expectedOutput: p.expected_output,
+            sqlSchema: p.sql_schema,
+            expectedQueryResult: p.expected_query_result,
+            createdAt: p.created_at,
+            completedBy: p.completed_by_students 
+                ? p.completed_by_students.split(',').filter(s => s) 
+                : [],
+            completionCount: p.completion_count || 0,
+            proctoring: {
+                enabled: p.enable_proctoring === 'true',
+                videoAudio: p.enable_video_audio === 'true',
+                disableCopyPaste: p.disable_copy_paste === 'true',
+                trackTabSwitches: p.track_tab_switches === 'true',
+                maxTabSwitches: p.max_tab_switches || 3,
+                enableFaceDetection: p.enable_face_detection === 'true',
+                detectMultipleFaces: p.detect_multiple_faces === 'true',
+                trackFaceLookaway: p.track_face_lookaway === 'true'
+            }
         }));
 
-        res.json(enrichedProblems);
+        const response = await paginatedResponse({
+            data: enrichedProblems,
+            total,
+            page: pageNum,
+            limit: pageSize
+        });
+        
+        res.json(response);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -490,7 +564,10 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
                     videoAudio: p.enable_video_audio === 'true',
                     disableCopyPaste: p.disable_copy_paste === 'true',
                     trackTabSwitches: p.track_tab_switches === 'true',
-                    maxTabSwitches: p.max_tab_switches || 3
+                    maxTabSwitches: p.max_tab_switches || 3,
+                    enableFaceDetection: p.enable_face_detection === 'true',
+                    detectMultipleFaces: p.detect_multiple_faces === 'true',
+                    trackFaceLookaway: p.track_face_lookaway === 'true'
                 }
             };
         }));
@@ -512,13 +589,15 @@ app.post('/api/problems', async (req, res) => {
             sqlSchema, expectedQueryResult,
             // Proctoring settings
             enableProctoring, enableVideoAudio, disableCopyPaste,
-            trackTabSwitches, maxTabSwitches
+            trackTabSwitches, maxTabSwitches,
+            // Face detection settings
+            enableFaceDetection, detectMultipleFaces, trackFaceLookaway
         } = req.body;
         const createdAt = new Date();
 
         await pool.query(
-            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3]
+            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches, enable_face_detection, detect_multiple_faces, track_face_lookaway) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3, enableFaceDetection ? 'true' : 'false', detectMultipleFaces ? 'true' : 'false', trackFaceLookaway ? 'true' : 'false']
         );
 
         res.json({
@@ -560,7 +639,10 @@ app.delete('/api/problems/:id', async (req, res) => {
 // Get all submissions
 app.get('/api/submissions', async (req, res) => {
     try {
-        const { studentId, mentorId } = req.query;
+        const { studentId, mentorId, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, parseInt(page));
+        const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+        const offset = (pageNum - 1) * pageSize;
 
         let query = `
             SELECT s.*, u.name as studentName, u.mentor_id,
@@ -571,23 +653,27 @@ app.get('/api/submissions', async (req, res) => {
             LEFT JOIN tasks t ON s.task_id = t.id
             WHERE 1=1
         `;
+        let countQuery = 'SELECT COUNT(*) as total FROM submissions s JOIN users u ON s.student_id = u.id WHERE 1=1';
         const params = [];
 
         // Filter by studentId for student portal
         if (studentId) {
             query += ' AND s.student_id = ?';
+            countQuery += ' AND s.student_id = ?';
             params.push(studentId);
         }
 
         // Filter by mentorId for mentor portal (students assigned to this mentor)
         if (mentorId) {
             query += ' AND u.mentor_id = ?';
+            countQuery += ' AND u.mentor_id = ?';
             params.push(mentorId);
         }
 
-        query += ' ORDER BY s.submitted_at DESC';
+        query += ' ORDER BY s.submitted_at DESC LIMIT ? OFFSET ?';
 
-        const [rows] = await pool.query(query, params);
+        const [[{ total }]] = await pool.query(countQuery, params);
+        const [rows] = await pool.query(query, [...params, pageSize, offset]);
 
         const fixedRows = rows.map(s => ({
             id: s.id,
@@ -627,7 +713,14 @@ app.get('/api/submissions', async (req, res) => {
             submittedAt: s.submitted_at
         }));
 
-        res.json(fixedRows);
+        const response = await paginatedResponse({
+            data: fixedRows,
+            total,
+            page: pageNum,
+            limit: pageSize
+        });
+
+        res.json(response);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1019,6 +1112,21 @@ Scoring Guide:
             }
         }
 
+        // Invalidate caches when submission is created
+        cacheManager.delete('leaderboard:global:all');
+        cacheManager.delete(`student:${studentId}:analytics`);
+        cacheManager.delete('admin:analytics:global');
+        // Also invalidate mentor's analytics cache
+        try {
+            const [allocation] = await pool.query(
+                'SELECT mentor_id FROM mentor_student_allocations WHERE student_id = ? LIMIT 1',
+                [studentId]
+            );
+            if (allocation.length > 0) {
+                cacheManager.delete(`mentor:${allocation[0].mentor_id}:analytics`);
+            }
+        } catch (e) { /* Ignore cache invalidation errors */ }
+
         // Return result to student
         res.json({
             id: submissionId,
@@ -1048,7 +1156,7 @@ Scoring Guide:
 // Proctored submission with video upload
 app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (req, res) => {
     try {
-        const { studentId, problemId, language, code, submissionType, tabSwitches, copyPasteAttempts, cameraBlockedCount, phoneDetectionCount, timeSpent } = req.body;
+        const { studentId, problemId, language, code, submissionType, tabSwitches, copyPasteAttempts, cameraBlockedCount, phoneDetectionCount, timeSpent, faceNotDetectedCount, multipleFacesDetectionCount, faceLookawayCount } = req.body;
         const submissionId = uuidv4();
         const submittedAt = new Date();
 
@@ -1306,6 +1414,9 @@ Respond in this exact JSON format:
         const copyPasteCount = parseInt(copyPasteAttempts) || 0;
         const cameraBlockCount = parseInt(cameraBlockedCount) || 0;
         const phoneCount = parseInt(phoneDetectionCount) || 0;
+        const faceNotDetectedCnt = parseInt(faceNotDetectedCount) || 0;
+        const multipleFacesCnt = parseInt(multipleFacesDetectionCount) || 0;
+        const faceLookawayCnt = parseInt(faceLookawayCount) || 0;
 
         // Apply penalties ONLY if not SQL
         if (language !== 'SQL') {
@@ -1342,6 +1453,31 @@ Respond in this exact JSON format:
                 console.log(`📱 Phone detected ${phoneCount} times, penalty: -${phonePenalty} points`);
                 evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⛔ Severe Penalty: -${phonePenalty} points for phone detection.`;
             }
+
+            // Penalty for face not detected (each time = -5 points, max -25) - NEW (BlazeFace)
+            if (faceNotDetectedCnt > 0) {
+                const faceNotDetectedPenalty = Math.min(faceNotDetectedCnt * 5, 25);
+                finalScore = Math.max(0, finalScore - faceNotDetectedPenalty);
+                console.log(`👤 Face not detected ${faceNotDetectedCnt} times, penalty: -${faceNotDetectedPenalty} points`);
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Penalty: -${faceNotDetectedPenalty} points for face not detected (${faceNotDetectedCnt} times).`;
+            }
+
+            // Penalty for multiple faces detected (instant integrity violation) - NEW (BlazeFace)
+            if (multipleFacesCnt > 0) {
+                const multipleFacesPenalty = 20; // Fixed penalty of 20 points per detection
+                finalScore = Math.max(0, finalScore - (multipleFacesPenalty * multipleFacesCnt));
+                integrityViolation = true; // Multiple faces is always a violation
+                console.log(`👥 Multiple faces detected ${multipleFacesCnt} times, penalty: -${multipleFacesPenalty * multipleFacesCnt} points`);
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⛔ Severe Penalty: -${multipleFacesPenalty * multipleFacesCnt} points for multiple people detected.`;
+            }
+
+            // Penalty for face lookaway (each time = -3 points, max -15) - NEW (BlazeFace)
+            if (faceLookawayCnt > 0) {
+                const faceLookawayPenalty = Math.min(faceLookawayCnt * 3, 15);
+                finalScore = Math.max(0, finalScore - faceLookawayPenalty);
+                console.log(`👀 Face lookaway ${faceLookawayCnt} times, penalty: -${faceLookawayPenalty} points`);
+                evaluationResult.feedback = (evaluationResult.feedback || '') + `\n\n⚠️ Penalty: -${faceLookawayPenalty} points for looking away from screen (${faceLookawayCnt} times).`;
+            }
         }
 
         // Determine final status
@@ -1357,14 +1493,16 @@ Respond in this exact JSON format:
                 score, status, feedback, ai_explanation,
                 analysis_correctness, analysis_efficiency, analysis_code_style, analysis_best_practices,
                 tab_switches, copy_paste_attempts, camera_blocked_count, phone_detection_count,
+                face_not_detected_count, multiple_faces_count, face_lookaway_count,
                 integrity_violation, proctoring_video, submitted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 submissionId, studentId, problemId, code, submissionType || 'editor', language,
                 finalScore, finalStatus, evaluationResult.feedback, evaluationResult.aiExplanation || '',
                 evaluationResult.analysis?.correctness, evaluationResult.analysis?.efficiency,
                 evaluationResult.analysis?.codeStyle, evaluationResult.analysis?.bestPractices,
                 tabSwitchCount, copyPasteCount, cameraBlockCount, phoneCount,
+                faceNotDetectedCnt, multipleFacesCnt, faceLookawayCnt,
                 integrityViolation ? 'true' : 'false', videoFilename, submittedAt
             ]
         );
@@ -1379,6 +1517,21 @@ Respond in this exact JSON format:
             } catch (e) { /* Ignore if already completed */ }
         }
 
+        // Invalidate caches when proctored submission is created
+        cacheManager.delete('leaderboard:global:all');
+        cacheManager.delete(`student:${studentId}:analytics`);
+        cacheManager.delete('admin:analytics:global');
+        // Also invalidate mentor's analytics cache
+        try {
+            const [allocation] = await pool.query(
+                'SELECT mentor_id FROM mentor_student_allocations WHERE student_id = ? LIMIT 1',
+                [studentId]
+            );
+            if (allocation.length > 0) {
+                cacheManager.delete(`mentor:${allocation[0].mentor_id}:analytics`);
+            }
+        } catch (e) { /* Ignore cache invalidation errors */ }
+
         res.json({
             id: submissionId,
             score: finalScore,
@@ -1390,6 +1543,9 @@ Respond in this exact JSON format:
                 copyPasteAttempts: copyPasteCount,
                 cameraBlockedCount: cameraBlockCount,
                 phoneDetectionCount: phoneCount,
+                faceNotDetectedCount: faceNotDetectedCnt,
+                multipleFacesDetectionCount: multipleFacesCnt,
+                faceLookawayCount: faceLookawayCnt,
                 violation: integrityViolation,
                 videoRecorded: !!videoFilename
             },
@@ -2858,6 +3014,13 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
     try {
         const studentId = req.params.studentId;
 
+        // Check cache first (30 minute expiry)
+        const cacheKey = `student:${studentId}:analytics`;
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
+
         // Get student's mentor from allocation table
         const [allocationRows] = await pool.query(`
             SELECT m.id as mentor_id, m.name as mentor_name, m.email as mentor_email
@@ -2982,7 +3145,7 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             avgScore: Math.round(r.avgScore) || 0
         }));
 
-        res.json({
+        const analyticsData = {
             mentorInfo,
             avgProblemScore: Math.round(avgProblemScore),
             avgTaskScore: Math.round(avgTaskScore),
@@ -2996,7 +3159,11 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             submissionTrends,
             recentSubmissions,
             leaderboard
-        });
+        };
+
+        // Cache for 30 minutes
+        cacheManager.set(cacheKey, analyticsData, 1800000);
+        res.json(analyticsData);
 
     } catch (error) {
         console.error('Student Analytics Error:', error);
@@ -3008,6 +3175,13 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
 app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
     try {
         const mentorId = req.params.mentorId;
+
+        // Check cache first (30 minute expiry)
+        const cacheKey = `mentor:${mentorId}:analytics`;
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
 
         // Get allocated student IDs for this mentor with their details
         const [allocations] = await pool.query(`
@@ -3124,7 +3298,7 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
             score: Math.round(p.score)
         }));
 
-        res.json({
+        const analyticsData = {
             totalStudents,
             totalSubmissions,
             taskSubmissions,
@@ -3138,7 +3312,11 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
             recentActivity,
             menteePerformance: studentPerformance,
             allocatedStudents
-        });
+        };
+
+        // Cache for 30 minutes
+        cacheManager.set(cacheKey, analyticsData, 1800000);
+        res.json(analyticsData);
 
     } catch (error) {
         console.error('Mentor Analytics Error:', error);
@@ -3149,6 +3327,12 @@ app.get('/api/analytics/mentor/:mentorId', async (req, res) => {
 // Admin Analytics Dashboard
 app.get('/api/analytics/admin', async (req, res) => {
     try {
+        // Check cache first (30 minute expiry)
+        const cacheKey = 'admin:analytics:global';
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
         const [[{ studentCount }]] = await pool.query('SELECT COUNT(*) as studentCount FROM users WHERE role = "student"');
         const [[{ codeSubCount }]] = await pool.query('SELECT COUNT(*) as codeSubCount FROM submissions');
         const [[{ aptSubCount }]] = await pool.query('SELECT COUNT(*) as aptSubCount FROM aptitude_submissions');
@@ -3209,7 +3393,7 @@ app.get('/api/analytics/admin', async (req, res) => {
             score: Math.round(p.score)
         }));
 
-        res.json({
+        const analyticsData = {
             totalStudents: studentCount,
             totalSubmissions,
             successRate,
@@ -3218,7 +3402,11 @@ app.get('/api/analytics/admin', async (req, res) => {
             languageStats,
             recentSubmissions,
             studentPerformance
-        });
+        };
+
+        // Cache for 30 minutes
+        cacheManager.set(cacheKey, analyticsData, 1800000);
+        res.json(analyticsData);
 
     } catch (error) {
         console.error('Analytics Error:', error);
@@ -3229,6 +3417,13 @@ app.get('/api/analytics/admin', async (req, res) => {
 // Student Leaderboard
 app.get('/api/leaderboard', async (req, res) => {
     try {
+        // Check cache first (1 hour expiry)
+        const cacheKey = 'leaderboard:global:all';
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
+
         const [rows] = await pool.query(`
             SELECT 
                 studentId, 
@@ -3297,6 +3492,8 @@ app.get('/api/leaderboard', async (req, res) => {
             }
         }));
 
+        // Cache for 1 hour
+        cacheManager.set(cacheKey, leaderboard, 3600000);
         res.json(leaderboard);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -3306,6 +3503,13 @@ app.get('/api/leaderboard', async (req, res) => {
 // Mentor Leaderboard
 app.get('/api/mentor-leaderboard', async (req, res) => {
     try {
+        // Check cache first (1 hour expiry)
+        const cacheKey = 'leaderboard:mentor:all';
+        const cachedData = cacheManager.get(cacheKey);
+        if (cachedData) {
+            return res.json(cachedData);
+        }
+
         const [rows] = await pool.query(`
            SELECT m.id as mentorId, m.name,
            COUNT(DISTINCT s.id) as studentCount,
@@ -3329,6 +3533,8 @@ app.get('/api/mentor-leaderboard', async (req, res) => {
             avgStudentScore: Math.round(r.avgStudentScore || 0)
         }));
 
+        // Cache for 1 hour
+        cacheManager.set(cacheKey, leaderboard, 3600000);
         res.json(leaderboard);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -4267,6 +4473,1726 @@ Guidelines:
     }
 });
 
+// ==================== ADMIN CACHE MANAGEMENT ====================
+
+// Admin cache stats endpoint - view what's cached
+app.get('/api/admin/cache-stats', async (req, res) => {
+    try {
+        // Get admin authentication (optional - add actual auth check if needed)
+        const stats = {
+            totalCachedItems: Object.keys(cacheManager.data).length,
+            cacheDetails: {},
+            cacheHitRate: cacheManager.getStats && cacheManager.getStats() || { hits: 0, misses: 0 }
+        };
+
+        // Show details of cached items
+        for (const key in cacheManager.data) {
+            const item = cacheManager.data[key];
+            stats.cacheDetails[key] = {
+                size: JSON.stringify(item.value).length,
+                expiresAt: new Date(item.expiresAt).toISOString(),
+                age: Math.floor((Date.now() - item.createdAt) / 1000) + 's'
+            };
+        }
+
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin cache clear endpoint - manually clear caches
+app.post('/api/admin/cache-clear', async (req, res) => {
+    try {
+        const { pattern } = req.body;
+
+        if (pattern) {
+            // Clear specific cache pattern (e.g., 'student:*:analytics')
+            cacheManager.deletePattern(pattern);
+            res.json({ message: `Cache cleared for pattern: ${pattern}` });
+        } else {
+            // Clear all caches
+            cacheManager.clear();
+            res.json({ message: 'All caches cleared' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== ADMIN OPERATIONS (Features 66-72) ====================
+
+// ===== AUDIT LOGGING MIDDLEWARE =====
+async function logAudit(userId, userName, userRole, action, resourceType, resourceId, details, ipAddress) {
+    try {
+        await pool.query(
+            `INSERT INTO audit_logs (id, user_id, user_name, user_role, action, resource_type, resource_id, details, ip_address)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), userId, userName, userRole, action, resourceType, resourceId, JSON.stringify(details), ipAddress]
+        );
+    } catch (e) {
+        console.error('Audit log failed:', e.message);
+    }
+}
+
+// ===== 66. BULK OPERATIONS =====
+
+// Bulk reassign students to a different mentor
+app.post('/api/admin/bulk/reassign-students', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { studentIds, newMentorId, adminId, adminName } = req.body;
+        if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0 || !newMentorId) {
+            return res.status(400).json({ error: 'studentIds array and newMentorId are required' });
+        }
+
+        await connection.beginTransaction();
+
+        // Get old mentor assignments for audit
+        const placeholders = studentIds.map(() => '?').join(',');
+        const [oldAssignments] = await connection.query(
+            `SELECT student_id, mentor_id FROM mentor_student_allocations WHERE student_id IN (${placeholders})`,
+            studentIds
+        );
+
+        // Delete old assignments
+        await connection.query(
+            `DELETE FROM mentor_student_allocations WHERE student_id IN (${placeholders})`,
+            studentIds
+        );
+
+        // Also update the mentor_id field in users table
+        await connection.query(
+            `UPDATE users SET mentor_id = ? WHERE id IN (${placeholders})`,
+            [newMentorId, ...studentIds]
+        );
+
+        // Insert new assignments
+        for (const studentId of studentIds) {
+            await connection.query(
+                'INSERT INTO mentor_student_allocations (mentor_id, student_id) VALUES (?, ?)',
+                [newMentorId, studentId]
+            );
+        }
+
+        await connection.commit();
+
+        // Audit log
+        await logAudit(adminId, adminName, 'admin', 'bulk_reassign_students', 'allocation', newMentorId, {
+            studentIds,
+            newMentorId,
+            previousAssignments: oldAssignments,
+            count: studentIds.length
+        }, req.ip);
+
+        // Clear relevant caches
+        cacheManager.deletePattern && cacheManager.deletePattern('admin:');
+
+        res.json({ success: true, message: `${studentIds.length} students reassigned successfully`, count: studentIds.length });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Bulk regrade submissions
+app.post('/api/admin/bulk/regrade-submissions', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { submissionIds, action, adminId, adminName } = req.body;
+        // action: 'regrade_all', 'mark_passed', 'mark_failed', 'reset_scores'
+        if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
+            return res.status(400).json({ error: 'submissionIds array is required' });
+        }
+
+        await connection.beginTransaction();
+
+        const placeholders = submissionIds.map(() => '?').join(',');
+        let updateQuery = '';
+        let updateDesc = '';
+
+        switch (action) {
+            case 'mark_passed':
+                updateQuery = `UPDATE submissions SET status = 'passed', score = GREATEST(score, 60) WHERE id IN (${placeholders})`;
+                updateDesc = 'Marked as passed';
+                break;
+            case 'mark_failed':
+                updateQuery = `UPDATE submissions SET status = 'failed', score = 0 WHERE id IN (${placeholders})`;
+                updateDesc = 'Marked as failed';
+                break;
+            case 'reset_scores':
+                updateQuery = `UPDATE submissions SET score = 0, status = 'pending' WHERE id IN (${placeholders})`;
+                updateDesc = 'Scores reset';
+                break;
+            default:
+                await connection.rollback();
+                return res.status(400).json({ error: 'Invalid action. Use: mark_passed, mark_failed, reset_scores' });
+        }
+
+        const [result] = await connection.query(updateQuery, submissionIds);
+        await connection.commit();
+
+        await logAudit(adminId, adminName, 'admin', 'bulk_regrade', 'submission', null, {
+            submissionIds,
+            action,
+            affectedRows: result.affectedRows,
+            description: updateDesc
+        }, req.ip);
+
+        cacheManager.deletePattern && cacheManager.deletePattern('admin:');
+
+        res.json({ success: true, message: `${result.affectedRows} submissions updated: ${updateDesc}`, affectedRows: result.affectedRows });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Bulk delete submissions
+app.post('/api/admin/bulk/delete-submissions', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { submissionIds, adminId, adminName } = req.body;
+        if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
+            return res.status(400).json({ error: 'submissionIds array required' });
+        }
+
+        await connection.beginTransaction();
+        const placeholders = submissionIds.map(() => '?').join(',');
+        const [result] = await connection.query(`DELETE FROM submissions WHERE id IN (${placeholders})`, submissionIds);
+        await connection.commit();
+
+        await logAudit(adminId, adminName, 'admin', 'bulk_delete_submissions', 'submission', null, {
+            submissionIds, deletedCount: result.affectedRows
+        }, req.ip);
+
+        cacheManager.deletePattern && cacheManager.deletePattern('admin:');
+        res.json({ success: true, message: `${result.affectedRows} submissions deleted`, deletedCount: result.affectedRows });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// ===== 67. SYSTEM HEALTH DASHBOARD =====
+
+app.get('/api/admin/system-health', async (req, res) => {
+    try {
+        const startTime = Date.now();
+
+        // Database health
+        let dbStatus = 'healthy';
+        let dbLatency = 0;
+        try {
+            const dbStart = Date.now();
+            await pool.query('SELECT 1');
+            dbLatency = Date.now() - dbStart;
+            if (dbLatency > 1000) dbStatus = 'degraded';
+        } catch (e) {
+            dbStatus = 'down';
+            dbLatency = -1;
+        }
+
+        // DB stats
+        const [[{ tableCount }]] = await pool.query(
+            `SELECT COUNT(*) as tableCount FROM information_schema.tables WHERE table_schema = DATABASE()`
+        );
+
+        const [tableSizes] = await pool.query(`
+            SELECT table_name as tableName, 
+                   table_rows as rowCount,
+                   ROUND((data_length + index_length) / 1024 / 1024, 2) as sizeMB
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE()
+            ORDER BY (data_length + index_length) DESC
+            LIMIT 15
+        `);
+
+        const [[{ totalSizeMB }]] = await pool.query(`
+            SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as totalSizeMB
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE()
+        `);
+
+        // Connection pool info
+        const poolInfo = {
+            connectionLimit: pool.pool ? pool.pool.config.connectionLimit : 10,
+            // Approximation since mysql2 doesn't expose all pool stats
+            status: 'active'
+        };
+
+        // Memory usage
+        const memUsage = process.memoryUsage();
+        const memory = {
+            rss: Math.round(memUsage.rss / 1024 / 1024),
+            heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+            heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+            external: Math.round(memUsage.external / 1024 / 1024),
+            heapPercent: Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100)
+        };
+
+        // Uptime
+        const uptimeSeconds = process.uptime();
+        const uptime = {
+            seconds: Math.floor(uptimeSeconds),
+            formatted: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m ${Math.floor(uptimeSeconds % 60)}s`
+        };
+
+        // Disk usage for uploads folder
+        let uploadsSize = 0;
+        const uploadsPath = path.join(__dirname, 'uploads');
+        if (fs.existsSync(uploadsPath)) {
+            const getSize = (dir) => {
+                let size = 0;
+                try {
+                    const files = fs.readdirSync(dir);
+                    for (const file of files) {
+                        const filePath = path.join(dir, file);
+                        const stat = fs.statSync(filePath);
+                        if (stat.isDirectory()) {
+                            size += getSize(filePath);
+                        } else {
+                            size += stat.size;
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+                return size;
+            };
+            uploadsSize = Math.round(getSize(uploadsPath) / 1024 / 1024 * 100) / 100;
+        }
+
+        // Recent error count from audit logs (last 24h)
+        let recentErrors = 0;
+        try {
+            const [[{ errorCount }]] = await pool.query(
+                `SELECT COUNT(*) as errorCount FROM audit_logs WHERE action LIKE '%error%' AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+            );
+            recentErrors = errorCount;
+        } catch (e) { /* table may not exist yet */ }
+
+        // Active WebSocket connections
+        const wsConnections = {
+            mentors: activeConnections.mentors.size,
+            admins: activeConnections.admins.size,
+            students: activeConnections.students.size,
+            total: activeConnections.mentors.size + activeConnections.admins.size + activeConnections.students.size
+        };
+
+        // Cache stats
+        const cacheStats = {
+            totalItems: Object.keys(cacheManager.data || {}).length,
+            hitRate: cacheManager.getStats ? cacheManager.getStats() : null
+        };
+
+        const totalLatency = Date.now() - startTime;
+
+        res.json({
+            status: dbStatus === 'healthy' && memory.heapPercent < 90 ? 'healthy' : 'warning',
+            timestamp: new Date().toISOString(),
+            apiLatency: totalLatency,
+            database: {
+                status: dbStatus,
+                latency: dbLatency,
+                tableCount,
+                totalSizeMB: totalSizeMB || 0,
+                tables: tableSizes,
+                pool: poolInfo
+            },
+            memory,
+            uptime,
+            storage: {
+                uploadsSizeMB: uploadsSize
+            },
+            websockets: wsConnections,
+            cache: cacheStats,
+            recentErrors,
+            nodeVersion: process.version,
+            platform: process.platform
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message, status: 'error' });
+    }
+});
+
+// ===== 68. COMPREHENSIVE AUDIT LOGGING =====
+
+// Get audit logs with filters
+app.get('/api/admin/audit-logs', async (req, res) => {
+    try {
+        const { userId, action, resourceType, startDate, endDate, page = 1, limit = 50 } = req.query;
+        const offset = (page - 1) * limit;
+        let where = [];
+        let params = [];
+
+        if (userId) { where.push('user_id = ?'); params.push(userId); }
+        if (action) { where.push('action LIKE ?'); params.push(`%${action}%`); }
+        if (resourceType) { where.push('resource_type = ?'); params.push(resourceType); }
+        if (startDate) { where.push('timestamp >= ?'); params.push(startDate); }
+        if (endDate) { where.push('timestamp <= ?'); params.push(endDate); }
+
+        const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) as total FROM audit_logs ${whereClause}`, params);
+
+        const [logs] = await pool.query(
+            `SELECT * FROM audit_logs ${whereClause} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+            [...params, parseInt(limit), offset]
+        );
+
+        // Parse JSON details
+        const parsedLogs = logs.map(log => ({
+            ...log,
+            details: typeof log.details === 'string' ? JSON.parse(log.details) : log.details
+        }));
+
+        res.json({
+            logs: parsedLogs,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get audit log summary/stats
+app.get('/api/admin/audit-logs/stats', async (req, res) => {
+    try {
+        const [[{ totalLogs }]] = await pool.query('SELECT COUNT(*) as totalLogs FROM audit_logs');
+
+        const [actionBreakdown] = await pool.query(
+            `SELECT action, COUNT(*) as count FROM audit_logs GROUP BY action ORDER BY count DESC LIMIT 10`
+        );
+
+        const [userActivity] = await pool.query(
+            `SELECT user_name, user_role, COUNT(*) as actionCount FROM audit_logs 
+             WHERE user_name IS NOT NULL 
+             GROUP BY user_id, user_name, user_role ORDER BY actionCount DESC LIMIT 10`
+        );
+
+        const [recentActivity] = await pool.query(
+            `SELECT DATE(timestamp) as date, COUNT(*) as count FROM audit_logs 
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+             GROUP BY DATE(timestamp) ORDER BY date ASC`
+        );
+
+        res.json({
+            totalLogs,
+            actionBreakdown,
+            userActivity,
+            recentActivity: recentActivity.map(r => ({
+                date: new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                count: r.count
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== 69. PROBLEM SET TEMPLATES =====
+
+// List all templates
+app.get('/api/admin/templates', async (req, res) => {
+    try {
+        const [templates] = await pool.query(
+            `SELECT t.*, COUNT(ti.id) as problemCount 
+             FROM problem_set_templates t 
+             LEFT JOIN problem_set_template_items ti ON t.id = ti.template_id 
+             GROUP BY t.id 
+             ORDER BY t.created_at DESC`
+        );
+
+        for (const template of templates) {
+            template.tags = typeof template.tags === 'string' ? JSON.parse(template.tags) : template.tags;
+        }
+
+        res.json(templates);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single template with problems
+app.get('/api/admin/templates/:id', async (req, res) => {
+    try {
+        const [[template]] = await pool.query('SELECT * FROM problem_set_templates WHERE id = ?', [req.params.id]);
+        if (!template) return res.status(404).json({ error: 'Template not found' });
+
+        template.tags = typeof template.tags === 'string' ? JSON.parse(template.tags) : template.tags;
+
+        const [items] = await pool.query(
+            `SELECT ti.*, p.title, p.description, p.difficulty, p.language 
+             FROM problem_set_template_items ti 
+             JOIN problems p ON ti.problem_id = p.id 
+             WHERE ti.template_id = ? 
+             ORDER BY ti.sort_order`,
+            [req.params.id]
+        );
+
+        template.problems = items;
+        res.json(template);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create template
+app.post('/api/admin/templates', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { name, description, difficulty, tags, problemIds, createdBy, adminName } = req.body;
+        const id = uuidv4();
+
+        await connection.beginTransaction();
+
+        await connection.query(
+            `INSERT INTO problem_set_templates (id, name, description, difficulty, tags, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
+            [id, name, description, difficulty || 'Mixed', JSON.stringify(tags || []), createdBy]
+        );
+
+        if (problemIds && Array.isArray(problemIds)) {
+            for (let i = 0; i < problemIds.length; i++) {
+                await connection.query(
+                    'INSERT INTO problem_set_template_items (id, template_id, problem_id, sort_order) VALUES (?, ?, ?, ?)',
+                    [uuidv4(), id, problemIds[i], i]
+                );
+            }
+        }
+
+        await connection.commit();
+
+        await logAudit(createdBy, adminName, 'admin', 'create_template', 'template', id, {
+            name, difficulty, problemCount: problemIds?.length || 0
+        }, req.ip);
+
+        res.json({ success: true, id, message: 'Template created successfully' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Update template
+app.put('/api/admin/templates/:id', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { name, description, difficulty, tags, problemIds } = req.body;
+        await connection.beginTransaction();
+
+        await connection.query(
+            `UPDATE problem_set_templates SET name = ?, description = ?, difficulty = ?, tags = ? WHERE id = ?`,
+            [name, description, difficulty, JSON.stringify(tags || []), req.params.id]
+        );
+
+        if (problemIds && Array.isArray(problemIds)) {
+            await connection.query('DELETE FROM problem_set_template_items WHERE template_id = ?', [req.params.id]);
+            for (let i = 0; i < problemIds.length; i++) {
+                await connection.query(
+                    'INSERT INTO problem_set_template_items (id, template_id, problem_id, sort_order) VALUES (?, ?, ?, ?)',
+                    [uuidv4(), req.params.id, problemIds[i], i]
+                );
+            }
+        }
+
+        await connection.commit();
+        res.json({ success: true, message: 'Template updated' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Delete template
+app.delete('/api/admin/templates/:id', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.query('DELETE FROM problem_set_template_items WHERE template_id = ?', [req.params.id]);
+        await connection.query('DELETE FROM problem_set_templates WHERE id = ?', [req.params.id]);
+        await connection.commit();
+
+        await logAudit(req.query.adminId, req.query.adminName, 'admin', 'delete_template', 'template', req.params.id, {}, req.ip);
+        res.json({ success: true, message: 'Template deleted' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Apply template - create problems from a template
+app.post('/api/admin/templates/:id/apply', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { mentorId, adminId, adminName } = req.body;
+        const [items] = await connection.query(
+            `SELECT p.* FROM problem_set_template_items ti 
+             JOIN problems p ON ti.problem_id = p.id 
+             WHERE ti.template_id = ? ORDER BY ti.sort_order`,
+            [req.params.id]
+        );
+
+        if (items.length === 0) {
+            return res.status(400).json({ error: 'Template has no problems' });
+        }
+
+        await connection.beginTransaction();
+        const newProblemIds = [];
+        for (const problem of items) {
+            const newId = uuidv4();
+            await connection.query(
+                `INSERT INTO problems (id, title, description, difficulty, language, mentor_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                [newId, problem.title + ' (from template)', problem.description, problem.difficulty, problem.language, mentorId || problem.mentor_id]
+            );
+            newProblemIds.push(newId);
+        }
+        await connection.commit();
+
+        await logAudit(adminId, adminName, 'admin', 'apply_template', 'template', req.params.id, {
+            problemsCreated: newProblemIds.length, mentorId
+        }, req.ip);
+
+        res.json({ success: true, message: `${newProblemIds.length} problems created from template`, problemIds: newProblemIds });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// ===== 70. AUTOMATED BACKUPS =====
+
+// Create a backup (exports table data to JSON)
+app.post('/api/admin/backups', async (req, res) => {
+    try {
+        const { tables, adminId, adminName } = req.body;
+        const backupId = uuidv4();
+        const backupDir = path.join(__dirname, 'backups');
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = path.join(backupDir, `backup_${timestamp}_${backupId}.json`);
+
+        // Record backup start
+        await pool.query(
+            `INSERT INTO scheduled_backups (id, backup_type, status, file_path, started_at, created_by) VALUES (?, ?, 'running', ?, NOW(), ?)`,
+            [backupId, tables ? 'partial' : 'full', backupPath, adminId]
+        );
+
+        const allTables = tables || ['users', 'submissions', 'problems', 'tasks', 'aptitude_tests', 'aptitude_questions',
+            'aptitude_submissions', 'aptitude_question_results', 'mentor_student_allocations',
+            'global_tests', 'global_test_questions', 'global_test_submissions', 'global_test_question_results',
+            'problem_completions', 'task_completions', 'test_cases', 'audit_logs'];
+
+        const backupData = { meta: { timestamp: new Date().toISOString(), tables: [], totalRows: 0 } };
+
+        for (const tableName of allTables) {
+            try {
+                const [rows] = await pool.query(`SELECT * FROM \`${tableName}\``);
+                backupData[tableName] = rows;
+                backupData.meta.tables.push({ name: tableName, rows: rows.length });
+                backupData.meta.totalRows += rows.length;
+            } catch (e) {
+                backupData.meta.tables.push({ name: tableName, rows: 0, error: e.message });
+            }
+        }
+
+        fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2));
+        const fileSize = fs.statSync(backupPath).size;
+
+        await pool.query(
+            `UPDATE scheduled_backups SET status = 'completed', file_size = ?, tables_backed_up = ?, completed_at = NOW() WHERE id = ?`,
+            [fileSize, JSON.stringify(backupData.meta.tables), backupId]
+        );
+
+        await logAudit(adminId, adminName, 'admin', 'create_backup', 'backup', backupId, {
+            tables: backupData.meta.tables.length, totalRows: backupData.meta.totalRows, fileSize
+        }, req.ip);
+
+        res.json({
+            success: true,
+            backupId,
+            fileSize: Math.round(fileSize / 1024) + ' KB',
+            tables: backupData.meta.tables,
+            totalRows: backupData.meta.totalRows
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// List backups
+app.get('/api/admin/backups', async (req, res) => {
+    try {
+        const [backups] = await pool.query(
+            'SELECT * FROM scheduled_backups ORDER BY created_at DESC LIMIT 50'
+        );
+        for (const b of backups) {
+            b.tables_backed_up = typeof b.tables_backed_up === 'string' ? JSON.parse(b.tables_backed_up) : b.tables_backed_up;
+            b.fileSizeFormatted = b.file_size > 1048576
+                ? (b.file_size / 1048576).toFixed(2) + ' MB'
+                : (b.file_size / 1024).toFixed(1) + ' KB';
+        }
+        res.json(backups);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Download backup file
+app.get('/api/admin/backups/:id/download', async (req, res) => {
+    try {
+        const [[backup]] = await pool.query('SELECT * FROM scheduled_backups WHERE id = ?', [req.params.id]);
+        if (!backup) return res.status(404).json({ error: 'Backup not found' });
+        if (!fs.existsSync(backup.file_path)) return res.status(404).json({ error: 'Backup file not found on disk' });
+
+        res.download(backup.file_path);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete backup
+app.delete('/api/admin/backups/:id', async (req, res) => {
+    try {
+        const [[backup]] = await pool.query('SELECT * FROM scheduled_backups WHERE id = ?', [req.params.id]);
+        if (!backup) return res.status(404).json({ error: 'Backup not found' });
+
+        // Delete file if exists
+        if (backup.file_path && fs.existsSync(backup.file_path)) {
+            fs.unlinkSync(backup.file_path);
+        }
+
+        await pool.query('DELETE FROM scheduled_backups WHERE id = ?', [req.params.id]);
+        res.json({ success: true, message: 'Backup deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== 71. DATA EXPORT TOOLS =====
+
+// Export data as CSV
+app.get('/api/admin/export/:type', async (req, res) => {
+    try {
+        const { type } = req.params;
+        const { mentorId, startDate, endDate, format = 'csv' } = req.query;
+
+        let query, filename, headers;
+
+        switch (type) {
+            case 'students':
+                query = 'SELECT id, name, email, batch, mentor_id, created_at FROM users WHERE role = "student" ORDER BY name';
+                filename = 'students_export';
+                headers = ['ID', 'Name', 'Email', 'Batch', 'Mentor ID', 'Created At'];
+                break;
+            case 'submissions':
+                query = `SELECT s.id, u.name as student_name, u.email, s.problem_id, p.title as problem_title, 
+                         s.language, s.score, s.status, s.submitted_at 
+                         FROM submissions s 
+                         JOIN users u ON s.student_id = u.id 
+                         LEFT JOIN problems p ON s.problem_id = p.id
+                         ORDER BY s.submitted_at DESC`;
+                filename = 'submissions_export';
+                headers = ['ID', 'Student Name', 'Email', 'Problem ID', 'Problem Title', 'Language', 'Score', 'Status', 'Submitted At'];
+                break;
+            case 'problems':
+                query = 'SELECT id, title, difficulty, language, mentor_id, created_at FROM problems ORDER BY created_at DESC';
+                filename = 'problems_export';
+                headers = ['ID', 'Title', 'Difficulty', 'Language', 'Mentor ID', 'Created At'];
+                break;
+            case 'allocations':
+                query = `SELECT ma.mentor_id, m.name as mentor_name, ma.student_id, s.name as student_name, s.email as student_email, s.batch
+                         FROM mentor_student_allocations ma 
+                         JOIN users m ON ma.mentor_id = m.id 
+                         JOIN users s ON ma.student_id = s.id 
+                         ORDER BY m.name, s.name`;
+                filename = 'allocations_export';
+                headers = ['Mentor ID', 'Mentor Name', 'Student ID', 'Student Name', 'Student Email', 'Batch'];
+                break;
+            case 'aptitude-submissions':
+                query = `SELECT asub.id, u.name as student_name, at.title as test_title, asub.score, asub.total_questions,
+                         asub.correct_answers, asub.status, asub.submitted_at
+                         FROM aptitude_submissions asub
+                         JOIN users u ON asub.student_id = u.id
+                         LEFT JOIN aptitude_tests at ON asub.aptitude_test_id = at.id
+                         ORDER BY asub.submitted_at DESC`;
+                filename = 'aptitude_submissions_export';
+                headers = ['ID', 'Student Name', 'Test Title', 'Score', 'Total Questions', 'Correct Answers', 'Status', 'Submitted At'];
+                break;
+            case 'audit-logs':
+                query = `SELECT id, user_name, user_role, action, resource_type, resource_id, timestamp FROM audit_logs ORDER BY timestamp DESC LIMIT 5000`;
+                filename = 'audit_logs_export';
+                headers = ['ID', 'User', 'Role', 'Action', 'Resource Type', 'Resource ID', 'Timestamp'];
+                break;
+            default:
+                return res.status(400).json({ error: 'Invalid export type. Use: students, submissions, problems, allocations, aptitude-submissions, audit-logs' });
+        }
+
+        const [rows] = await pool.query(query);
+
+        if (format === 'json') {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
+            return res.json(rows);
+        }
+
+        // CSV format
+        const escapeCSV = (val) => {
+            if (val === null || val === undefined) return '';
+            const str = String(val);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        };
+
+        let csv = headers.join(',') + '\n';
+        for (const row of rows) {
+            csv += Object.values(row).map(escapeCSV).join(',') + '\n';
+        }
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+        res.send(csv);
+
+        await logAudit(req.query.adminId, req.query.adminName, 'admin', 'data_export', type, null, {
+            type, format, rowCount: rows.length
+        }, req.ip);
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== 72. ADMIN ANALYTICS (Enhanced) =====
+
+// Get comprehensive admin analytics
+app.get('/api/admin/analytics/comprehensive', async (req, res) => {
+    try {
+        const cacheKey = 'admin:comprehensive_analytics';
+        const cached = cacheManager.get(cacheKey);
+        if (cached) return res.json(cached);
+
+        // User stats
+        const [userStats] = await pool.query(
+            `SELECT role, COUNT(*) as count FROM users GROUP BY role`
+        );
+
+        // Submission trends (last 30 days)
+        const [dailySubmissions] = await pool.query(`
+            SELECT DATE(submitted_at) as date, COUNT(*) as count, 
+                   AVG(score) as avgScore,
+                   SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as failed
+            FROM submissions 
+            WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY DATE(submitted_at)
+            ORDER BY date ASC
+        `);
+
+        // Top performing students
+        const [topStudents] = await pool.query(`
+            SELECT u.id, u.name, u.batch, COUNT(s.id) as totalSubmissions, 
+                   AVG(s.score) as avgScore, 
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passCount
+            FROM users u
+            JOIN submissions s ON u.id = s.student_id
+            WHERE u.role = 'student'
+            GROUP BY u.id
+            ORDER BY avgScore DESC, totalSubmissions DESC
+            LIMIT 10
+        `);
+
+        // Mentor effectiveness
+        const [mentorStats] = await pool.query(`
+            SELECT m.id, m.name, 
+                   COUNT(DISTINCT ma.student_id) as studentCount,
+                   COUNT(s.id) as totalStudentSubmissions,
+                   AVG(s.score) as avgStudentScore
+            FROM users m
+            LEFT JOIN mentor_student_allocations ma ON m.id = ma.mentor_id
+            LEFT JOIN submissions s ON s.student_id = ma.student_id
+            WHERE m.role = 'mentor'
+            GROUP BY m.id
+            ORDER BY avgStudentScore DESC
+        `);
+
+        // Language distribution
+        const [langDist] = await pool.query(`
+            SELECT language, COUNT(*) as count, AVG(score) as avgScore
+            FROM submissions 
+            WHERE language IS NOT NULL
+            GROUP BY language
+            ORDER BY count DESC
+        `);
+
+        // Difficulty analysis
+        const [difficultyStats] = await pool.query(`
+            SELECT p.difficulty, COUNT(s.id) as submissions, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passedCount
+            FROM problems p
+            LEFT JOIN submissions s ON p.id = s.problem_id
+            WHERE p.difficulty IS NOT NULL
+            GROUP BY p.difficulty
+        `);
+
+        // Hourly activity pattern
+        const [hourlyActivity] = await pool.query(`
+            SELECT HOUR(submitted_at) as hour, COUNT(*) as count
+            FROM submissions
+            WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+            GROUP BY HOUR(submitted_at)
+            ORDER BY hour
+        `);
+
+        // Weekly comparison
+        const [[thisWeek]] = await pool.query(
+            `SELECT COUNT(*) as count FROM submissions WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)`
+        );
+        const [[lastWeek]] = await pool.query(
+            `SELECT COUNT(*) as count FROM submissions WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND submitted_at < DATE_SUB(NOW(), INTERVAL 7 DAY)`
+        );
+        const weeklyGrowth = lastWeek.count > 0 ? Math.round(((thisWeek.count - lastWeek.count) / lastWeek.count) * 100) : 0;
+
+        // Batch-wise performance 
+        const [batchPerformance] = await pool.query(`
+            SELECT u.batch, COUNT(DISTINCT u.id) as studentCount, 
+                   COUNT(s.id) as submissions, AVG(s.score) as avgScore
+            FROM users u
+            LEFT JOIN submissions s ON u.id = s.student_id
+            WHERE u.role = 'student' AND u.batch IS NOT NULL
+            GROUP BY u.batch
+            ORDER BY avgScore DESC
+        `);
+
+        const analytics = {
+            userStats: userStats.reduce((acc, r) => ({ ...acc, [r.role]: r.count }), {}),
+            dailySubmissions: dailySubmissions.map(d => ({
+                date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                count: d.count,
+                avgScore: Math.round(d.avgScore || 0),
+                passed: d.passed,
+                failed: d.failed
+            })),
+            topStudents: topStudents.map(s => ({
+                ...s,
+                avgScore: Math.round(s.avgScore || 0)
+            })),
+            mentorStats: mentorStats.map(m => ({
+                ...m,
+                avgStudentScore: Math.round(m.avgStudentScore || 0)
+            })),
+            languageDistribution: langDist.map(l => ({
+                name: l.language || 'Unknown',
+                count: l.count,
+                avgScore: Math.round(l.avgScore || 0)
+            })),
+            difficultyStats: difficultyStats.map(d => ({
+                difficulty: d.difficulty,
+                submissions: d.submissions,
+                avgScore: Math.round(d.avgScore || 0),
+                passRate: d.submissions > 0 ? Math.round((d.passedCount / d.submissions) * 100) : 0
+            })),
+            hourlyActivity: hourlyActivity.map(h => ({
+                hour: `${h.hour}:00`,
+                count: h.count
+            })),
+            weeklyGrowth,
+            thisWeekSubmissions: thisWeek.count,
+            lastWeekSubmissions: lastWeek.count,
+            batchPerformance: batchPerformance.map(b => ({
+                batch: b.batch || 'Unassigned',
+                studentCount: b.studentCount,
+                submissions: b.submissions,
+                avgScore: Math.round(b.avgScore || 0)
+            }))
+        };
+
+        cacheManager.set(cacheKey, analytics, 600000); // Cache 10min
+        res.json(analytics);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== FEATURE 37: LEARNING PATH RECOMMENDATIONS =====
+app.get('/api/analytics/learning-path/:studentId', async (req, res) => {
+    try {
+        const studentId = req.params.studentId;
+        const cacheKey = `student:${studentId}:learning_path`;
+        const cached = cacheManager.get(cacheKey);
+        if (cached) return res.json(cached);
+
+        // Get student's submission performance by topic/language/difficulty
+        const [submissionsByDifficulty] = await pool.query(`
+            SELECT p.difficulty, COUNT(s.id) as attempts, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN s.status = 'rejected' THEN 1 ELSE 0 END) as failed
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            WHERE s.student_id = ? AND p.difficulty IS NOT NULL
+            GROUP BY p.difficulty
+        `, [studentId]);
+
+        const [submissionsByLanguage] = await pool.query(`
+            SELECT s.language, COUNT(s.id) as attempts, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed
+            FROM submissions s
+            WHERE s.student_id = ? AND s.language IS NOT NULL
+            GROUP BY s.language
+        `, [studentId]);
+
+        const [submissionsByType] = await pool.query(`
+            SELECT p.type, COUNT(s.id) as attempts, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN s.status = 'rejected' THEN 1 ELSE 0 END) as failed
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            WHERE s.student_id = ? AND p.type IS NOT NULL
+            GROUP BY p.type
+        `, [studentId]);
+
+        // Get unsolved problems for the student
+        const [unsolvedProblems] = await pool.query(`
+            SELECT p.id, p.title, p.difficulty, p.type, p.language
+            FROM problems p
+            WHERE p.status = 'live'
+              AND p.id NOT IN (
+                SELECT DISTINCT problem_id FROM problem_completions WHERE student_id = ?
+              )
+            ORDER BY p.created_at DESC
+            LIMIT 50
+        `, [studentId]);
+
+        // Identify weak areas
+        const weakAreas = [];
+        const strengths = [];
+
+        submissionsByDifficulty.forEach(d => {
+            const passRate = d.attempts > 0 ? (d.passed / d.attempts) * 100 : 0;
+            const entry = { category: d.difficulty, passRate: Math.round(passRate), avgScore: Math.round(d.avgScore || 0), attempts: d.attempts };
+            if (passRate < 50 || (d.avgScore || 0) < 50) weakAreas.push(entry);
+            else strengths.push(entry);
+        });
+
+        submissionsByType.forEach(t => {
+            const passRate = t.attempts > 0 ? (t.passed / t.attempts) * 100 : 0;
+            const entry = { category: t.type, passRate: Math.round(passRate), avgScore: Math.round(t.avgScore || 0), attempts: t.attempts };
+            if (passRate < 50 || (t.avgScore || 0) < 50) weakAreas.push(entry);
+            else strengths.push(entry);
+        });
+
+        // Generate recommendations based on weaknesses
+        const recommendations = [];
+        const weakDifficulties = submissionsByDifficulty.filter(d => (d.avgScore || 0) < 60).map(d => d.difficulty);
+        const weakTypes = submissionsByType.filter(t => (t.avgScore || 0) < 60).map(t => t.type);
+
+        // Recommend problems targeting weak areas
+        unsolvedProblems.forEach(p => {
+            let priority = 0;
+            let reason = '';
+            if (weakDifficulties.includes(p.difficulty)) {
+                priority += 3;
+                reason = `Improve your ${p.difficulty} problem-solving skills`;
+            }
+            if (weakTypes.includes(p.type)) {
+                priority += 3;
+                reason = reason ? `${reason} and ${p.type} concepts` : `Practice ${p.type} concepts`;
+            }
+            if (!reason && p.difficulty === 'easy') {
+                priority = 1;
+                reason = 'Build confidence with fundamentals';
+            }
+            if (!reason && p.difficulty === 'medium') {
+                priority = 2;
+                reason = 'Challenge yourself with intermediate problems';
+            }
+            if (!reason) {
+                priority = 1;
+                reason = 'Expand your problem-solving range';
+            }
+            recommendations.push({ ...p, priority, reason });
+        });
+
+        recommendations.sort((a, b) => b.priority - a.priority);
+
+        // Language proficiency
+        const languageProficiency = submissionsByLanguage.map(l => ({
+            language: l.language,
+            attempts: l.attempts,
+            avgScore: Math.round(l.avgScore || 0),
+            passRate: l.attempts > 0 ? Math.round((l.passed / l.attempts) * 100) : 0,
+            level: (l.avgScore || 0) >= 80 ? 'Advanced' : (l.avgScore || 0) >= 50 ? 'Intermediate' : 'Beginner'
+        }));
+
+        // Overall progress score
+        const totalAttempts = submissionsByDifficulty.reduce((sum, d) => sum + Number(d.attempts), 0);
+        const totalPassed = submissionsByDifficulty.reduce((sum, d) => sum + Number(d.passed), 0);
+        const overallPassRate = totalAttempts > 0 ? Math.round((totalPassed / totalAttempts) * 100) : 0;
+
+        const result = {
+            weakAreas,
+            strengths,
+            recommendations: recommendations.slice(0, 10),
+            languageProficiency,
+            difficultyBreakdown: submissionsByDifficulty.map(d => ({
+                difficulty: d.difficulty,
+                attempts: d.attempts,
+                avgScore: Math.round(d.avgScore || 0),
+                passRate: d.attempts > 0 ? Math.round((d.passed / d.attempts) * 100) : 0
+            })),
+            overallPassRate,
+            totalAttempts,
+            totalPassed
+        };
+
+        cacheManager.set(cacheKey, result, 900000); // 15 min cache
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== FEATURE 39: ENHANCED PLAGIARISM DETECTION =====
+app.get('/api/analytics/plagiarism', async (req, res) => {
+    try {
+        const { mentorId } = req.query;
+        const cacheKey = `plagiarism:${mentorId || 'all'}`;
+        const cached = cacheManager.get(cacheKey);
+        if (cached) return res.json(cached);
+
+        let query = `
+            SELECT s.id, s.student_id, s.problem_id, s.code, s.score, s.language,
+                   s.plagiarism_detected, s.copied_from, s.copied_from_name,
+                   s.submitted_at, u.name as studentName, p.title as problemTitle
+            FROM submissions s
+            JOIN users u ON s.student_id = u.id
+            LEFT JOIN problems p ON s.problem_id = p.id
+            WHERE s.plagiarism_detected = 'true'
+        `;
+        const params = [];
+        if (mentorId) {
+            query += ' AND u.mentor_id = ?';
+            params.push(mentorId);
+        }
+        query += ' ORDER BY s.submitted_at DESC LIMIT 100';
+
+        const [flaggedSubmissions] = await pool.query(query, params);
+
+        // Get plagiarism statistics
+        let statsQuery = `
+            SELECT COUNT(*) as totalSubmissions,
+                   SUM(CASE WHEN plagiarism_detected = 'true' THEN 1 ELSE 0 END) as plagiarismCount
+            FROM submissions s
+            JOIN users u ON s.student_id = u.id
+            WHERE 1=1
+        `;
+        const statsParams = [];
+        if (mentorId) {
+            statsQuery += ' AND u.mentor_id = ?';
+            statsParams.push(mentorId);
+        }
+        const [[stats]] = await pool.query(statsQuery, statsParams);
+
+        // Get repeat offenders
+        let offendersQuery = `
+            SELECT s.student_id, u.name, COUNT(*) as plagiarismCount,
+                   GROUP_CONCAT(DISTINCT s.copied_from_name) as copiedFromNames
+            FROM submissions s
+            JOIN users u ON s.student_id = u.id
+            WHERE s.plagiarism_detected = 'true'
+        `;
+        const offenderParams = [];
+        if (mentorId) {
+            offendersQuery += ' AND u.mentor_id = ?';
+            offenderParams.push(mentorId);
+        }
+        offendersQuery += ' GROUP BY s.student_id HAVING COUNT(*) >= 1 ORDER BY plagiarismCount DESC LIMIT 20';
+        const [offenders] = await pool.query(offendersQuery, offenderParams);
+
+        // Plagiarism by problem
+        let byProblemQuery = `
+            SELECT p.id, p.title, p.difficulty, COUNT(*) as flaggedCount
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            WHERE s.plagiarism_detected = 'true'
+        `;
+        const byProblemParams = [];
+        if (mentorId) {
+            byProblemQuery += ' AND EXISTS (SELECT 1 FROM users u WHERE u.id = s.student_id AND u.mentor_id = ?)';
+            byProblemParams.push(mentorId);
+        }
+        byProblemQuery += ' GROUP BY p.id ORDER BY flaggedCount DESC LIMIT 10';
+        const [byProblem] = await pool.query(byProblemQuery, byProblemParams);
+
+        const result = {
+            flaggedSubmissions: flaggedSubmissions.map(s => ({
+                id: s.id,
+                studentId: s.student_id,
+                studentName: s.studentName,
+                problemId: s.problem_id,
+                problemTitle: s.problemTitle,
+                language: s.language,
+                score: s.score,
+                copiedFrom: s.copied_from,
+                copiedFromName: s.copied_from_name,
+                submittedAt: s.submitted_at
+            })),
+            stats: {
+                totalSubmissions: stats.totalSubmissions,
+                plagiarismCount: stats.plagiarismCount,
+                plagiarismRate: stats.totalSubmissions > 0 ? Math.round((stats.plagiarismCount / stats.totalSubmissions) * 100 * 10) / 10 : 0
+            },
+            repeatOffenders: offenders.map(o => ({
+                studentId: o.student_id,
+                name: o.name,
+                count: o.plagiarismCount,
+                copiedFrom: o.copiedFromNames ? o.copiedFromNames.split(',') : []
+            })),
+            byProblem: byProblem.map(p => ({
+                problemId: p.id,
+                title: p.title,
+                difficulty: p.difficulty,
+                flaggedCount: p.flaggedCount
+            }))
+        };
+
+        cacheManager.set(cacheKey, result, 600000);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== FEATURE 40: COMPREHENSIVE ANALYTICS EXPORT =====
+app.get('/api/analytics/export/:format', async (req, res) => {
+    try {
+        const { format } = req.params;
+        const { type = 'overview', studentId, mentorId } = req.query;
+
+        // Gather comprehensive data
+        const data = {};
+
+        // Student performance summary
+        const [studentPerf] = await pool.query(`
+            SELECT u.id, u.name, u.email, u.batch,
+                   COUNT(DISTINCT s.id) as totalSubmissions,
+                   AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passedCount,
+                   COUNT(DISTINCT tc.task_id) as tasksCompleted,
+                   COUNT(DISTINCT pc.problem_id) as problemsCompleted,
+                   SUM(CASE WHEN s.plagiarism_detected = 'true' THEN 1 ELSE 0 END) as plagiarismFlags
+            FROM users u
+            LEFT JOIN submissions s ON u.id = s.student_id
+            LEFT JOIN task_completions tc ON u.id = tc.student_id
+            LEFT JOIN problem_completions pc ON u.id = pc.student_id
+            WHERE u.role = 'student'
+            ${studentId ? 'AND u.id = ?' : ''}
+            ${mentorId ? 'AND u.mentor_id = ?' : ''}
+            GROUP BY u.id
+            ORDER BY avgScore DESC
+        `, [...(studentId ? [studentId] : []), ...(mentorId ? [mentorId] : [])]);
+
+        data.students = studentPerf.map(s => ({
+            id: s.id, name: s.name, email: s.email, batch: s.batch,
+            totalSubmissions: s.totalSubmissions,
+            avgScore: Math.round(s.avgScore || 0),
+            passRate: s.totalSubmissions > 0 ? Math.round((s.passedCount / s.totalSubmissions) * 100) : 0,
+            tasksCompleted: s.tasksCompleted,
+            problemsCompleted: s.problemsCompleted,
+            plagiarismFlags: s.plagiarismFlags
+        }));
+
+        // Language distribution
+        const [langStats] = await pool.query(`
+            SELECT language, COUNT(*) as count, AVG(score) as avgScore
+            FROM submissions WHERE language IS NOT NULL
+            GROUP BY language ORDER BY count DESC
+        `);
+        data.languageStats = langStats;
+
+        // Daily trends (30 days)
+        const [trends] = await pool.query(`
+            SELECT DATE(submitted_at) as date, COUNT(*) as submissions, AVG(score) as avgScore,
+                   SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as passed
+            FROM submissions WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY DATE(submitted_at) ORDER BY date
+        `);
+        data.dailyTrends = trends.map(t => ({
+            date: new Date(t.date).toISOString().split('T')[0],
+            submissions: t.submissions,
+            avgScore: Math.round(t.avgScore || 0),
+            passed: t.passed
+        }));
+
+        // Difficulty stats
+        const [diffStats] = await pool.query(`
+            SELECT p.difficulty, COUNT(s.id) as attempts, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed
+            FROM problems p LEFT JOIN submissions s ON p.id = s.problem_id
+            WHERE p.difficulty IS NOT NULL
+            GROUP BY p.difficulty
+        `);
+        data.difficultyStats = diffStats;
+
+        if (format === 'csv') {
+            // Generate CSV
+            let csv = 'Student ID,Name,Email,Batch,Submissions,Avg Score,Pass Rate,Tasks Done,Problems Done,Plagiarism Flags\n';
+            data.students.forEach(s => {
+                csv += `"${s.id}","${s.name}","${s.email}","${s.batch || ''}",${s.totalSubmissions},${s.avgScore},${s.passRate}%,${s.tasksCompleted},${s.problemsCompleted},${s.plagiarismFlags}\n`;
+            });
+
+            csv += '\n\nLanguage,Count,Avg Score\n';
+            data.languageStats.forEach(l => {
+                csv += `"${l.language}",${l.count},${Math.round(l.avgScore || 0)}\n`;
+            });
+
+            csv += '\n\nDate,Submissions,Avg Score,Passed\n';
+            data.dailyTrends.forEach(t => {
+                csv += `${t.date},${t.submissions},${t.avgScore},${t.passed}\n`;
+            });
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="analytics_report_${new Date().toISOString().split('T')[0]}.csv"`);
+            return res.send(csv);
+        }
+
+        // JSON format (for frontend rendering / PDF generation)
+        const summary = {
+            generatedAt: new Date().toISOString(),
+            totalStudents: data.students.length,
+            avgPlatformScore: data.students.length > 0 ? Math.round(data.students.reduce((s, st) => s + st.avgScore, 0) / data.students.length) : 0,
+            totalSubmissions: data.students.reduce((s, st) => s + st.totalSubmissions, 0),
+            overallPassRate: (() => {
+                const total = data.students.reduce((s, st) => s + st.totalSubmissions, 0);
+                const passed = data.dailyTrends.reduce((s, t) => s + t.passed, 0);
+                return total > 0 ? Math.round((passed / total) * 100) : 0;
+            })()
+        };
+
+        res.json({ summary, ...data });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== FEATURE 41: TIME-TO-SOLVE ANALYTICS =====
+app.get('/api/analytics/time-to-solve', async (req, res) => {
+    try {
+        const { mentorId, studentId } = req.query;
+        const cacheKey = `time_to_solve:${mentorId || 'all'}:${studentId || 'all'}`;
+        const cached = cacheManager.get(cacheKey);
+        if (cached) return res.json(cached);
+
+        // Estimate solve time from multiple submissions on same problem
+        // Time between first and last (passing) submission on a problem
+        let query = `
+            SELECT s.problem_id, p.title, p.difficulty, p.type, p.language as problemLang,
+                   s.student_id, u.name as studentName,
+                   MIN(s.submitted_at) as firstAttempt,
+                   MAX(s.submitted_at) as lastAttempt,
+                   COUNT(s.id) as attempts,
+                   MAX(s.score) as bestScore,
+                   MAX(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as solved
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            JOIN users u ON s.student_id = u.id
+            WHERE s.problem_id IS NOT NULL
+        `;
+        const params = [];
+        if (mentorId) { query += ' AND u.mentor_id = ?'; params.push(mentorId); }
+        if (studentId) { query += ' AND s.student_id = ?'; params.push(studentId); }
+        query += ' GROUP BY s.problem_id, p.title, p.difficulty, p.type, p.language, s.student_id, u.name ORDER BY p.title, u.name';
+
+        const [rows] = await pool.query(query, params);
+
+        // Calculate time metrics per problem
+        const problemMetrics = {};
+        rows.forEach(r => {
+            if (!problemMetrics[r.problem_id]) {
+                problemMetrics[r.problem_id] = {
+                    problemId: r.problem_id,
+                    title: r.title,
+                    difficulty: r.difficulty,
+                    type: r.type,
+                    language: r.problemLang,
+                    students: [],
+                    totalAttempts: 0,
+                    solvedCount: 0,
+                    avgAttempts: 0,
+                    avgTimeMinutes: 0
+                };
+            }
+            const timeMs = new Date(r.lastAttempt) - new Date(r.firstAttempt);
+            const timeMinutes = Math.max(1, Math.round(timeMs / 60000));
+            problemMetrics[r.problem_id].students.push({
+                studentId: r.student_id,
+                studentName: r.studentName,
+                attempts: r.attempts,
+                timeMinutes: r.attempts > 1 ? timeMinutes : null,
+                bestScore: r.bestScore,
+                solved: r.solved === 1
+            });
+            problemMetrics[r.problem_id].totalAttempts += r.attempts;
+            if (r.solved === 1) problemMetrics[r.problem_id].solvedCount++;
+        });
+
+        // Compute averages
+        const problemList = Object.values(problemMetrics).map(pm => {
+            const timeSolves = pm.students.filter(s => s.timeMinutes !== null && s.solved);
+            pm.avgAttempts = pm.students.length > 0 ? Math.round(pm.totalAttempts / pm.students.length * 10) / 10 : 0;
+            pm.avgTimeMinutes = timeSolves.length > 0 ? Math.round(timeSolves.reduce((s, st) => s + st.timeMinutes, 0) / timeSolves.length) : null;
+            pm.solveRate = pm.students.length > 0 ? Math.round((pm.solvedCount / pm.students.length) * 100) : 0;
+            pm.studentCount = pm.students.length;
+            // Remove detailed student list for summary
+            const { students, ...summary } = pm;
+            return summary;
+        });
+
+        // Sort by difficulty
+        const diffOrder = { easy: 1, medium: 2, hard: 3 };
+        problemList.sort((a, b) => (diffOrder[a.difficulty] || 99) - (diffOrder[b.difficulty] || 99));
+
+        // Difficulty summary
+        const difficultySummary = {};
+        problemList.forEach(p => {
+            const d = p.difficulty || 'unknown';
+            if (!difficultySummary[d]) {
+                difficultySummary[d] = { difficulty: d, problems: 0, avgAttempts: 0, avgTimeMinutes: 0, avgSolveRate: 0, totalAttempts: 0 };
+            }
+            difficultySummary[d].problems++;
+            difficultySummary[d].totalAttempts += p.totalAttempts;
+            difficultySummary[d].avgSolveRate += p.solveRate;
+            if (p.avgTimeMinutes) difficultySummary[d].avgTimeMinutes += p.avgTimeMinutes;
+        });
+        Object.values(difficultySummary).forEach(d => {
+            d.avgAttempts = d.problems > 0 ? Math.round(d.totalAttempts / d.problems * 10) / 10 : 0;
+            d.avgTimeMinutes = d.problems > 0 ? Math.round(d.avgTimeMinutes / d.problems) : 0;
+            d.avgSolveRate = d.problems > 0 ? Math.round(d.avgSolveRate / d.problems) : 0;
+        });
+
+        const result = {
+            problems: problemList,
+            difficultySummary: Object.values(difficultySummary),
+            totalProblems: problemList.length,
+            overallAvgAttempts: problemList.length > 0 ? Math.round(problemList.reduce((s, p) => s + p.avgAttempts, 0) / problemList.length * 10) / 10 : 0
+        };
+
+        cacheManager.set(cacheKey, result, 900000);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== FEATURE 42: TOPIC-BASED ANALYSIS =====
+app.get('/api/analytics/topics', async (req, res) => {
+    try {
+        const { mentorId, studentId } = req.query;
+        const cacheKey = `topics:${mentorId || 'all'}:${studentId || 'all'}`;
+        const cached = cacheManager.get(cacheKey);
+        if (cached) return res.json(cached);
+
+        // Analysis by problem type (Coding, SQL, etc.) and language
+        let baseWhere = '1=1';
+        const params = [];
+        if (mentorId) { baseWhere += ' AND u.mentor_id = ?'; params.push(mentorId); }
+        if (studentId) { baseWhere += ' AND s.student_id = ?'; params.push(studentId); }
+
+        // By problem type
+        const [byType] = await pool.query(`
+            SELECT p.type, COUNT(s.id) as submissions, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN s.status = 'rejected' THEN 1 ELSE 0 END) as failed,
+                   COUNT(DISTINCT s.student_id) as uniqueStudents
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            JOIN users u ON s.student_id = u.id
+            WHERE ${baseWhere} AND p.type IS NOT NULL
+            GROUP BY p.type ORDER BY submissions DESC
+        `, params);
+
+        // By language
+        const [byLanguage] = await pool.query(`
+            SELECT s.language, COUNT(s.id) as submissions, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed,
+                   COUNT(DISTINCT s.student_id) as uniqueStudents
+            FROM submissions s
+            JOIN users u ON s.student_id = u.id
+            WHERE ${baseWhere} AND s.language IS NOT NULL
+            GROUP BY s.language ORDER BY submissions DESC
+        `, params);
+
+        // By difficulty
+        const [byDifficulty] = await pool.query(`
+            SELECT p.difficulty, COUNT(s.id) as submissions, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN s.status = 'rejected' THEN 1 ELSE 0 END) as failed,
+                   COUNT(DISTINCT s.student_id) as uniqueStudents
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            JOIN users u ON s.student_id = u.id
+            WHERE ${baseWhere} AND p.difficulty IS NOT NULL
+            GROUP BY p.difficulty
+        `, params);
+
+        // Heatmap: type x difficulty
+        const [heatmap] = await pool.query(`
+            SELECT p.type, p.difficulty, COUNT(s.id) as submissions, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passed
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            JOIN users u ON s.student_id = u.id
+            WHERE ${baseWhere} AND p.type IS NOT NULL AND p.difficulty IS NOT NULL
+            GROUP BY p.type, p.difficulty
+        `, params);
+
+        // Top problems by type
+        const [topProblems] = await pool.query(`
+            SELECT p.id, p.title, p.type, p.difficulty, COUNT(s.id) as attempts,
+                   AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passCount
+            FROM submissions s
+            JOIN problems p ON s.problem_id = p.id
+            JOIN users u ON s.student_id = u.id
+            WHERE ${baseWhere}
+            GROUP BY p.id, p.title, p.type, p.difficulty
+            ORDER BY attempts DESC LIMIT 15
+        `, params);
+
+        const result = {
+            byType: byType.map(t => ({
+                type: t.type,
+                submissions: t.submissions,
+                avgScore: Math.round(t.avgScore || 0),
+                passRate: t.submissions > 0 ? Math.round((t.passed / t.submissions) * 100) : 0,
+                failRate: t.submissions > 0 ? Math.round((t.failed / t.submissions) * 100) : 0,
+                uniqueStudents: t.uniqueStudents
+            })),
+            byLanguage: byLanguage.map(l => ({
+                language: l.language,
+                submissions: l.submissions,
+                avgScore: Math.round(l.avgScore || 0),
+                passRate: l.submissions > 0 ? Math.round((l.passed / l.submissions) * 100) : 0,
+                uniqueStudents: l.uniqueStudents
+            })),
+            byDifficulty: byDifficulty.map(d => ({
+                difficulty: d.difficulty,
+                submissions: d.submissions,
+                avgScore: Math.round(d.avgScore || 0),
+                passRate: d.submissions > 0 ? Math.round((d.passed / d.submissions) * 100) : 0,
+                uniqueStudents: d.uniqueStudents
+            })),
+            heatmap: heatmap.map(h => ({
+                type: h.type,
+                difficulty: h.difficulty,
+                submissions: h.submissions,
+                avgScore: Math.round(h.avgScore || 0),
+                passRate: h.submissions > 0 ? Math.round((h.passed / h.submissions) * 100) : 0
+            })),
+            topProblems: topProblems.map(p => ({
+                id: p.id,
+                title: p.title,
+                type: p.type,
+                difficulty: p.difficulty,
+                attempts: p.attempts,
+                avgScore: Math.round(p.avgScore || 0),
+                passRate: p.attempts > 0 ? Math.round((p.passCount / p.attempts) * 100) : 0
+            }))
+        };
+
+        cacheManager.set(cacheKey, result, 900000);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ===== FEATURE 43: PEER COMPARISON STATS =====
+app.get('/api/analytics/peer-comparison/:studentId', async (req, res) => {
+    try {
+        const studentId = req.params.studentId;
+        const cacheKey = `peer:${studentId}`;
+        const cached = cacheManager.get(cacheKey);
+        if (cached) return res.json(cached);
+
+        // Student's own stats
+        const [[studentStats]] = await pool.query(`
+            SELECT COUNT(s.id) as totalSubmissions, AVG(s.score) as avgScore,
+                   SUM(CASE WHEN s.status = 'accepted' THEN 1 ELSE 0 END) as passedCount,
+                   COUNT(DISTINCT pc.problem_id) as problemsSolved,
+                   COUNT(DISTINCT tc.task_id) as tasksDone
+            FROM users u
+            LEFT JOIN submissions s ON u.id = s.student_id
+            LEFT JOIN problem_completions pc ON u.id = pc.student_id
+            LEFT JOIN task_completions tc ON u.id = tc.student_id
+            WHERE u.id = ?
+        `, [studentId]);
+
+        // Class average (all students)
+        const [[classAvg]] = await pool.query(`
+            SELECT AVG(sub.avgScore) as avgScore, AVG(sub.totalSub) as avgSubmissions,
+                   AVG(sub.passRate) as avgPassRate, AVG(sub.probSolved) as avgProblemsSolved,
+                   AVG(sub.tasksDone) as avgTasksDone, COUNT(*) as totalStudents
+            FROM (
+                SELECT u.id,
+                       COALESCE(AVG(s.score), 0) as avgScore,
+                       COUNT(DISTINCT s.id) as totalSub,
+                       CASE WHEN COUNT(s.id) > 0 THEN SUM(CASE WHEN s.status='accepted' THEN 1 ELSE 0 END)*100.0/COUNT(s.id) ELSE 0 END as passRate,
+                       COUNT(DISTINCT pc.problem_id) as probSolved,
+                       COUNT(DISTINCT tc.task_id) as tasksDone
+                FROM users u
+                LEFT JOIN submissions s ON u.id = s.student_id
+                LEFT JOIN problem_completions pc ON u.id = pc.student_id
+                LEFT JOIN task_completions tc ON u.id = tc.student_id
+                WHERE u.role = 'student'
+                GROUP BY u.id
+            ) sub
+        `);
+
+        // Get student's batch for batch comparison
+        const [[studentInfo]] = await pool.query('SELECT batch, mentor_id FROM users WHERE id = ?', [studentId]);
+        const batch = studentInfo?.batch;
+        const mentorId = studentInfo?.mentor_id;
+
+        // Batch average
+        let batchAvg = null;
+        if (batch) {
+            const [[ba]] = await pool.query(`
+                SELECT AVG(sub.avgScore) as avgScore, AVG(sub.totalSub) as avgSubmissions,
+                       COUNT(*) as batchSize
+                FROM (
+                    SELECT u.id, COALESCE(AVG(s.score), 0) as avgScore, COUNT(DISTINCT s.id) as totalSub
+                    FROM users u LEFT JOIN submissions s ON u.id = s.student_id
+                    WHERE u.role = 'student' AND u.batch = ?
+                    GROUP BY u.id
+                ) sub
+            `, [batch]);
+            batchAvg = { avgScore: Math.round(ba.avgScore || 0), avgSubmissions: Math.round(ba.avgSubmissions || 0), batchSize: ba.batchSize, batch };
+        }
+
+        // Mentor group average
+        let mentorGroupAvg = null;
+        if (mentorId) {
+            const [[mga]] = await pool.query(`
+                SELECT AVG(sub.avgScore) as avgScore, AVG(sub.totalSub) as avgSubmissions,
+                       COUNT(*) as groupSize
+                FROM (
+                    SELECT u.id, COALESCE(AVG(s.score), 0) as avgScore, COUNT(DISTINCT s.id) as totalSub
+                    FROM users u LEFT JOIN submissions s ON u.id = s.student_id
+                    WHERE u.role = 'student' AND u.mentor_id = ?
+                    GROUP BY u.id
+                ) sub
+            `, [mentorId]);
+            mentorGroupAvg = { avgScore: Math.round(mga.avgScore || 0), avgSubmissions: Math.round(mga.avgSubmissions || 0), groupSize: mga.groupSize };
+        }
+
+        // Rank among all students
+        const [[rankResult]] = await pool.query(`
+            SELECT COUNT(*) + 1 as student_rank FROM (
+                SELECT u.id, COALESCE(AVG(s.score), 0) as avgScore
+                FROM users u LEFT JOIN submissions s ON u.id = s.student_id
+                WHERE u.role = 'student' GROUP BY u.id
+            ) sub WHERE sub.avgScore > (
+                SELECT COALESCE(AVG(score), 0) FROM submissions WHERE student_id = ?
+            )
+        `, [studentId]);
+
+        // Percentile
+        const [[totalCount]] = await pool.query("SELECT COUNT(*) as count FROM users WHERE role = 'student'");
+        const percentile = totalCount.count > 0 ? Math.round(((totalCount.count - rankResult.student_rank) / totalCount.count) * 100) : 0;
+
+        // Per-language comparison
+        const [studentLangs] = await pool.query(`
+            SELECT language, AVG(score) as avgScore, COUNT(*) as count
+            FROM submissions WHERE student_id = ? AND language IS NOT NULL
+            GROUP BY language
+        `, [studentId]);
+
+        const [classLangs] = await pool.query(`
+            SELECT language, AVG(score) as avgScore, COUNT(*) as count
+            FROM submissions WHERE language IS NOT NULL GROUP BY language
+        `);
+
+        const languageComparison = studentLangs.map(sl => {
+            const cl = classLangs.find(c => c.language === sl.language);
+            return {
+                language: sl.language,
+                yourScore: Math.round(sl.avgScore || 0),
+                classAvg: cl ? Math.round(cl.avgScore || 0) : 0,
+                yourCount: sl.count,
+                difference: Math.round((sl.avgScore || 0) - (cl?.avgScore || 0))
+            };
+        });
+
+        // Score distribution (histogram) showing where student falls
+        const [allScores] = await pool.query(`
+            SELECT sub2.bucket, COUNT(*) as count FROM (
+                SELECT FLOOR(COALESCE(sub.score, 0) / 10) * 10 as bucket
+                FROM (
+                    SELECT student_id, AVG(score) as score FROM submissions GROUP BY student_id
+                ) sub
+            ) sub2 GROUP BY sub2.bucket ORDER BY sub2.bucket
+        `);
+
+        const myAvgScore = Math.round(studentStats.avgScore || 0);
+        const myPassRate = studentStats.totalSubmissions > 0 ? Math.round((studentStats.passedCount / studentStats.totalSubmissions) * 100) : 0;
+
+        const result = {
+            you: {
+                avgScore: myAvgScore,
+                totalSubmissions: studentStats.totalSubmissions,
+                passRate: myPassRate,
+                problemsSolved: studentStats.problemsSolved,
+                tasksDone: studentStats.tasksDone,
+                rank: rankResult.student_rank,
+                percentile: Math.max(0, percentile),
+                totalStudents: totalCount.count
+            },
+            classAverage: {
+                avgScore: Math.round(classAvg.avgScore || 0),
+                avgSubmissions: Math.round(classAvg.avgSubmissions || 0),
+                avgPassRate: Math.round(classAvg.avgPassRate || 0),
+                avgProblemsSolved: Math.round(classAvg.avgProblemsSolved || 0),
+                avgTasksDone: Math.round(classAvg.avgTasksDone || 0),
+                totalStudents: classAvg.totalStudents
+            },
+            batchAverage: batchAvg,
+            mentorGroupAverage: mentorGroupAvg,
+            languageComparison,
+            scoreDistribution: allScores.map(s => ({
+                range: `${s.bucket}-${s.bucket + 9}`,
+                count: s.count,
+                isYou: myAvgScore >= s.bucket && myAvgScore < s.bucket + 10
+            }))
+        };
+
+        cacheManager.set(cacheKey, result, 900000);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Start server
 
 // Helper: Update User Streak (Placeholder to prevent ReferenceError)
@@ -4281,8 +6207,186 @@ async function updateUserStreak(userId, activity) {
     }
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+// ========== WEBSOCKET EVENT HANDLERS (Features 23 & 24) ==========
+
+io.on('connection', (socket) => {
+    console.log(`🔌 New WebSocket connection: ${socket.id}`);
+
+    // Handle mentor/admin joining live monitoring
+    socket.on('join_monitoring', (data) => {
+        const { userId, role, mentorId } = data; // userId: current user, mentorId: mentor being monitored (for admin)
+        
+        socket.userData = { userId, role, mentorId };
+        
+        if (role === 'mentor') {
+            if (!activeConnections.mentors.has(userId)) {
+                activeConnections.mentors.set(userId, []);
+            }
+            activeConnections.mentors.get(userId).push(socket);
+            socket.join(`mentor_monitoring_${userId}`);
+            console.log(`👨‍🏫 Mentor ${userId} joined live monitoring`);
+        } else if (role === 'admin') {
+            if (!activeConnections.admins.has(userId)) {
+                activeConnections.admins.set(userId, []);
+            }
+            activeConnections.admins.get(userId).push(socket);
+            socket.join('admin_monitoring_all');
+            socket.join(`admin_monitoring_mentor_${mentorId}`);
+            console.log(`🛡️ Admin ${userId} joined live monitoring`);
+        } else if (role === 'student') {
+            if (!activeConnections.students.has(userId)) {
+                activeConnections.students.set(userId, []);
+            }
+            activeConnections.students.get(userId).push(socket);
+            socket.join(`student_${userId}`);
+            console.log(`👤 Student ${userId} joined`);
+        }
+
+        socket.emit('monitoring_connected', { 
+            status: 'connected',
+            role: role,
+            timestamp: new Date()
+        });
+    });
+
+    // Handle submission events (Feature 24: Live Student Monitoring)
+    socket.on('submission_started', (data) => {
+        const { studentId, studentName, problemId, problemTitle, mentorId, isProctored } = data;
+        
+        const event = {
+            type: 'submission_started',
+            studentId,
+            studentName,
+            problemId,
+            problemTitle,
+            timestamp: new Date(),
+            isProctored
+        };
+
+        // Notify mentor(s) assigned to this student
+        if (mentorId) {
+            io.to(`mentor_monitoring_${mentorId}`).emit('live_update', event);
+        }
+
+        // Notify all admins
+        io.to('admin_monitoring_all').emit('live_update', event);
+        console.log(`📊 Submission started: ${studentName} (${studentId}) on Problem ${problemId}`);
+    });
+
+    socket.on('submission_completed', (data) => {
+        const { studentId, studentName, problemId, problemTitle, mentorId, status, score } = data;
+        
+        const event = {
+            type: 'submission_completed',
+            studentId,
+            studentName,
+            problemId,
+            problemTitle,
+            status, // 'success' | 'failed' | 'partial'
+            score,
+            timestamp: new Date()
+        };
+
+        if (mentorId) {
+            io.to(`mentor_monitoring_${mentorId}`).emit('live_update', event);
+        }
+        io.to('admin_monitoring_all').emit('live_update', event);
+        console.log(`✅ Submission completed: ${studentName} (${studentId}) - ${status}`);
+    });
+
+    // Proctoring alerts (Feature 24)
+    socket.on('proctoring_violation', (data) => {
+        const { studentId, studentName, violationType, severity, mentorId } = data;
+        // violationType: 'face_not_detected', 'multiple_faces', 'phone_detected', 'window_switch', 'copy_attempt'
+        
+        const alert = {
+            type: 'proctoring_alert',
+            studentId,
+            studentName,
+            violationType,
+            severity, // 'warning' | 'critical'
+            timestamp: new Date(),
+            requiresAction: severity === 'critical'
+        };
+
+        if (mentorId) {
+            io.to(`mentor_monitoring_${mentorId}`).emit('live_alert', alert);
+        }
+        io.to('admin_monitoring_all').emit('live_alert', alert);
+        console.log(`⚠️ Proctoring violation: ${violationType} (${studentName} - ${studentId})`);
+    });
+
+    // Real-time progress update
+    socket.on('progress_update', (data) => {
+        const { studentId, studentName, problemId, progress, mentorId } = data; // progress: 0-100
+        
+        const update = {
+            type: 'progress_update',
+            studentId,
+            studentName,
+            problemId,
+            progress,
+            timestamp: new Date()
+        };
+
+        if (mentorId) {
+            io.to(`mentor_monitoring_${mentorId}`).emit('live_update', update);
+        }
+        io.to('admin_monitoring_all').emit('live_update', update);
+    });
+
+    // Test case failure notification
+    socket.on('test_failed', (data) => {
+        const { studentId, studentName, problemId, testname, mentorId } = data;
+        
+        const notification = {
+            type: 'test_failed',
+            studentId,
+            studentName,
+            problemId,
+            testname,
+            timestamp: new Date()
+        };
+
+        if (mentorId) {
+            io.to(`mentor_monitoring_${mentorId}`).emit('live_update', notification);
+        }
+        io.to('admin_monitoring_all').emit('live_update', notification);
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', () => {
+        if (socket.userData) {
+            const { userId, role } = socket.userData;
+            
+            if (role === 'mentor' && activeConnections.mentors.has(userId)) {
+                const sockets = activeConnections.mentors.get(userId);
+                const idx = sockets.indexOf(socket);
+                if (idx > -1) sockets.splice(idx, 1);
+                if (sockets.length === 0) activeConnections.mentors.delete(userId);
+            } else if (role === 'admin' && activeConnections.admins.has(userId)) {
+                const sockets = activeConnections.admins.get(userId);
+                const idx = sockets.indexOf(socket);
+                if (idx > -1) sockets.splice(idx, 1);
+                if (sockets.length === 0) activeConnections.admins.delete(userId);
+            } else if (role === 'student' && activeConnections.students.has(userId)) {
+                const sockets = activeConnections.students.get(userId);
+                const idx = sockets.indexOf(socket);
+                if (idx > -1) sockets.splice(idx, 1);
+                if (sockets.length === 0) activeConnections.students.delete(userId);
+            }
+        }
+        console.log(`❌ WebSocket disconnected: ${socket.id}`);
+    });
+
+    socket.on('error', (error) => {
+        console.error(`❌ Socket error: ${error}`);
+    });
+});
+
+httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
+    console.log('🔌 WebSocket ready for real-time updates');
     console.log('📚 Student Portal: http://127.0.0.1:3000/#/student');
     console.log('👨‍🏫 Mentor Portal: http://127.0.0.1:3000/#/mentor');
     console.log('🛡️ Admin Portal: http://127.0.0.1:3000/#/admin');

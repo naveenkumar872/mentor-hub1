@@ -27,19 +27,29 @@ function ProtectedRoute({ children, allowedRoles }) {
     return children
 }
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 function App() {
     const [user, setUser] = useState(null)
-    const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
+    const [theme, setTheme] = useState(() => {
+        const saved = localStorage.getItem('theme')
+        if (saved) return saved
+        // Auto-detect system preference
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    })
     const [loading, setLoading] = useState(true)
     const navigate = useNavigate()
 
     useEffect(() => {
         // Check for saved user session
-        const savedUser = localStorage.getItem('currentUser')
-        if (savedUser) {
-            setUser(JSON.parse(savedUser))
+        try {
+            const savedUser = localStorage.getItem('currentUser')
+            if (savedUser && savedUser !== 'undefined') {
+                setUser(JSON.parse(savedUser))
+            }
+        } catch (error) {
+            console.error('Failed to parse saved user:', error)
+            localStorage.removeItem('currentUser')
         }
         setLoading(false)
     }, [])

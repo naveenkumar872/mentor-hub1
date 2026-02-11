@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
 import GlobalTestInterface from '../components/GlobalTestInterface'
@@ -11,12 +11,13 @@ import SQLValidator from '../components/SQLValidator'
 import SQLVisualizer from '../components/SQLVisualizer'
 import SQLDebugger from '../components/SQLDebugger'
 import { useAuth } from '../App'
+import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -30,9 +31,10 @@ const LANGUAGE_CONFIG = {
 
 function StudentPortal() {
     const { user } = useAuth()
+    const { t } = useI18n()
     const location = useLocation()
-    const [title, setTitle] = useState('Dashboard')
-    const [subtitle, setSubtitle] = useState('Welcome back!')
+    const [title, setTitle] = useState('')
+    const [subtitle, setSubtitle] = useState('')
     const [mentorInfo, setMentorInfo] = useState(null)
 
     // Fetch mentor info once
@@ -52,38 +54,43 @@ function StudentPortal() {
         const path = location.pathname.split('/').pop()
         switch (path) {
             case 'tasks':
-                setTitle('ML Tasks')
-                setSubtitle('Machine Learning tasks to complete')
+                setTitle(t('ml_tasks'))
+                setSubtitle(t('ml_tasks_subtitle'))
                 break
             case 'assignments':
-                setTitle('Coding Problems')
-                setSubtitle('Solve coding and SQL problems')
+                setTitle(t('coding_problems'))
+                setSubtitle(t('solve_coding_subtitle'))
                 break
             case 'aptitude':
-                setTitle('Aptitude Tests')
-                setSubtitle('Test your reasoning and analytical skills')
+                setTitle(t('aptitude_tests'))
+                setSubtitle(t('aptitude_subtitle'))
                 break
             case 'global-tests':
-                setTitle('Global Complete Tests')
-                setSubtitle('Aptitude, Verbal, Logical, Coding, SQL')
+                setTitle(t('global_complete_tests'))
+                setSubtitle(t('global_tests_student_subtitle'))
                 break
             case 'submissions':
-                setTitle('My Submissions')
-                setSubtitle('View your submission history and reports')
+                setTitle(t('my_submissions'))
+                setSubtitle(t('submissions_subtitle'))
+                break
+            case 'analytics':
+                setTitle(t('my_analytics'))
+                setSubtitle(t('analytics_subtitle'))
                 break
             default:
-                setTitle('Dashboard')
-                setSubtitle(`Welcome back, ${user?.name}!`)
+                setTitle(t('dashboard'))
+                setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
         }
-    }, [location, user])
+    }, [location, user, t])
 
     const navItems = [
-        { path: '/student', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-        { path: '/student/tasks', label: 'ML Tasks', icon: <ClipboardList size={20} /> },
-        { path: '/student/assignments', label: 'Coding Problems', icon: <Code size={20} /> },
-        { path: '/student/aptitude', label: 'Aptitude Tests', icon: <Brain size={20} /> },
-        { path: '/student/global-tests', label: 'Global Complete Tests', icon: <Layers size={20} /> },
-        { path: '/student/submissions', label: 'My Submissions', icon: <Send size={20} /> }
+        { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
+        { path: '/student/tasks', label: t('ml_tasks'), icon: <ClipboardList size={20} /> },
+        { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
+        { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
+        { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
+        { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
+        { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> }
     ]
 
     return (
@@ -95,6 +102,7 @@ function StudentPortal() {
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
+                <Route path="/analytics" element={<StudentAnalytics user={user} />} />
             </Routes>
         </DashboardLayout>
     )
@@ -587,11 +595,14 @@ function Assignments({ user }) {
                     marginBottom: '0.75rem',
                     border: '1px solid rgba(239, 68, 68, 0.15)'
                 }}>
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <Eye size={12} /> Proctoring Enabled:
                         {problem.proctoring.videoAudio && <span style={{ marginLeft: '4px' }}>📹 Video</span>}
                         {problem.proctoring.disableCopyPaste && <span style={{ marginLeft: '4px' }}>📋 No Copy</span>}
                         {problem.proctoring.trackTabSwitches && <span style={{ marginLeft: '4px' }}>🔒 Tab Track</span>}
+                        {problem.proctoring.enableFaceDetection && <span style={{ marginLeft: '4px' }}>👁️ Face</span>}
+                        {problem.proctoring.detectMultipleFaces && <span style={{ marginLeft: '4px' }}>👥 Multi-Face</span>}
+                        {problem.proctoring.trackFaceLookaway && <span style={{ marginLeft: '4px' }}>👀 Lookaway</span>}
                     </p>
                 </div>
             )}
@@ -1392,7 +1403,8 @@ function Submissions({ user }) {
             axios.get(`${API_BASE}/aptitude-submissions?studentId=${user.id}`),
             axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`)
         ]).then(([codeRes, aptRes, globalRes]) => {
-            setSubmissions((codeRes.data || []).map(s => ({ ...s, subType: 'code' })))
+            const codeData = Array.isArray(codeRes.data) ? codeRes.data : (codeRes.data?.data || [])
+            setSubmissions(codeData.map(s => ({ ...s, subType: 'code' })))
             setAptitudeSubmissions((aptRes.data || []).map(s => ({ ...s, subType: 'aptitude', itemTitle: s.testTitle })))
             setGlobalSubmissions((globalRes.data || []).map(s => ({
                 ...s,
@@ -2813,6 +2825,416 @@ function AptitudeTests({ user }) {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ==================== FEATURE 37, 42, 43: STUDENT ANALYTICS ====================
+function StudentAnalytics({ user }) {
+    const { t } = useI18n()
+    const [activeTab, setActiveTab] = useState('learning-path')
+    const [learningPath, setLearningPath] = useState(null)
+    const [peerComparison, setPeerComparison] = useState(null)
+    const [topicAnalysis, setTopicAnalysis] = useState(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        setLoading(true)
+        const fetchData = async () => {
+            try {
+                const [lpRes, pcRes, taRes] = await Promise.all([
+                    axios.get(`${API_BASE}/analytics/learning-path/${user.id}`),
+                    axios.get(`${API_BASE}/analytics/peer-comparison/${user.id}`),
+                    axios.get(`${API_BASE}/analytics/topics?studentId=${user.id}`)
+                ])
+                setLearningPath(lpRes.data)
+                setPeerComparison(pcRes.data)
+                setTopicAnalysis(taRes.data)
+            } catch (err) { console.error(err) }
+            setLoading(false)
+        }
+        fetchData()
+    }, [user.id])
+
+    if (loading) return <div className="loading-spinner"></div>
+
+    const tabs = [
+        { id: 'learning-path', label: t('learning_path'), icon: <Radar size={16} /> },
+        { id: 'peer-comparison', label: t('peer_comparison'), icon: <Users size={16} /> },
+        { id: 'topic-analysis', label: t('topic_analysis'), icon: <PieChart size={16} /> }
+    ]
+
+    return (
+        <div className="animate-fadeIn">
+            {/* Tab Navigation */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.2rem',
+                        borderRadius: '10px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                        background: activeTab === tab.id ? 'var(--primary)' : 'var(--card-bg)',
+                        color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
+                        boxShadow: activeTab === tab.id ? '0 4px 15px rgba(59,130,246,0.3)' : '0 1px 3px rgba(0,0,0,0.1)',
+                        transition: 'all 0.2s'
+                    }}>
+                        {tab.icon} {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* LEARNING PATH TAB */}
+            {activeTab === 'learning-path' && learningPath && (
+                <div>
+                    {/* Overview Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                        <div className="dashboard-stat-card stat-card-blue">
+                            <div className="stat-card-inner">
+                                <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
+                                    <Target size={22} color="#fff" />
+                                </div>
+                                <div className="stat-content">
+                                    <div className="stat-number">{learningPath.overallPassRate}%</div>
+                                    <div className="stat-label-text">{t('overall_pass_rate')}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="dashboard-stat-card stat-card-green">
+                            <div className="stat-card-inner">
+                                <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #047857, #10b981)' }}>
+                                    <CheckCircle size={22} color="#fff" />
+                                </div>
+                                <div className="stat-content">
+                                    <div className="stat-number">{learningPath.totalPassed}</div>
+                                    <div className="stat-label-text">{t('problems_passed')}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="dashboard-stat-card stat-card-purple">
+                            <div className="stat-card-inner">
+                                <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #6d28d9, #8b5cf6)' }}>
+                                    <Flame size={22} color="#fff" />
+                                </div>
+                                <div className="stat-content">
+                                    <div className="stat-number">{learningPath.totalAttempts}</div>
+                                    <div className="stat-label-text">{t('total_attempts')}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Weak Areas & Strengths */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title" style={{ color: '#ef4444' }}>
+                                <AlertTriangle size={18} /> {t('weak_areas')}
+                            </h3>
+                            {learningPath.weakAreas.length > 0 ? learningPath.weakAreas.map((area, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.06)', marginBottom: '0.5rem' }}>
+                                    <div>
+                                        <span style={{ fontWeight: 600, fontSize: '0.9rem', textTransform: 'capitalize' }}>{area.category}</span>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{area.attempts} {t('attempts_made')}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <span style={{ fontWeight: 700, color: '#ef4444', fontSize: '1.1rem' }}>{area.avgScore}%</span>
+                                        <div style={{ fontSize: '0.7rem', color: '#ef4444' }}>{area.passRate}% {t('pass_rate')}</div>
+                                    </div>
+                                </div>
+                            )) : <div style={{ color: 'var(--text-muted)', padding: '1rem', textAlign: 'center' }}>{t('no_weak_areas')}</div>}
+                        </div>
+
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title" style={{ color: '#10b981' }}>
+                                <CheckCircle size={18} /> {t('strengths')}
+                            </h3>
+                            {learningPath.strengths.length > 0 ? learningPath.strengths.map((area, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', borderRadius: '8px', background: 'rgba(16,185,129,0.06)', marginBottom: '0.5rem' }}>
+                                    <div>
+                                        <span style={{ fontWeight: 600, fontSize: '0.9rem', textTransform: 'capitalize' }}>{area.category}</span>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{area.attempts} {t('attempts_made')}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <span style={{ fontWeight: 700, color: '#10b981', fontSize: '1.1rem' }}>{area.avgScore}%</span>
+                                        <div style={{ fontSize: '0.7rem', color: '#10b981' }}>{area.passRate}% {t('pass_rate')}</div>
+                                    </div>
+                                </div>
+                            )) : <div style={{ color: 'var(--text-muted)', padding: '1rem', textAlign: 'center' }}>{t('no_data')}</div>}
+                        </div>
+                    </div>
+
+                    {/* Language Proficiency */}
+                    {learningPath.languageProficiency.length > 0 && (
+                        <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                            <h3 className="panel-title"><Code size={18} color="#3b82f6" /> {t('language_proficiency')}</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                                {learningPath.languageProficiency.map((lang, i) => (
+                                    <div key={i} style={{ padding: '1rem', borderRadius: '12px', background: 'var(--bg-secondary)', textAlign: 'center' }}>
+                                        <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '0.25rem' }}>{lang.language}</div>
+                                        <div style={{
+                                            display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
+                                            background: lang.level === 'Advanced' ? 'rgba(16,185,129,0.15)' : lang.level === 'Intermediate' ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
+                                            color: lang.level === 'Advanced' ? '#10b981' : lang.level === 'Intermediate' ? '#f59e0b' : '#ef4444'
+                                        }}>{lang.level}</div>
+                                        <div style={{ marginTop: '0.5rem' }}>
+                                            <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', width: `${lang.avgScore}%`, borderRadius: '3px', background: lang.level === 'Advanced' ? '#10b981' : lang.level === 'Intermediate' ? '#f59e0b' : '#ef4444', transition: 'width 0.5s' }} />
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{lang.avgScore}% avg • {lang.attempts} solved</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Recommended Problems */}
+                    <div className="dashboard-panel">
+                        <h3 className="panel-title"><Sparkles size={18} color="#f59e0b" /> {t('recommended_problems')}</h3>
+                        {learningPath.recommendations.length > 0 ? (
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {learningPath.recommendations.map((rec, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                        <div style={{
+                                            width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem',
+                                            background: rec.priority >= 5 ? 'rgba(239,68,68,0.12)' : rec.priority >= 3 ? 'rgba(251,191,36,0.12)' : 'rgba(59,130,246,0.12)',
+                                            color: rec.priority >= 5 ? '#ef4444' : rec.priority >= 3 ? '#f59e0b' : '#3b82f6'
+                                        }}>{i + 1}</div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{rec.title}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rec.reason}</div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                            <span style={{ padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: rec.difficulty === 'easy' ? 'rgba(16,185,129,0.12)' : rec.difficulty === 'medium' ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)', color: rec.difficulty === 'easy' ? '#10b981' : rec.difficulty === 'medium' ? '#f59e0b' : '#ef4444' }}>{rec.difficulty}</span>
+                                            {rec.language && <span style={{ padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>{rec.language}</span>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>{t('complete_more_problems')}</div>}
+                    </div>
+                </div>
+            )}
+
+            {/* PEER COMPARISON TAB */}
+            {activeTab === 'peer-comparison' && peerComparison && (
+                <div>
+                    {/* Rank & Percentile Header */}
+                    <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '280px', padding: '1.5rem', borderRadius: '16px', background: 'linear-gradient(135deg, #1e40af, #3b82f6)', color: '#fff', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>{t('your_rank')}</div>
+                            <div style={{ fontSize: '3rem', fontWeight: 800 }}>#{peerComparison.you.rank}</div>
+                            <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>{t('out_of')} {peerComparison.you.totalStudents} {t('students')}</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: '280px', padding: '1.5rem', borderRadius: '16px', background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>{t('percentile')}</div>
+                            <div style={{ fontSize: '3rem', fontWeight: 800 }}>{peerComparison.you.percentile}th</div>
+                            <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>{t('top_performer_msg')}</div>
+                        </div>
+                    </div>
+
+                    {/* Comparison Grid */}
+                    <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                        <h3 className="panel-title"><BarChart3 size={18} color="#8b5cf6" /> {t('your_score_vs_class')}</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                            {[
+                                { label: t('avg_score'), yours: peerComparison.you.avgScore, classVal: peerComparison.classAverage.avgScore, suffix: '%' },
+                                { label: t('pass_rate'), yours: peerComparison.you.passRate, classVal: peerComparison.classAverage.avgPassRate, suffix: '%' },
+                                { label: t('total_submissions'), yours: peerComparison.you.totalSubmissions, classVal: peerComparison.classAverage.avgSubmissions, suffix: '' },
+                                { label: t('problems_solved_label'), yours: peerComparison.you.problemsSolved, classVal: peerComparison.classAverage.avgProblemsSolved, suffix: '' },
+                                { label: t('tasks_completed'), yours: peerComparison.you.tasksDone, classVal: peerComparison.classAverage.avgTasksDone, suffix: '' }
+                            ].map((item, i) => {
+                                const diff = item.yours - item.classVal
+                                const isAbove = diff > 0
+                                const isEqual = diff === 0
+                                return (
+                                    <div key={i} style={{ padding: '1rem', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontWeight: 600, textTransform: 'uppercase' }}>{item.label}</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                            <div>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>{item.yours}{item.suffix}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('you')}</div>
+                                            </div>
+                                            <div style={{ textAlign: 'center', padding: '0.25rem 0.5rem', borderRadius: '8px', background: isAbove ? 'rgba(16,185,129,0.1)' : isEqual ? 'rgba(156,163,175,0.1)' : 'rgba(239,68,68,0.1)' }}>
+                                                {isAbove ? <ArrowUpRight size={14} color="#10b981" /> : isEqual ? <Minus size={14} color="#9ca3af" /> : <ArrowDownRight size={14} color="#ef4444" />}
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isAbove ? '#10b981' : isEqual ? '#9ca3af' : '#ef4444' }}>{isAbove ? '+' : ''}{diff}{item.suffix}</span>
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{Math.round(item.classVal)}{item.suffix}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('class_avg')}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Score Distribution */}
+                    {peerComparison.scoreDistribution && (
+                        <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                            <h3 className="panel-title"><BarChart3 size={18} color="#3b82f6" /> {t('score_distribution')}</h3>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '120px', padding: '0 1rem' }}>
+                                {peerComparison.scoreDistribution.map((bucket, i) => {
+                                    const maxCount = Math.max(...peerComparison.scoreDistribution.map(b => b.count))
+                                    const height = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
+                                    return (
+                                        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.6rem', fontWeight: 600 }}>{bucket.count}</span>
+                                            <div style={{
+                                                width: '100%', height: `${height}%`, minHeight: '4px', borderRadius: '4px 4px 0 0',
+                                                background: bucket.isYou ? 'linear-gradient(180deg, #3b82f6, #1e40af)' : 'rgba(59,130,246,0.15)',
+                                                border: bucket.isYou ? '2px solid #1e40af' : 'none', transition: 'height 0.3s'
+                                            }} />
+                                            <span style={{ fontSize: '0.55rem', color: bucket.isYou ? '#3b82f6' : 'var(--text-muted)', fontWeight: bucket.isYou ? 700 : 400 }}>{bucket.range}</span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                {t('highlighted_your_position')}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Language Comparison */}
+                    {peerComparison.languageComparison.length > 0 && (
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><Code size={18} color="#8b5cf6" /> {t('language_vs_class')}</h3>
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {peerComparison.languageComparison.map((lang, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                                        <div style={{ width: '80px', fontWeight: 700, fontSize: '0.9rem' }}>{lang.language}</div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '4px' }}>
+                                                <span style={{ fontSize: '0.7rem', color: '#3b82f6', width: '50px' }}>{t('you')}: {lang.yourScore}%</span>
+                                                <div style={{ flex: 1, height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: `${lang.yourScore}%`, borderRadius: '4px', background: 'linear-gradient(90deg, #3b82f6, #60a5fa)' }} />
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '0.7rem', color: '#9ca3af', width: '50px' }}>{t('class')}: {lang.classAvg}%</span>
+                                                <div style={{ flex: 1, height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: `${lang.classAvg}%`, borderRadius: '4px', background: 'rgba(156,163,175,0.4)' }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            fontWeight: 700, fontSize: '0.85rem', padding: '0.25rem 0.5rem', borderRadius: '6px',
+                                            color: lang.difference > 0 ? '#10b981' : lang.difference < 0 ? '#ef4444' : '#9ca3af',
+                                            background: lang.difference > 0 ? 'rgba(16,185,129,0.1)' : lang.difference < 0 ? 'rgba(239,68,68,0.1)' : 'rgba(156,163,175,0.1)'
+                                        }}>{lang.difference > 0 ? '+' : ''}{lang.difference}%</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* TOPIC ANALYSIS TAB */}
+            {activeTab === 'topic-analysis' && topicAnalysis && (
+                <div>
+                    {/* By Type */}
+                    {topicAnalysis.byType.length > 0 && (
+                        <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                            <h3 className="panel-title"><BookOpen size={18} color="#3b82f6" /> {t('performance_by_type')}</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+                                {topicAnalysis.byType.map((item, i) => (
+                                    <div key={i} style={{ padding: '1.25rem', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                        <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.75rem', textTransform: 'capitalize' }}>{item.type}</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                            <div><span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('submissions')}</span><div style={{ fontWeight: 700, fontSize: '1.2rem' }}>{item.submissions}</div></div>
+                                            <div><span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('avg_score')}</span><div style={{ fontWeight: 700, fontSize: '1.2rem', color: item.avgScore >= 70 ? '#10b981' : item.avgScore >= 40 ? '#f59e0b' : '#ef4444' }}>{item.avgScore}%</div></div>
+                                            <div><span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('pass_rate')}</span><div style={{ fontWeight: 700, color: '#10b981' }}>{item.passRate}%</div></div>
+                                            <div><span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('fail_rate')}</span><div style={{ fontWeight: 700, color: '#ef4444' }}>{item.failRate}%</div></div>
+                                        </div>
+                                        <div style={{ marginTop: '0.75rem', height: '6px', borderRadius: '3px', background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${item.passRate}%`, borderRadius: '3px', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.5s' }} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* By Difficulty */}
+                    {topicAnalysis.byDifficulty.length > 0 && (
+                        <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                            <h3 className="panel-title"><Target size={18} color="#f59e0b" /> {t('performance_by_difficulty')}</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                {topicAnalysis.byDifficulty.map((item, i) => {
+                                    const colors = { easy: '#10b981', medium: '#f59e0b', hard: '#ef4444' }
+                                    const color = colors[item.difficulty] || '#3b82f6'
+                                    return (
+                                        <div key={i} style={{ padding: '1.25rem', borderRadius: '12px', background: 'var(--bg-secondary)', borderLeft: `4px solid ${color}` }}>
+                                            <div style={{ fontWeight: 700, fontSize: '1rem', textTransform: 'capitalize', color, marginBottom: '0.75rem' }}>{item.difficulty}</div>
+                                            <div style={{ fontSize: '2rem', fontWeight: 800 }}>{item.avgScore}%</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.submissions} {t('submissions')} • {item.passRate}% {t('pass_rate')}</div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* By Language */}
+                    {topicAnalysis.byLanguage.length > 0 && (
+                        <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                            <h3 className="panel-title"><Code size={18} color="#8b5cf6" /> {t('performance_by_language')}</h3>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                            <th style={{ textAlign: 'left', padding: '0.75rem' }}>{t('language')}</th>
+                                            <th style={{ textAlign: 'center', padding: '0.75rem' }}>{t('submissions')}</th>
+                                            <th style={{ textAlign: 'center', padding: '0.75rem' }}>{t('avg_score')}</th>
+                                            <th style={{ textAlign: 'center', padding: '0.75rem' }}>{t('pass_rate')}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {topicAnalysis.byLanguage.map((lang, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={{ padding: '0.75rem', fontWeight: 600 }}>{lang.language}</td>
+                                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>{lang.submissions}</td>
+                                                <td style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 700, color: lang.avgScore >= 70 ? '#10b981' : lang.avgScore >= 40 ? '#f59e0b' : '#ef4444' }}>{lang.avgScore}%</td>
+                                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                        <div style={{ width: '60px', height: '6px', borderRadius: '3px', background: 'rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+                                                            <div style={{ height: '100%', width: `${lang.passRate}%`, borderRadius: '3px', background: '#10b981' }} />
+                                                        </div>
+                                                        <span>{lang.passRate}%</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Top Problems */}
+                    {topicAnalysis.topProblems.length > 0 && (
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><Flame size={18} color="#ef4444" /> {t('most_attempted_problems')}</h3>
+                            <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                {topicAnalysis.topProblems.map((p, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'var(--bg-secondary)' }}>
+                                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem', color: '#3b82f6' }}>{i + 1}</div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.title}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{p.type} • {p.difficulty}</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{p.avgScore}%</div>
+                                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{p.attempts} attempts • {p.passRate}% pass</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

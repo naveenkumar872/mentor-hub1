@@ -8,12 +8,15 @@ import AptitudeReportModal from '../components/AptitudeReportModal'
 import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
 import LocalTestCasesManager from '../components/LocalTestCasesManager'
+import AdminLiveMonitoring from '../components/AdminLiveMonitoring'
+import AdminOperations from '../../../../AdminOperations.jsx'
 import { useAuth } from '../App'
+import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -21,61 +24,77 @@ const ADMIN_ID = 'admin-001'
 
 function AdminPortal() {
     const { user } = useAuth()
+    const { t } = useI18n()
     const location = useLocation()
-    const [title, setTitle] = useState('Dashboard')
-    const [subtitle, setSubtitle] = useState('System Overview')
+    const [title, setTitle] = useState('')
+    const [subtitle, setSubtitle] = useState('')
 
     useEffect(() => {
         const path = location.pathname.split('/').pop()
         switch (path) {
             case 'allocations':
-                setTitle('Allocations')
-                setSubtitle('Mentor-Student assignments')
+                setTitle(t('allocations'))
+                setSubtitle(t('mentor_student_assignments'))
                 break
             case 'student-leaderboard':
-                setTitle('Student Leaderboard')
-                setSubtitle('Top performers')
+                setTitle(t('student_leaderboard'))
+                setSubtitle(t('top_performers'))
                 break
             case 'mentor-leaderboard':
-                setTitle('Mentor Leaderboard')
-                setSubtitle('Mentor activity')
+                setTitle(t('mentor_leaderboard'))
+                setSubtitle(t('mentor_activity'))
                 break
             case 'all-submissions':
-                setTitle('All Submissions')
-                setSubtitle('Platform-wide submissions')
+                setTitle(t('all_submissions'))
+                setSubtitle(t('platform_wide_submissions'))
                 break
             case 'global-tasks':
-                setTitle('Global Tasks')
-                setSubtitle('Tasks visible to all users')
+                setTitle(t('global_tasks'))
+                setSubtitle(t('tasks_visible_all'))
                 break
             case 'global-problems':
-                setTitle('Global Problems')
-                setSubtitle('Coding challenges for everyone')
+                setTitle(t('global_problems'))
+                setSubtitle(t('coding_challenges_all'))
                 break
             case 'aptitude-tests':
-                setTitle('Aptitude Tests')
-                setSubtitle('Manage aptitude tests for all students')
+                setTitle(t('aptitude_tests'))
+                setSubtitle(t('manage_aptitude_tests'))
                 break
             case 'global-tests':
-                setTitle('Global Complete Tests')
-                setSubtitle('Aptitude, Verbal, Logical, Coding, SQL – create and manage')
+                setTitle(t('global_complete_tests'))
+                setSubtitle(t('global_tests_subtitle'))
+                break
+            case 'live-monitoring':
+                setTitle(t('global_live_monitoring'))
+                setSubtitle(t('monitor_all_subtitle'))
+                break
+            case 'operations':
+                setTitle(t('admin_operations'))
+                setSubtitle(t('admin_ops_subtitle'))
+                break
+            case 'analytics':
+                setTitle(t('analytics'))
+                setSubtitle(t('advanced_analytics_subtitle'))
                 break
             default:
-                setTitle('Dashboard')
-                setSubtitle('System Administration')
+                setTitle(t('dashboard'))
+                setSubtitle(t('system_administration'))
         }
-    }, [location])
+    }, [location, t])
 
     const navItems = [
-        { path: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-        { path: '/admin/global-tasks', label: 'Global Tasks', icon: <Globe size={20} /> },
-        { path: '/admin/global-problems', label: 'Global Problems', icon: <FileCode size={20} /> },
-        { path: '/admin/aptitude-tests', label: 'Aptitude Tests', icon: <Target size={20} /> },
-        { path: '/admin/global-tests', label: 'Global Complete Tests', icon: <ClipboardList size={20} /> },
-        { path: '/admin/allocations', label: 'Allocations', icon: <Users size={20} /> },
-        { path: '/admin/student-leaderboard', label: 'Student Ranks', icon: <Trophy size={20} /> },
-        { path: '/admin/mentor-leaderboard', label: 'Mentor Ranks', icon: <Award size={20} /> },
-        { path: '/admin/all-submissions', label: 'All Submissions', icon: <List size={20} /> }
+        { path: '/admin', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
+        { path: '/admin/global-tasks', label: t('global_tasks'), icon: <Globe size={20} /> },
+        { path: '/admin/global-problems', label: t('global_problems'), icon: <FileCode size={20} /> },
+        { path: '/admin/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
+        { path: '/admin/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
+        { path: '/admin/allocations', label: t('allocations'), icon: <Users size={20} /> },
+        { path: '/admin/student-leaderboard', label: t('student_ranks'), icon: <Trophy size={20} /> },
+        { path: '/admin/mentor-leaderboard', label: t('mentor_ranks'), icon: <Award size={20} /> },
+        { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
+        { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
+        { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
+        { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> }
     ]
 
     return (
@@ -90,6 +109,9 @@ function AdminPortal() {
                 <Route path="/student-leaderboard" element={<StudentLeaderboard />} />
                 <Route path="/mentor-leaderboard" element={<MentorLeaderboard />} />
                 <Route path="/all-submissions" element={<AllSubmissions />} />
+                <Route path="/live-monitoring" element={<AdminLiveMonitoring user={user} />} />
+                <Route path="/analytics" element={<AdminAnalyticsDashboard />} />
+                <Route path="/operations" element={<AdminOperations />} />
             </Routes>
         </DashboardLayout>
     )
@@ -1162,7 +1184,8 @@ function AllSubmissions() {
             axios.get(`${API_BASE}/aptitude-submissions`),
             axios.get(`${API_BASE}/global-test-submissions`)
         ]).then(([codeRes, aptRes, globalRes]) => {
-            const codeSubs = (codeRes.data || []).map(s => ({ ...s, subType: 'code' }))
+            const codeData = Array.isArray(codeRes.data) ? codeRes.data : (codeRes.data?.data || [])
+            const codeSubs = codeData.map(s => ({ ...s, subType: 'code' }))
             const aptSubs = (aptRes.data || []).map(s => ({
                 ...s,
                 subType: 'aptitude',
@@ -1907,7 +1930,7 @@ function GlobalTasks() {
     const fetchTasks = () => {
         axios.get(`${API_BASE}/tasks?mentorId=${ADMIN_ID}`)
             .then(res => {
-                setTasks(res.data)
+                setTasks(Array.isArray(res.data) ? res.data : (res.data?.data || []))
                 setLoading(false)
             })
             .catch(err => setLoading(false))
@@ -2247,7 +2270,10 @@ function GlobalProblems() {
         enableVideoAudio: false,
         disableCopyPaste: false,
         trackTabSwitches: false,
-        maxTabSwitches: 3
+        maxTabSwitches: 3,
+        enableFaceDetection: false,
+        detectMultipleFaces: false,
+        trackFaceLookaway: false
     })
 
     // Check if SQL is selected
@@ -2272,7 +2298,10 @@ function GlobalProblems() {
             enableVideoAudio: problem.enableVideoAudio,
             disableCopyPaste: problem.disableCopyPaste,
             trackTabSwitches: problem.trackTabSwitches,
-            maxTabSwitches: problem.maxTabSwitches
+            maxTabSwitches: problem.maxTabSwitches,
+            enableFaceDetection: problem.enableFaceDetection,
+            detectMultipleFaces: problem.detectMultipleFaces,
+            trackFaceLookaway: problem.trackFaceLookaway
         })
         setShowAIChat(false)
         setShowModal(true)
@@ -2281,7 +2310,7 @@ function GlobalProblems() {
     const fetchProblems = () => {
         axios.get(`${API_BASE}/problems?mentorId=${ADMIN_ID}`)
             .then(res => {
-                setProblems(res.data)
+                setProblems(Array.isArray(res.data) ? res.data : (res.data?.data || []))
                 setLoading(false)
             })
             .catch(err => setLoading(false))
@@ -2300,7 +2329,8 @@ function GlobalProblems() {
                 title: '', type: 'Coding', language: 'Python', difficulty: 'Medium',
                 description: '', sampleInput: '', expectedOutput: '', deadline: '', status: 'live',
                 sqlSchema: '', expectedQueryResult: '',
-                enableProctoring: false, enableVideoAudio: false, disableCopyPaste: false, trackTabSwitches: false, maxTabSwitches: 3
+                enableProctoring: false, enableVideoAudio: false, disableCopyPaste: false, trackTabSwitches: false, maxTabSwitches: 3,
+                enableFaceDetection: false, detectMultipleFaces: false, trackFaceLookaway: false
             })
             fetchProblems()
         } catch (error) {
@@ -2861,6 +2891,71 @@ function GlobalProblems() {
                                                 style={{ width: '18px', height: '18px', accentColor: '#10b981' }}
                                             />
                                             <span style={{ fontSize: '0.9rem' }}>🔒 Track Tab Switches</span>
+                                        </label>
+
+                                        <hr style={{ margin: '0.5rem 0', borderColor: 'var(--border-color)', opacity: 0.3 }} />
+
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
+                                            cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
+                                            opacity: problem.enableProctoring ? 1 : 0.5,
+                                            padding: '0.75rem',
+                                            background: problem.enableFaceDetection ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={problem.enableFaceDetection}
+                                                onChange={(e) => setProblem({ ...problem, enableFaceDetection: e.target.checked })}
+                                                disabled={!problem.enableProctoring}
+                                                style={{ width: '18px', height: '18px', accentColor: '#ec4899' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>👁️ Enable Face Detection</span>
+                                        </label>
+
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
+                                            cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
+                                            opacity: problem.enableProctoring ? 1 : 0.5,
+                                            padding: '0.75rem',
+                                            background: problem.detectMultipleFaces ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={problem.detectMultipleFaces}
+                                                onChange={(e) => setProblem({ ...problem, detectMultipleFaces: e.target.checked })}
+                                                disabled={!problem.enableProctoring}
+                                                style={{ width: '18px', height: '18px', accentColor: '#ef4444' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>👥 Detect Multiple Faces (Cheating)</span>
+                                        </label>
+
+                                        <label style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
+                                            cursor: problem.enableProctoring ? 'pointer' : 'not-allowed',
+                                            opacity: problem.enableProctoring ? 1 : 0.5,
+                                            padding: '0.75rem',
+                                            background: problem.trackFaceLookaway ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                                            borderRadius: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={problem.trackFaceLookaway}
+                                                onChange={(e) => setProblem({ ...problem, trackFaceLookaway: e.target.checked })}
+                                                disabled={!problem.enableProctoring}
+                                                style={{ width: '18px', height: '18px', accentColor: '#3b82f6' }}
+                                            />
+                                            <span style={{ fontSize: '0.9rem' }}>👀 Track Face Lookaway</span>
                                         </label>
                                     </div>
 
@@ -5220,6 +5315,340 @@ function AptitudeTestsAdmin() {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ==================== FEATURES 39-43: ADMIN ANALYTICS DASHBOARD ====================
+function AdminAnalyticsDashboard() {
+    const { t } = useI18n()
+    const [activeTab, setActiveTab] = useState('overview')
+    const [plagiarism, setPlagiarism] = useState(null)
+    const [timeToSolve, setTimeToSolve] = useState(null)
+    const [topicAnalysis, setTopicAnalysis] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const [exporting, setExporting] = useState(false)
+
+    useEffect(() => {
+        setLoading(true)
+        Promise.all([
+            axios.get(`${API_BASE}/analytics/plagiarism`),
+            axios.get(`${API_BASE}/analytics/time-to-solve`),
+            axios.get(`${API_BASE}/analytics/topics`)
+        ]).then(([pRes, tRes, taRes]) => {
+            setPlagiarism(pRes.data)
+            setTimeToSolve(tRes.data)
+            setTopicAnalysis(taRes.data)
+            setLoading(false)
+        }).catch(err => { console.error(err); setLoading(false) })
+    }, [])
+
+    const handleExport = async (format) => {
+        setExporting(true)
+        try {
+            if (format === 'csv') {
+                const res = await axios.get(`${API_BASE}/analytics/export/csv`, { responseType: 'blob' })
+                const url = window.URL.createObjectURL(new Blob([res.data]))
+                const a = document.createElement('a'); a.href = url; a.download = `platform_analytics_${new Date().toISOString().split('T')[0]}.csv`; a.click()
+            } else {
+                const res = await axios.get(`${API_BASE}/analytics/export/json`)
+                const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a'); a.href = url; a.download = `platform_analytics_${new Date().toISOString().split('T')[0]}.json`; a.click()
+            }
+        } catch (err) { console.error(err) }
+        setExporting(false)
+    }
+
+    if (loading) return <div className="loading-spinner"></div>
+
+    const tabs = [
+        { id: 'overview', label: t('topic_analysis'), icon: <BarChart2 size={16} /> },
+        { id: 'plagiarism', label: t('plagiarism_detection'), icon: <Shield size={16} /> },
+        { id: 'time-to-solve', label: t('time_to_solve'), icon: <Clock size={16} /> },
+        { id: 'export', label: t('export_report'), icon: <Download size={16} /> }
+    ]
+
+    return (
+        <div className="animate-fadeIn">
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.2rem',
+                        borderRadius: '10px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                        background: activeTab === tab.id ? 'var(--primary)' : 'var(--card-bg)',
+                        color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
+                        boxShadow: activeTab === tab.id ? '0 4px 15px rgba(59,130,246,0.3)' : '0 1px 3px rgba(0,0,0,0.1)',
+                        transition: 'all 0.2s'
+                    }}>
+                        {tab.icon} {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* TOPIC OVERVIEW TAB */}
+            {activeTab === 'overview' && topicAnalysis && (
+                <div>
+                    {/* By Type Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        {topicAnalysis.byType.map((item, i) => (
+                            <div key={i} style={{ padding: '1.5rem', borderRadius: '16px', background: 'var(--card-bg)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '1rem', textTransform: 'capitalize' }}>{item.type}</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', textAlign: 'center' }}>
+                                    <div><div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{item.submissions}</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('submissions')}</div></div>
+                                    <div><div style={{ fontSize: '1.5rem', fontWeight: 800, color: item.avgScore >= 70 ? '#10b981' : '#f59e0b' }}>{item.avgScore}%</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('avg_score')}</div></div>
+                                    <div><div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#3b82f6' }}>{item.uniqueStudents}</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('students')}</div></div>
+                                </div>
+                                <div style={{ marginTop: '1rem', height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${item.passRate}%`, borderRadius: '4px', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.5s' }} />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    <span>{item.passRate}% {t('pass_rate')}</span>
+                                    <span>{item.failRate}% {t('fail_rate')}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Difficulty + Language side by side */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><Target size={18} color="#f59e0b" /> {t('by_difficulty')}</h3>
+                            {topicAnalysis.byDifficulty.map((d, i) => {
+                                const colors = { easy: '#10b981', medium: '#f59e0b', hard: '#ef4444' }
+                                return (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', borderRadius: '10px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+                                        <span style={{ fontWeight: 700, width: '70px', textTransform: 'capitalize', color: colors[d.difficulty] || '#3b82f6' }}>{d.difficulty}</span>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', width: `${d.passRate}%`, borderRadius: '4px', background: colors[d.difficulty] || '#3b82f6' }} />
+                                            </div>
+                                        </div>
+                                        <span style={{ fontWeight: 700, fontSize: '0.85rem', width: '45px', textAlign: 'right' }}>{d.avgScore}%</span>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', width: '40px' }}>{d.submissions}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><Code size={18} color="#8b5cf6" /> {t('by_language')}</h3>
+                            {topicAnalysis.byLanguage.map((l, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', borderRadius: '10px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+                                    <span style={{ fontWeight: 700, width: '90px' }}>{l.language}</span>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${l.passRate}%`, borderRadius: '4px', background: COLORS[i % COLORS.length] }} />
+                                        </div>
+                                    </div>
+                                    <span style={{ fontWeight: 700, fontSize: '0.85rem', width: '45px', textAlign: 'right' }}>{l.avgScore}%</span>
+                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', width: '40px' }}>{l.submissions}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Top Problems Table */}
+                    {topicAnalysis.topProblems.length > 0 && (
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><Zap size={18} color="#ef4444" /> {t('most_attempted_problems')}</h3>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                    <thead><tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>#</th>
+                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('problem')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('type')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('difficulty')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('attempts')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('avg_score')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('pass_rate')}</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {topicAnalysis.topProblems.map((p, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={{ padding: '0.6rem', fontWeight: 700, color: '#3b82f6' }}>{i + 1}</td>
+                                                <td style={{ padding: '0.6rem', fontWeight: 600 }}>{p.title}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', textTransform: 'capitalize' }}>{p.type}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                    <span style={{ padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: p.difficulty === 'easy' ? 'rgba(16,185,129,0.12)' : p.difficulty === 'medium' ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)', color: p.difficulty === 'easy' ? '#10b981' : p.difficulty === 'medium' ? '#f59e0b' : '#ef4444' }}>{p.difficulty}</span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{p.attempts}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 700, color: p.avgScore >= 70 ? '#10b981' : '#f59e0b' }}>{p.avgScore}%</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>{p.passRate}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* PLAGIARISM TAB */}
+            {activeTab === 'plagiarism' && plagiarism && (
+                <div>
+                    {/* Stats */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #3b82f6' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('total_submissions')}</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800 }}>{plagiarism.stats.totalSubmissions}</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #ef4444' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('plagiarism_flags')}</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ef4444' }}>{plagiarism.stats.plagiarismCount}</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #f59e0b' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('plagiarism_rate')}</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f59e0b' }}>{plagiarism.stats.plagiarismRate}%</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #8b5cf6' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('repeat_offenders')}</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#8b5cf6' }}>{plagiarism.repeatOffenders.length}</div>
+                        </div>
+                    </div>
+
+                    {/* Offenders + Problems side by side */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title" style={{ color: '#ef4444' }}><AlertTriangle size={18} /> {t('repeat_offenders')}</h3>
+                            {plagiarism.repeatOffenders.length > 0 ? plagiarism.repeatOffenders.map((o, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.05)', marginBottom: '0.5rem' }}>
+                                    <div><div style={{ fontWeight: 600 }}>{o.name}</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{o.copiedFrom.slice(0, 3).join(', ')}</div></div>
+                                    <span style={{ background: '#ef4444', color: '#fff', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 700, fontSize: '0.8rem' }}>{o.count}x</span>
+                                </div>
+                            )) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem' }}>{t('no_offenders')}</div>}
+                        </div>
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><FileCode size={18} color="#f59e0b" /> {t('most_copied_problems')}</h3>
+                            {plagiarism.byProblem.length > 0 ? plagiarism.byProblem.map((p, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', borderRadius: '8px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+                                    <div><div style={{ fontWeight: 600 }}>{p.title}</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{p.difficulty}</div></div>
+                                    <span style={{ fontWeight: 700, color: '#f59e0b' }}>{p.flaggedCount} flags</span>
+                                </div>
+                            )) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem' }}>{t('no_data')}</div>}
+                        </div>
+                    </div>
+
+                    {/* Flagged Table */}
+                    <div className="dashboard-panel">
+                        <h3 className="panel-title"><Shield size={18} color="#ef4444" /> {t('all_flagged_submissions')}</h3>
+                        {plagiarism.flaggedSubmissions.length > 0 ? (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                    <thead><tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('student')}</th>
+                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('problem')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('language')}</th>
+                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('score')}</th>
+                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('copied_from')}</th>
+                                        <th style={{ textAlign: 'right', padding: '0.6rem' }}>{t('date')}</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {plagiarism.flaggedSubmissions.slice(0, 30).map((s, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={{ padding: '0.6rem', fontWeight: 600 }}>{s.studentName}</td>
+                                                <td style={{ padding: '0.6rem' }}>{s.problemTitle}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>{s.language}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>{s.score}</td>
+                                                <td style={{ padding: '0.6rem', color: '#ef4444' }}>{s.copiedFromName || s.copiedFrom}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(s.submittedAt).toLocaleDateString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>{t('no_plagiarism_detected')}</div>}
+                    </div>
+                </div>
+            )}
+
+            {/* TIME TO SOLVE TAB */}
+            {activeTab === 'time-to-solve' && timeToSolve && (
+                <div>
+                    {/* Difficulty Summary Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        {timeToSolve.difficultySummary.map((d, i) => {
+                            const colors = { easy: { bg: 'rgba(16,185,129,0.08)', border: '#10b981' }, medium: { bg: 'rgba(251,191,36,0.08)', border: '#f59e0b' }, hard: { bg: 'rgba(239,68,68,0.08)', border: '#ef4444' } }
+                            const c = colors[d.difficulty] || { bg: 'rgba(59,130,246,0.08)', border: '#3b82f6' }
+                            return (
+                                <div key={i} style={{ padding: '1.5rem', borderRadius: '16px', background: c.bg, border: `2px solid ${c.border}` }}>
+                                    <div style={{ fontWeight: 800, fontSize: '1.2rem', textTransform: 'capitalize', color: c.border, marginBottom: '1rem' }}>{d.difficulty}</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('problems')}</div><div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{d.problems}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('avg_time')}</div><div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{d.avgTimeMinutes}m</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('avg_attempts')}</div><div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{d.avgAttempts}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('solve_rate')}</div><div style={{ fontSize: '1.5rem', fontWeight: 800, color: c.border }}>{d.avgSolveRate}%</div></div>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+
+                    {/* Problem Table */}
+                    <div className="dashboard-panel">
+                        <h3 className="panel-title"><Clock size={18} color="#3b82f6" /> {t('all_problems_metrics')}</h3>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                <thead><tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                    <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('problem')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('type')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('difficulty')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('students')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('total_attempts')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('avg_attempts')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('avg_time')}</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('solve_rate')}</th>
+                                </tr></thead>
+                                <tbody>
+                                    {timeToSolve.problems.map((p, i) => (
+                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                            <td style={{ padding: '0.6rem', fontWeight: 600 }}>{p.title}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', textTransform: 'capitalize' }}>{p.type}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                <span style={{ padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: p.difficulty === 'easy' ? 'rgba(16,185,129,0.12)' : p.difficulty === 'medium' ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)', color: p.difficulty === 'easy' ? '#10b981' : p.difficulty === 'medium' ? '#f59e0b' : '#ef4444' }}>{p.difficulty}</span>
+                                            </td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>{p.studentCount}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>{p.totalAttempts}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{p.avgAttempts}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>{p.avgTimeMinutes ? `${p.avgTimeMinutes}m` : '-'}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 700, color: p.solveRate >= 70 ? '#10b981' : p.solveRate >= 40 ? '#f59e0b' : '#ef4444' }}>{p.solveRate}%</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* EXPORT TAB */}
+            {activeTab === 'export' && (
+                <div>
+                    <div className="dashboard-panel" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+                        <Download size={56} color="var(--primary)" style={{ marginBottom: '1rem' }} />
+                        <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.5rem' }}>{t('export_platform_analytics')}</h3>
+                        <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', maxWidth: '600px', margin: '0 auto 2rem' }}>{t('export_platform_description')}</p>
+                        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                            <button onClick={() => handleExport('csv')} disabled={exporting} style={{
+                                padding: '1rem 2.5rem', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                                background: 'linear-gradient(135deg, #059669, #10b981)', color: '#fff', fontWeight: 700, fontSize: '1rem',
+                                opacity: exporting ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 15px rgba(16,185,129,0.3)'
+                            }}>
+                                <FileText size={20} /> {t('download_csv')}
+                            </button>
+                            <button onClick={() => handleExport('json')} disabled={exporting} style={{
+                                padding: '1rem 2.5rem', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                                background: 'linear-gradient(135deg, #1e40af, #3b82f6)', color: '#fff', fontWeight: 700, fontSize: '1rem',
+                                opacity: exporting ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 15px rgba(59,130,246,0.3)'
+                            }}>
+                                <Code size={20} /> {t('download_json')}
+                            </button>
                         </div>
                     </div>
                 </div>
