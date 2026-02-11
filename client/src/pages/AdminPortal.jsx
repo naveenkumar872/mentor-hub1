@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -9,7 +9,10 @@ import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
 import LocalTestCasesManager from '../components/LocalTestCasesManager'
 import AdminLiveMonitoring from '../components/AdminLiveMonitoring'
-import AdminOperations from '../../../../AdminOperations.jsx'
+import AdminOperations from '../components/AdminOperations'
+import UserManagement from '../components/UserManagement'
+import DirectMessaging from '../components/DirectMessaging'
+import FileUpload from '../components/FileUpload'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -28,6 +31,21 @@ function AdminPortal() {
     const location = useLocation()
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
+    const [unreadCount, setUnreadCount] = useState(0)
+
+    // Poll for unread messages
+    useEffect(() => {
+        const userId = user?.id || user?.userId || ADMIN_ID
+        const fetchUnread = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/messages/unread/${userId}`)
+                setUnreadCount(res.data.unreadCount || 0)
+            } catch (e) { /* ignore */ }
+        }
+        fetchUnread()
+        const interval = setInterval(fetchUnread, 15000)
+        return () => clearInterval(interval)
+    }, [user])
 
     useEffect(() => {
         const path = location.pathname.split('/').pop()
@@ -72,6 +90,14 @@ function AdminPortal() {
                 setTitle(t('admin_operations'))
                 setSubtitle(t('admin_ops_subtitle'))
                 break
+            case 'user-management':
+                setTitle('User Management')
+                setSubtitle('Create, edit, and manage platform users')
+                break
+            case 'messaging':
+                setTitle('Messaging')
+                setSubtitle('Chat with students and mentors')
+                break
             case 'analytics':
                 setTitle(t('analytics'))
                 setSubtitle(t('advanced_analytics_subtitle'))
@@ -94,7 +120,9 @@ function AdminPortal() {
         { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
         { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
         { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
-        { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> }
+        { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
+        { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
+        { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount }
     ]
 
     return (
@@ -112,6 +140,8 @@ function AdminPortal() {
                 <Route path="/live-monitoring" element={<AdminLiveMonitoring user={user} />} />
                 <Route path="/analytics" element={<AdminAnalyticsDashboard />} />
                 <Route path="/operations" element={<AdminOperations />} />
+                <Route path="/user-management" element={<UserManagement />} />
+                <Route path="/messaging" element={<DirectMessaging currentUser={{ ...user, role: 'admin' }} />} />
             </Routes>
         </DashboardLayout>
     )
@@ -1904,6 +1934,8 @@ function GlobalTasks() {
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
     const [showAIChat, setShowAIChat] = useState(false)
+    const [uploading, setUploading] = useState(false)
+    const csvInputRef = useRef(null)
     const [task, setTask] = useState({
         title: '',
         type: 'machine_learning',
@@ -1966,6 +1998,41 @@ function GlobalTasks() {
         }
     }
 
+    const handleCSVUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        e.target.value = ''
+        setUploading(true)
+        try {
+            const text = await file.text()
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { alert('CSV must have a header row and at least one data row'); setUploading(false); return }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+            const rows = lines.slice(1)
+            let created = 0
+            for (const row of rows) {
+                const vals = row.match(/(".*?"|[^,]*)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || []
+                const obj = {}
+                headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+                const taskData = {
+                    title: obj.title || obj.name || '',
+                    type: obj.type || 'machine_learning',
+                    difficulty: obj.difficulty || 'medium',
+                    description: obj.description || '',
+                    requirements: obj.requirements || '',
+                    deadline: obj.deadline || '',
+                    mentorId: ADMIN_ID
+                }
+                if (!taskData.title) continue
+                await axios.post(`${API_BASE}/tasks`, taskData)
+                created++
+            }
+            alert(`Successfully created ${created} tasks from CSV!`)
+            fetchTasks()
+        } catch (err) { alert('Error parsing CSV: ' + err.message) }
+        setUploading(false)
+    }
+
     if (loading) return <div className="loading-spinner"></div>
 
     return (
@@ -2002,37 +2069,50 @@ function GlobalTasks() {
                             </div>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <input type="file" ref={csvInputRef} accept=".csv" style={{ display: 'none' }} onChange={handleCSVUpload} />
+                        <button
+                            onClick={() => csvInputRef.current?.click()}
+                            className="btn-create-new premium-btn"
+                            disabled={uploading}
+                            style={{
+                                padding: '0.85rem 1.25rem',
+                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                borderRadius: '0.75rem',
+                                fontSize: '0.9rem',
+                                fontWeight: 600,
+                                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                opacity: uploading ? 0.6 : 1
+                            }}
+                        >
+                            <Upload size={18} /> {uploading ? 'Uploading...' : 'CSV Upload'}
+                        </button>
                         <button
                             onClick={() => setShowAIChat(true)}
                             className="btn-create-new premium-btn"
                             style={{
-                                padding: '1rem 1.5rem',
+                                padding: '0.85rem 1.25rem',
                                 background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                                borderRadius: '1rem',
-                                fontSize: '1rem',
+                                borderRadius: '0.75rem',
+                                fontSize: '0.9rem',
                                 fontWeight: 600,
-                                transition: 'all 0.3s ease',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
+                                display: 'flex', alignItems: 'center', gap: '0.4rem'
                             }}
                         >
-                            <Sparkles size={20} /> AI Generate
+                            <Sparkles size={18} /> AI Generate
                         </button>
                         <button
                             onClick={() => setShowModal(true)}
                             className="btn-create-new premium-btn"
                             style={{
-                                padding: '1rem 2rem',
+                                padding: '0.85rem 1.5rem',
                                 background: 'var(--primary)',
-                                borderRadius: '1rem',
-                                fontSize: '1rem',
-                                fontWeight: 600,
-                                transition: 'all 0.3s ease'
+                                borderRadius: '0.75rem',
+                                fontSize: '0.9rem',
+                                fontWeight: 600
                             }}
                         >
-                            <Plus size={20} /> Create Manually
+                            <Plus size={18} /> Create Manual
                         </button>
                     </div>
                 </div>
@@ -2251,6 +2331,8 @@ function GlobalProblems() {
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
     const [showAIChat, setShowAIChat] = useState(false)
+    const [uploading, setUploading] = useState(false)
+    const csvInputRef = useRef(null)
     const [activeTab, setActiveTab] = useState('coding') // 'coding' or 'sql'
     const [selectedProblemForTestCases, setSelectedProblemForTestCases] = useState(null)
     const [problem, setProblem] = useState({
@@ -2349,6 +2431,46 @@ function GlobalProblems() {
         }
     }
 
+    const handleCSVUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        e.target.value = ''
+        setUploading(true)
+        try {
+            const text = await file.text()
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { alert('CSV must have a header row and at least one data row'); setUploading(false); return }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+            const rows = lines.slice(1)
+            let created = 0
+            for (const row of rows) {
+                const vals = row.match(/(".*?"|[^,]*)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || []
+                const obj = {}
+                headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+                const isSQL = (obj.type || '').toUpperCase() === 'SQL' || (obj.language || '').toUpperCase() === 'SQL'
+                const probData = {
+                    title: obj.title || obj.name || '',
+                    type: isSQL ? 'SQL' : (obj.type || 'Coding'),
+                    language: isSQL ? 'SQL' : (obj.language || 'Python'),
+                    difficulty: obj.difficulty || 'Medium',
+                    description: obj.description || '',
+                    sampleInput: obj.sample_input || obj.sampleinput || '',
+                    expectedOutput: obj.expected_output || obj.expectedoutput || '',
+                    sqlSchema: isSQL ? (obj.sql_schema || obj.schema || '') : '',
+                    expectedQueryResult: isSQL ? (obj.expected_query_result || obj.expected_result || '') : '',
+                    status: obj.status || 'live',
+                    mentorId: ADMIN_ID
+                }
+                if (!probData.title) continue
+                await axios.post(`${API_BASE}/problems`, probData)
+                created++
+            }
+            alert(`Successfully created ${created} problems from CSV!`)
+            fetchProblems()
+        } catch (err) { alert('Error parsing CSV: ' + err.message) }
+        setUploading(false)
+    }
+
     if (loading) return <div className="loading-spinner"></div>
 
     // Separate problems into Coding and SQL
@@ -2390,15 +2512,34 @@ function GlobalProblems() {
                             </div>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
+                        <button
+                            onClick={() => csvInputRef.current?.click()}
+                            disabled={uploading}
+                            className="btn-create-new premium-btn"
+                            style={{
+                                padding: '0.75rem 1.25rem',
+                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                borderRadius: '1rem',
+                                fontSize: '0.95rem',
+                                fontWeight: 600,
+                                transition: 'all 0.3s ease',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}
+                        >
+                            <Upload size={18} /> {uploading ? 'Uploading...' : 'CSV Upload'}
+                        </button>
                         <button
                             onClick={() => setShowAIChat(true)}
                             className="btn-create-new premium-btn"
                             style={{
-                                padding: '1rem 1.5rem',
+                                padding: '0.75rem 1.25rem',
                                 background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
                                 borderRadius: '1rem',
-                                fontSize: '1rem',
+                                fontSize: '0.95rem',
                                 fontWeight: 600,
                                 transition: 'all 0.3s ease',
                                 display: 'flex',
@@ -2412,10 +2553,10 @@ function GlobalProblems() {
                             onClick={() => setShowModal(true)}
                             className="btn-create-new premium-btn"
                             style={{
-                                padding: '1rem 2rem',
+                                padding: '0.75rem 1.25rem',
                                 background: 'var(--primary)',
                                 borderRadius: '1rem',
-                                fontSize: '1rem',
+                                fontSize: '0.95rem',
                                 fontWeight: 600,
                                 transition: 'all 0.3s ease'
                             }}
@@ -3083,6 +3224,68 @@ function GlobalTestsAdmin() {
     const [isGeneratingCoding, setIsGeneratingCoding] = useState(false)
     const [isGeneratingSql, setIsGeneratingSql] = useState(false)
     const [enableProctoring, setEnableProctoring] = useState(true)
+    const [uploading, setUploading] = useState(false)
+    const csvInputRef = useRef(null)
+
+    const handleCSVUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        setUploading(true)
+        try {
+            const text = await file.text()
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { alert('CSV must have header + at least one row'); return }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+            const questions = []
+            for (let i = 1; i < lines.length; i++) {
+                const vals = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.trim().replace(/^"|"$/g, '')) || []
+                const row = {}
+                headers.forEach((h, idx) => row[h] = vals[idx] || '')
+                const section = (row.section || 'aptitude').toLowerCase()
+                if (!['aptitude', 'verbal', 'logical'].includes(section)) continue
+                questions.push({
+                    section,
+                    question: row.question || '',
+                    options: [row.option1 || row.option_1 || '', row.option2 || row.option_2 || '', row.option3 || row.option_3 || '', row.option4 || row.option_4 || ''],
+                    correctAnswer: parseInt(row.correctanswer || row.correct_answer || row.answer || '0'),
+                    category: row.category || 'general',
+                    explanation: row.explanation || ''
+                })
+            }
+            if (questions.length === 0) { alert('No valid MCQ rows found. CSV needs: section,question,option1,option2,option3,option4,correctAnswer'); setUploading(false); return }
+            // Create a test with default config
+            const testPayload = {
+                title: file.name.replace('.csv', '') + ' - CSV Import',
+                type: 'comprehensive', difficulty: 'Medium', duration: 180, passingScore: 60,
+                status: 'draft', createdBy: ADMIN_ID,
+                sectionConfig: {
+                    sections: [
+                        { id: 'aptitude', enabled: true, order: 1, questionsCount: questions.filter(q => q.section === 'aptitude').length, timeMinutes: 30 },
+                        { id: 'verbal', enabled: true, order: 2, questionsCount: questions.filter(q => q.section === 'verbal').length, timeMinutes: 25 },
+                        { id: 'logical', enabled: true, order: 3, questionsCount: questions.filter(q => q.section === 'logical').length, timeMinutes: 20 },
+                        { id: 'coding', enabled: false, order: 4, questionsCount: 0, timeMinutes: 0 },
+                        { id: 'sql', enabled: false, order: 5, questionsCount: 0, timeMinutes: 0 }
+                    ],
+                    totalDurationMinutes: 75, sectionTimeMode: 'fixed'
+                }
+            }
+            const res = await axios.post(`${API_BASE}/global-tests`, testPayload)
+            const testId = res.data.id
+            // Group questions by section and post
+            for (const sec of ['aptitude', 'verbal', 'logical']) {
+                const secQs = questions.filter(q => q.section === sec)
+                if (secQs.length === 0) continue
+                await axios.post(`${API_BASE}/global-tests/${testId}/questions`, { section: sec, questions: secQs })
+            }
+            alert(`Created test with ${questions.length} questions from CSV!`)
+            fetchTests()
+        } catch (err) {
+            alert('CSV upload failed: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setUploading(false)
+            e.target.value = ''
+        }
+    }
 
     const fetchTests = async () => {
         try {
@@ -3541,14 +3744,25 @@ function GlobalTestsAdmin() {
                             </div>
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => { setShowModal(true); setModalStep(1); setEditingId(null); setQuestionsBySection({ aptitude: [], verbal: [], logical: [], coding: [], sql: [] }); setGeneratedQuestions([]); setAiPrompt({ topic: '', difficulty: 'Medium', count: 5 }); }}
-                        className="btn-create-new premium-btn"
-                        style={{ padding: '1rem 2rem', background: 'var(--primary)', borderRadius: '1rem', fontSize: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                    >
-                        <Plus size={20} /> Create Global Test
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
+                        <button
+                            onClick={() => csvInputRef.current?.click()}
+                            disabled={uploading}
+                            className="btn-create-new premium-btn"
+                            style={{ padding: '0.75rem 1.25rem', background: 'linear-gradient(135deg, #10b981, #059669)', borderRadius: '1rem', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                        >
+                            <Upload size={18} /> {uploading ? 'Uploading...' : 'CSV Upload'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setShowModal(true); setModalStep(1); setEditingId(null); setQuestionsBySection({ aptitude: [], verbal: [], logical: [], coding: [], sql: [] }); setGeneratedQuestions([]); setAiPrompt({ topic: '', difficulty: 'Medium', count: 5 }); }}
+                            className="btn-create-new premium-btn"
+                            style={{ padding: '0.75rem 1.25rem', background: 'var(--primary)', borderRadius: '1rem', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                        >
+                            <Plus size={20} /> Create Global Test
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -4278,6 +4492,8 @@ function AptitudeTestsAdmin() {
     const [generatedQuestions, setGeneratedQuestions] = useState([])
     const [aiPrompt, setAiPrompt] = useState({ topic: '', difficulty: 'Medium', count: 5 })
     const [submissions, setSubmissions] = useState([])
+    const [uploading, setUploading] = useState(false)
+    const csvInputRef = useRef(null)
 
     const [newTest, setNewTest] = useState({
         title: '',
@@ -4400,6 +4616,47 @@ function AptitudeTestsAdmin() {
         }
     }
 
+    const handleCSVUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        setUploading(true)
+        try {
+            const text = await file.text()
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { alert('CSV must have header + at least one row'); return }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+            const questions = []
+            for (let i = 1; i < lines.length; i++) {
+                const vals = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.trim().replace(/^"|"$/g, '')) || []
+                const row = {}
+                headers.forEach((h, idx) => row[h] = vals[idx] || '')
+                if (!row.question) continue
+                questions.push({
+                    question: row.question,
+                    options: [row.option1 || row.option_1 || '', row.option2 || row.option_2 || '', row.option3 || row.option_3 || '', row.option4 || row.option_4 || ''],
+                    correctAnswer: parseInt(row.correctanswer || row.correct_answer || row.answer || '0'),
+                    category: row.category || 'general',
+                    explanation: row.explanation || ''
+                })
+            }
+            if (questions.length === 0) { alert('No valid rows. CSV needs: question,option1,option2,option3,option4,correctAnswer'); setUploading(false); return }
+            const payload = {
+                title: file.name.replace('.csv', '') + ' - CSV Import',
+                difficulty: 'Medium', duration: Math.max(30, questions.length * 2),
+                passingScore: 60, maxTabSwitches: 3, maxAttempts: 1,
+                status: 'draft', createdBy: ADMIN_ID, questions
+            }
+            await axios.post(`${API_BASE}/aptitude`, payload)
+            alert(`Created aptitude test with ${questions.length} questions from CSV!`)
+            fetchTests()
+        } catch (err) {
+            alert('CSV upload failed: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setUploading(false)
+            e.target.value = ''
+        }
+    }
+
     const handleToggleStatus = async (test) => {
         const newStatus = test.status === 'live' ? 'ended' : 'live';
         const action = newStatus === 'live' ? 'make this test visible to students' : 'hide this test from students';
@@ -4467,22 +4724,42 @@ function AptitudeTestsAdmin() {
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={() => setShowModal(true)}
-                    className="btn-create-new premium-btn"
-                    style={{
-                        padding: '1rem 2rem',
-                        background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                        borderRadius: '1rem',
-                        fontSize: '1rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem'
-                    }}
-                >
-                    <Plus size={20} /> Create New Test
-                </button>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
+                    <button
+                        onClick={() => csvInputRef.current?.click()}
+                        disabled={uploading}
+                        className="btn-create-new premium-btn"
+                        style={{
+                            padding: '0.75rem 1.25rem',
+                            background: 'linear-gradient(135deg, #10b981, #059669)',
+                            borderRadius: '1rem',
+                            fontSize: '0.95rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}
+                    >
+                        <Upload size={18} /> {uploading ? 'Uploading...' : 'CSV Upload'}
+                    </button>
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="btn-create-new premium-btn"
+                        style={{
+                            padding: '0.75rem 1.25rem',
+                            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                            borderRadius: '1rem',
+                            fontSize: '0.95rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}
+                    >
+                        <Plus size={20} /> Create New Test
+                    </button>
+                </div>
             </div>
 
             {/* Stats */}

@@ -6207,6 +6207,421 @@ async function updateUserStreak(userId, activity) {
     }
 }
 
+// ==================== USER MANAGEMENT CRUD (Admin) ====================
+
+// Get all users with filters (admin user management)
+app.get('/api/admin/users', async (req, res) => {
+    try {
+        const { role, status, batch, search, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, parseInt(page));
+        const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+        const offset = (pageNum - 1) * pageSize;
+
+        let query = 'SELECT u.*, GROUP_CONCAT(msa.student_id) as allocated_students FROM users u LEFT JOIN mentor_student_allocations msa ON u.id = msa.mentor_id WHERE 1=1';
+        let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
+        const params = [];
+        const countParams = [];
+
+        if (role) { query += ' AND u.role = ?'; countQuery += ' AND role = ?'; params.push(role); countParams.push(role); }
+        if (status) { query += ' AND u.status = ?'; countQuery += ' AND status = ?'; params.push(status); countParams.push(status); }
+        if (batch) { query += ' AND u.batch = ?'; countQuery += ' AND batch = ?'; params.push(batch); countParams.push(batch); }
+        if (search) {
+            query += ' AND (u.name LIKE ? OR u.email LIKE ? OR u.id LIKE ?)';
+            countQuery += ' AND (name LIKE ? OR email LIKE ? OR id LIKE ?)';
+            const s = `%${search}%`; params.push(s, s, s); countParams.push(s, s, s);
+        }
+
+        query += ' GROUP BY u.id ORDER BY u.created_at DESC LIMIT ? OFFSET ?';
+        const [[{ total }]] = await pool.query(countQuery, countParams);
+        const [users] = await pool.query(query, [...params, pageSize, offset]);
+
+        const cleanUsers = users.map(u => {
+            const { password: _, ...rest } = u;
+            return { ...rest, mentorId: u.mentor_id, createdAt: u.created_at, allocatedStudents: u.allocated_students ? u.allocated_students.split(',') : [] };
+        });
+
+        res.json({ data: cleanUsers, pagination: { page: pageNum, limit: pageSize, total, pages: Math.ceil(total / pageSize) } });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Create user (admin)
+app.post('/api/admin/users', async (req, res) => {
+    try {
+        const { name, email, password, role, mentorId, batch, phone } = req.body;
+        if (!name || !email || !password || !role) return res.status(400).json({ error: 'Name, email, password, and role are required' });
+
+        // Check duplicate email
+        const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+        if (existing.length > 0) return res.status(409).json({ error: 'Email already exists' });
+
+        // Generate ID based on role
+        const [countResult] = await pool.query('SELECT COUNT(*) as cnt FROM users WHERE role = ?', [role]);
+        const nextNum = (countResult[0].cnt + 1).toString().padStart(3, '0');
+        const userId = `${role}-${nextNum}`;
+
+        const createdAt = new Date();
+        await pool.query(
+            'INSERT INTO users (id, name, email, password, role, mentor_id, batch, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "active", ?)',
+            [userId, name, email, password, role, mentorId || null, batch || null, phone || null, createdAt]
+        );
+
+        // If student with mentorId, create allocation
+        if (role === 'student' && mentorId) {
+            await pool.query('INSERT IGNORE INTO mentor_student_allocations (mentor_id, student_id) VALUES (?, ?)', [mentorId, userId]);
+        }
+
+        res.json({ success: true, user: { id: userId, name, email, role, mentorId, batch, phone, status: 'active', createdAt } });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Update user (admin)
+app.put('/api/admin/users/:id', async (req, res) => {
+    try {
+        const { name, email, role, mentorId, batch, phone, status } = req.body;
+        const userId = req.params.id;
+
+        const [existing] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
+        if (existing.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        const updates = [];
+        const params = [];
+        if (name) { updates.push('name = ?'); params.push(name); }
+        if (email) { updates.push('email = ?'); params.push(email); }
+        if (role) { updates.push('role = ?'); params.push(role); }
+        if (mentorId !== undefined) { updates.push('mentor_id = ?'); params.push(mentorId || null); }
+        if (batch !== undefined) { updates.push('batch = ?'); params.push(batch || null); }
+        if (phone !== undefined) { updates.push('phone = ?'); params.push(phone || null); }
+        if (status) { updates.push('status = ?'); params.push(status); }
+
+        if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+        params.push(userId);
+        await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+
+        // Update allocation if mentor changed
+        if (mentorId !== undefined && existing[0].role === 'student') {
+            await pool.query('DELETE FROM mentor_student_allocations WHERE student_id = ?', [userId]);
+            if (mentorId) {
+                await pool.query('INSERT IGNORE INTO mentor_student_allocations (mentor_id, student_id) VALUES (?, ?)', [mentorId, userId]);
+            }
+        }
+
+        const [updated] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
+        const { password: _, ...userWithoutPassword } = updated[0];
+        res.json({ success: true, user: { ...userWithoutPassword, mentorId: updated[0].mentor_id } });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Delete user (admin)
+app.delete('/api/admin/users/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const [existing] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
+        if (existing.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            await connection.query('DELETE FROM mentor_student_allocations WHERE mentor_id = ? OR student_id = ?', [userId, userId]);
+            await connection.query('DELETE FROM direct_messages WHERE sender_id = ? OR receiver_id = ?', [userId, userId]);
+            await connection.query('DELETE FROM code_feedback WHERE mentor_id = ? OR student_id = ?', [userId, userId]);
+            if (existing[0].role === 'student') {
+                await connection.query('DELETE FROM submissions WHERE student_id = ?', [userId]);
+                await connection.query('DELETE FROM task_completions WHERE student_id = ?', [userId]);
+                await connection.query('DELETE FROM problem_completions WHERE student_id = ?', [userId]);
+                await connection.query('DELETE FROM aptitude_submissions WHERE student_id = ?', [userId]);
+                await connection.query('DELETE FROM student_completed_aptitude WHERE student_id = ?', [userId]);
+            }
+            await connection.query('DELETE FROM users WHERE id = ?', [userId]);
+            await connection.commit();
+            res.json({ success: true, message: `User ${userId} deleted` });
+        } catch (err) { await connection.rollback(); throw err; }
+        finally { connection.release(); }
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Reset password (admin)
+app.post('/api/admin/users/:id/reset-password', async (req, res) => {
+    try {
+        const { newPassword } = req.body;
+        if (!newPassword) return res.status(400).json({ error: 'New password is required' });
+
+        const [existing] = await pool.query('SELECT id FROM users WHERE id = ?', [req.params.id]);
+        if (existing.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, req.params.id]);
+        res.json({ success: true, message: 'Password reset successfully' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Toggle user status (admin)
+app.patch('/api/admin/users/:id/status', async (req, res) => {
+    try {
+        const { status } = req.body;
+        if (!['active', 'inactive', 'suspended'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+        await pool.query('UPDATE users SET status = ? WHERE id = ?', [status, req.params.id]);
+        res.json({ success: true, message: `User status changed to ${status}` });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get available batches
+app.get('/api/admin/batches', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT DISTINCT batch FROM users WHERE batch IS NOT NULL AND batch != "" ORDER BY batch');
+        res.json(rows.map(r => r.batch));
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== DIRECT MESSAGING (Mentor ↔ Student) ====================
+
+// Get conversations list for a user (only messages from last 24 hours)
+app.get('/api/messages/conversations/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const [conversations] = await pool.query(`
+            SELECT 
+                CASE WHEN dm.sender_id = ? THEN dm.receiver_id ELSE dm.sender_id END AS other_user_id,
+                u.name AS other_user_name, u.role AS other_user_role, u.email AS other_user_email,
+                dm.message AS last_message, dm.created_at AS last_message_at, dm.message_type,
+                (SELECT COUNT(*) FROM direct_messages WHERE sender_id = other_user_id AND receiver_id = ? AND is_read = 0 AND created_at >= NOW() - INTERVAL 24 HOUR) AS unread_count
+            FROM direct_messages dm
+            JOIN users u ON u.id = CASE WHEN dm.sender_id = ? THEN dm.receiver_id ELSE dm.sender_id END
+            WHERE dm.id IN (
+                SELECT MAX(id) FROM direct_messages 
+                WHERE (sender_id = ? OR receiver_id = ?) AND created_at >= NOW() - INTERVAL 24 HOUR
+                GROUP BY CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END
+            )
+            ORDER BY dm.created_at DESC
+        `, [userId, userId, userId, userId, userId, userId]);
+        res.json(conversations);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get messages between two users
+app.get('/api/messages/:userId1/:userId2', async (req, res) => {
+    try {
+        const { userId1, userId2 } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+        const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
+
+        const [messages] = await pool.query(`
+            SELECT dm.*, u1.name as sender_name, u2.name as receiver_name
+            FROM direct_messages dm
+            JOIN users u1 ON dm.sender_id = u1.id
+            JOIN users u2 ON dm.receiver_id = u2.id
+            WHERE ((dm.sender_id = ? AND dm.receiver_id = ?) OR (dm.sender_id = ? AND dm.receiver_id = ?))
+              AND dm.created_at >= NOW() - INTERVAL 24 HOUR
+            ORDER BY dm.created_at ASC
+            LIMIT ? OFFSET ?
+        `, [userId1, userId2, userId2, userId1, parseInt(limit), offset]);
+
+        // Mark messages as read
+        await pool.query('UPDATE direct_messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0', [userId2, userId1]);
+
+        res.json(messages);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Send a message
+app.post('/api/messages', async (req, res) => {
+    try {
+        const { senderId, receiverId, message, messageType, fileUrl } = req.body;
+        if (!senderId || !receiverId || !message) return res.status(400).json({ error: 'senderId, receiverId, and message are required' });
+
+        const messageId = uuidv4();
+        await pool.query(
+            'INSERT INTO direct_messages (id, sender_id, receiver_id, message, message_type, file_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [messageId, senderId, receiverId, message, messageType || 'text', fileUrl || null, new Date()]
+        );
+
+        const [senderInfo] = await pool.query('SELECT name FROM users WHERE id = ?', [senderId]);
+
+        const newMessage = { id: messageId, sender_id: senderId, receiver_id: receiverId, message, message_type: messageType || 'text', file_url: fileUrl, is_read: 0, created_at: new Date(), sender_name: senderInfo[0]?.name };
+
+        // Emit real-time notification via Socket.io
+        if (activeConnections.students.has(receiverId)) {
+            activeConnections.students.get(receiverId).forEach(s => s.emit('new_message', newMessage));
+        }
+        if (activeConnections.mentors.has(receiverId)) {
+            activeConnections.mentors.get(receiverId).forEach(s => s.emit('new_message', newMessage));
+        }
+
+        res.json(newMessage);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get unread message count
+app.get('/api/messages/unread/:userId', async (req, res) => {
+    try {
+        const [[{ count }]] = await pool.query('SELECT COUNT(*) as count FROM direct_messages WHERE receiver_id = ? AND is_read = 0 AND created_at >= NOW() - INTERVAL 24 HOUR', [req.params.userId]);
+        res.json({ unreadCount: count });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== INLINE CODE FEEDBACK (Mentor) ====================
+
+// Get feedback for a submission
+app.get('/api/feedback/submission/:submissionId', async (req, res) => {
+    try {
+        const [feedback] = await pool.query(`
+            SELECT cf.*, u.name as mentor_name 
+            FROM code_feedback cf
+            JOIN users u ON cf.mentor_id = u.id
+            WHERE cf.submission_id = ?
+            ORDER BY cf.line_number ASC, cf.created_at ASC
+        `, [req.params.submissionId]);
+        res.json(feedback);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Add feedback to a submission
+app.post('/api/feedback', async (req, res) => {
+    try {
+        const { submissionId, mentorId, studentId, lineNumber, endLine, comment, feedbackType } = req.body;
+        if (!submissionId || !mentorId || !studentId || !lineNumber || !comment) {
+            return res.status(400).json({ error: 'submissionId, mentorId, studentId, lineNumber, and comment are required' });
+        }
+
+        const feedbackId = uuidv4();
+        await pool.query(
+            'INSERT INTO code_feedback (id, submission_id, mentor_id, student_id, line_number, end_line, comment, feedback_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [feedbackId, submissionId, mentorId, studentId, lineNumber, endLine || null, comment, feedbackType || 'suggestion', new Date()]
+        );
+
+        // Notify student in real-time
+        if (activeConnections.students.has(studentId)) {
+            activeConnections.students.get(studentId).forEach(s => s.emit('new_feedback', { submissionId, feedbackId, lineNumber, comment, feedbackType }));
+        }
+
+        res.json({ success: true, id: feedbackId });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Update feedback
+app.put('/api/feedback/:id', async (req, res) => {
+    try {
+        const { comment, feedbackType, isResolved } = req.body;
+        const updates = []; const params = [];
+        if (comment) { updates.push('comment = ?'); params.push(comment); }
+        if (feedbackType) { updates.push('feedback_type = ?'); params.push(feedbackType); }
+        if (isResolved !== undefined) { updates.push('is_resolved = ?'); params.push(isResolved ? 1 : 0); }
+        if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+        params.push(req.params.id);
+        await pool.query(`UPDATE code_feedback SET ${updates.join(', ')} WHERE id = ?`, params);
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Delete feedback
+app.delete('/api/feedback/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM code_feedback WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get all feedback by mentor (for their overview)
+app.get('/api/feedback/mentor/:mentorId', async (req, res) => {
+    try {
+        const [feedback] = await pool.query(`
+            SELECT cf.*, u.name as student_name, s.language, p.title as problem_title
+            FROM code_feedback cf
+            JOIN users u ON cf.student_id = u.id
+            JOIN submissions s ON cf.submission_id = s.id
+            LEFT JOIN problems p ON s.problem_id = p.id
+            WHERE cf.mentor_id = ?
+            ORDER BY cf.created_at DESC LIMIT 100
+        `, [req.params.mentorId]);
+        res.json(feedback);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FILE UPLOAD & ATTACHMENTS ====================
+
+// Setup file upload storage for attachments
+const attachmentDir = path.join(__dirname, 'uploads', 'attachments');
+if (!fs.existsSync(attachmentDir)) { fs.mkdirSync(attachmentDir, { recursive: true }); }
+
+const attachmentStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, attachmentDir),
+    filename: (req, file, cb) => cb(null, `${Date.now()}_${file.originalname.replace(/\s+/g, '_')}`)
+});
+
+const attachmentUpload = multer({
+    storage: attachmentStorage,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = [
+            'application/pdf', 'text/csv', 'text/plain',
+            'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+            'application/zip', 'application/x-rar-compressed', 'application/json',
+            'text/markdown', 'text/html', 'application/xml'
+        ];
+        if (allowedTypes.includes(file.mimetype) || file.mimetype.startsWith('text/') || file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error(`File type ${file.mimetype} not allowed. Allowed: PDF, CSV, DOC, XLS, PPT, images, ZIP, JSON, TXT, MD`));
+        }
+    }
+});
+
+// Serve attachment files statically
+app.use('/uploads/attachments', express.static(attachmentDir));
+
+// Upload file(s) for entity (task, problem, aptitude, global_test)
+app.post('/api/attachments/upload', attachmentUpload.array('files', 10), async (req, res) => {
+    try {
+        const { entityType, entityId, uploadedBy } = req.body;
+        if (!entityType || !entityId || !uploadedBy) return res.status(400).json({ error: 'entityType, entityId, and uploadedBy are required' });
+        if (!['task', 'problem', 'aptitude', 'global_test'].includes(entityType)) return res.status(400).json({ error: 'Invalid entityType. Must be: task, problem, aptitude, global_test' });
+        if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
+
+        const attachments = [];
+        for (const file of req.files) {
+            const attachmentId = uuidv4();
+            const fileUrl = `/uploads/attachments/${file.filename}`;
+            await pool.query(
+                'INSERT INTO file_attachments (id, entity_type, entity_id, file_name, original_name, file_type, file_size, file_url, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [attachmentId, entityType, entityId, file.filename, file.originalname, file.mimetype, file.size, fileUrl, uploadedBy, new Date()]
+            );
+            attachments.push({ id: attachmentId, entityType, entityId, fileName: file.filename, originalName: file.originalname, fileType: file.mimetype, fileSize: file.size, fileUrl, uploadedBy });
+        }
+
+        res.json({ success: true, attachments });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get attachments for an entity
+app.get('/api/attachments/:entityType/:entityId', async (req, res) => {
+    try {
+        const { entityType, entityId } = req.params;
+        const [attachments] = await pool.query(
+            'SELECT fa.*, u.name as uploader_name FROM file_attachments fa JOIN users u ON fa.uploaded_by = u.id WHERE fa.entity_type = ? AND fa.entity_id = ? ORDER BY fa.created_at DESC',
+            [entityType, entityId]
+        );
+        res.json(attachments);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Delete attachment
+app.delete('/api/attachments/:id', async (req, res) => {
+    try {
+        const [att] = await pool.query('SELECT * FROM file_attachments WHERE id = ?', [req.params.id]);
+        if (att.length === 0) return res.status(404).json({ error: 'Attachment not found' });
+
+        // Delete physical file
+        const filePath = path.join(attachmentDir, att[0].file_name);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+        await pool.query('DELETE FROM file_attachments WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 // ========== WEBSOCKET EVENT HANDLERS (Features 23 & 24) ==========
 
 io.on('connection', (socket) => {
@@ -6384,10 +6799,23 @@ io.on('connection', (socket) => {
     });
 });
 
+// Auto-delete messages older than 24 hours (runs every 30 minutes)
+setInterval(async () => {
+    try {
+        const [result] = await pool.query('DELETE FROM direct_messages WHERE created_at < NOW() - INTERVAL 24 HOUR');
+        if (result.affectedRows > 0) {
+            console.log(`🗑️ Auto-cleanup: Deleted ${result.affectedRows} messages older than 24 hours`);
+        }
+    } catch (err) {
+        console.error('Message cleanup error:', err.message);
+    }
+}, 30 * 60 * 1000); // Every 30 minutes
+
 httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
     console.log('🔌 WebSocket ready for real-time updates');
     console.log('📚 Student Portal: http://127.0.0.1:3000/#/student');
     console.log('👨‍🏫 Mentor Portal: http://127.0.0.1:3000/#/mentor');
     console.log('🛡️ Admin Portal: http://127.0.0.1:3000/#/admin');
+    console.log('⏰ Message auto-cleanup: every 30 min (24hr expiry)');
 });

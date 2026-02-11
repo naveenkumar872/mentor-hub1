@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare } from 'lucide-react'
 import DashboardLayout from '../components/DashboardLayout'
 import AptitudeTestInterface from '../components/AptitudeTestInterface'
 import GlobalTestInterface from '../components/GlobalTestInterface'
@@ -10,6 +10,7 @@ import CodeOutputPreview from '../components/CodeOutputPreview'
 import SQLValidator from '../components/SQLValidator'
 import SQLVisualizer from '../components/SQLVisualizer'
 import SQLDebugger from '../components/SQLDebugger'
+import DirectMessaging from '../components/DirectMessaging'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -36,6 +37,22 @@ function StudentPortal() {
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
     const [mentorInfo, setMentorInfo] = useState(null)
+    const [unreadCount, setUnreadCount] = useState(0)
+
+    // Poll for unread messages
+    useEffect(() => {
+        const userId = user?.id || user?.userId
+        if (!userId) return
+        const fetchUnread = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/messages/unread/${userId}`)
+                setUnreadCount(res.data.unreadCount || 0)
+            } catch (e) { /* ignore */ }
+        }
+        fetchUnread()
+        const interval = setInterval(fetchUnread, 15000)
+        return () => clearInterval(interval)
+    }, [user])
 
     // Fetch mentor info once
     useEffect(() => {
@@ -77,6 +94,10 @@ function StudentPortal() {
                 setTitle(t('my_analytics'))
                 setSubtitle(t('analytics_subtitle'))
                 break
+            case 'messaging':
+                setTitle('Messages')
+                setSubtitle('Chat with your mentor')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -90,7 +111,8 @@ function StudentPortal() {
         { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
         { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
         { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
-        { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> }
+        { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> },
+        { path: '/student/messaging', label: 'Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
     ]
 
     return (
@@ -103,6 +125,7 @@ function StudentPortal() {
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
                 <Route path="/analytics" element={<StudentAnalytics user={user} />} />
+                <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
             </Routes>
         </DashboardLayout>
     )

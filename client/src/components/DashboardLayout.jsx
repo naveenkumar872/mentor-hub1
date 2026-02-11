@@ -93,6 +93,25 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                         >
                             {item.icon}
                             <span>{item.label}</span>
+                            {item.badge > 0 && (
+                                <span style={{
+                                    marginLeft: 'auto',
+                                    background: '#ef4444',
+                                    color: 'white',
+                                    borderRadius: '50%',
+                                    minWidth: '20px',
+                                    height: '20px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    padding: '0 4px',
+                                    animation: 'pulse 2s infinite'
+                                }}>
+                                    {item.badge > 99 ? '99+' : item.badge}
+                                </span>
+                            )}
                         </NavLink>
                     ))}
                 </nav>

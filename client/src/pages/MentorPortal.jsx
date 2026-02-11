@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Upload, FileCode, Trophy, List, Users, Medal, Activity, CheckCircle, TrendingUp, Clock, Plus, X, ChevronRight, Code, Trash2, Eye, AlertTriangle, FileText, BarChart2, Zap, Award, Sparkles, Brain, Target, XCircle, Search, Mail, Calendar, BookOpen, Settings, ClipboardList, Shield, Download } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -8,6 +8,9 @@ import AptitudeReportModal from '../components/AptitudeReportModal'
 import StudentReportModal from '../components/StudentReportModal'
 import TestCasesManager from '../components/TestCasesManager'
 import MentorLiveMonitoring from '../components/MentorLiveMonitoring'
+import DirectMessaging from '../components/DirectMessaging'
+import InlineCodeFeedback from '../components/InlineCodeFeedback'
+import FileUpload from '../components/FileUpload'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -23,6 +26,22 @@ function MentorPortal() {
     const location = useLocation()
     const [title, setTitle] = useState('')
     const [subtitle, setSubtitle] = useState('')
+    const [unreadCount, setUnreadCount] = useState(0)
+
+    // Poll for unread messages
+    useEffect(() => {
+        const userId = user?.id || user?.userId
+        if (!userId) return
+        const fetchUnread = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/messages/unread/${userId}`)
+                setUnreadCount(res.data.unreadCount || 0)
+            } catch (e) { /* ignore */ }
+        }
+        fetchUnread()
+        const interval = setInterval(fetchUnread, 15000)
+        return () => clearInterval(interval)
+    }, [user])
 
     useEffect(() => {
         const path = location.pathname.split('/').pop()
@@ -51,6 +70,10 @@ function MentorPortal() {
                 setTitle(t('analytics'))
                 setSubtitle(t('analytics_dashboard_subtitle'))
                 break
+            case 'messaging':
+                setTitle('Direct Messaging')
+                setSubtitle('Chat with your students')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -64,7 +87,8 @@ function MentorPortal() {
         { path: '/mentor/leaderboard', label: t('leaderboard'), icon: <Trophy size={20} /> },
         { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
         { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
-        { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> }
+        { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
+        { path: '/mentor/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount }
     ]
 
     return (
@@ -77,6 +101,7 @@ function MentorPortal() {
                 <Route path="/all-submissions" element={<AllSubmissions user={user} />} />
                 <Route path="/analytics" element={<MentorAnalytics user={user} />} />
                 <Route path="/live-monitoring" element={<MentorLiveMonitoring user={user} />} />
+                <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
             </Routes>
         </DashboardLayout>
     )
@@ -391,6 +416,8 @@ function UploadTasks({ user }) {
     const [students, setStudents] = useState([])
     const [loading, setLoading] = useState(true)
     const [showAIChat, setShowAIChat] = useState(false)
+    const [uploading, setUploading] = useState(false)
+    const csvInputRef = useRef(null)
     const [task, setTask] = useState({
         title: '',
         type: 'machine_learning',
@@ -431,6 +458,42 @@ function UploadTasks({ user }) {
         fetchData()
     }, [user.id])
 
+    const handleCSVUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        setUploading(true)
+        try {
+            const text = await file.text()
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { alert('CSV must have header + at least one row'); return }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+            let created = 0
+            for (let i = 1; i < lines.length; i++) {
+                const vals = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.trim().replace(/^"|"$/g, '')) || []
+                const row = {}
+                headers.forEach((h, idx) => row[h] = vals[idx] || '')
+                if (!row.title) continue
+                await axios.post(`${API_BASE}/tasks`, {
+                    title: row.title,
+                    type: row.type || 'machine_learning',
+                    difficulty: row.difficulty || 'medium',
+                    description: row.description || '',
+                    requirements: row.requirements || '',
+                    deadline: row.deadline || '',
+                    mentorId: user.id
+                })
+                created++
+            }
+            alert(`Created ${created} tasks from CSV!`)
+            fetchData()
+        } catch (err) {
+            alert('CSV upload failed: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setUploading(false)
+            e.target.value = ''
+        }
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault()
         try {
@@ -469,25 +532,48 @@ function UploadTasks({ user }) {
                     <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                         <Upload size={20} className="text-primary" /> Create New ML Task
                     </h3>
-                    <button
-                        type="button"
-                        onClick={() => setShowAIChat(true)}
-                        style={{
-                            padding: '0.6rem 1.2rem',
-                            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                            border: 'none',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontSize: '0.85rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                        }}
-                    >
-                        <Sparkles size={16} /> AI Generate
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
+                        <button
+                            type="button"
+                            onClick={() => csvInputRef.current?.click()}
+                            disabled={uploading}
+                            style={{
+                                padding: '0.6rem 1.2rem',
+                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.85rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}
+                        >
+                            <Upload size={16} /> {uploading ? 'Uploading...' : 'CSV Upload'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowAIChat(true)}
+                            style={{
+                                padding: '0.6rem 1.2rem',
+                                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: 'white',
+                                fontSize: '0.85rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}
+                        >
+                            <Sparkles size={16} /> AI Generate
+                        </button>
+                    </div>
                 </div>
                 <form onSubmit={handleSubmit}>
                     <div className="form-grid">
@@ -648,6 +734,8 @@ function UploadProblems({ user }) {
     const [showModal, setShowModal] = useState(false)
     const [showAIChat, setShowAIChat] = useState(false)
     const [activeTab, setActiveTab] = useState('coding') // 'coding' or 'sql'
+    const [uploading, setUploading] = useState(false)
+    const csvInputRef = useRef(null)
     const [selectedProblemForTestCases, setSelectedProblemForTestCases] = useState(null)
     const [problem, setProblem] = useState({
         title: '',
@@ -722,6 +810,48 @@ function UploadProblems({ user }) {
         fetchData()
     }, [user.id])
 
+    const handleCSVUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        setUploading(true)
+        try {
+            const text = await file.text()
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            if (lines.length < 2) { alert('CSV must have header + at least one row'); return }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+            let created = 0
+            for (let i = 1; i < lines.length; i++) {
+                const vals = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.trim().replace(/^"|"$/g, '')) || []
+                const row = {}
+                headers.forEach((h, idx) => row[h] = vals[idx] || '')
+                if (!row.title) continue
+                const isSQL = (row.type || '').toUpperCase() === 'SQL' || (row.language || '').toUpperCase() === 'SQL'
+                await axios.post(`${API_BASE}/problems`, {
+                    title: row.title,
+                    type: isSQL ? 'SQL' : (row.type || 'Coding'),
+                    language: isSQL ? 'SQL' : (row.language || 'Python'),
+                    difficulty: row.difficulty || 'Medium',
+                    description: row.description || '',
+                    testInput: row.testinput || row.test_input || '',
+                    expectedOutput: row.expectedoutput || row.expected_output || '',
+                    sqlSchema: isSQL ? (row.sqlschema || row.schema || '') : '',
+                    expectedQueryResult: isSQL ? (row.expectedqueryresult || row.expected_result || '') : '',
+                    deadline: row.deadline || '',
+                    status: row.status || 'live',
+                    mentorId: user.id
+                })
+                created++
+            }
+            alert(`Created ${created} problems from CSV!`)
+            fetchData()
+        } catch (err) {
+            alert('CSV upload failed: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setUploading(false)
+            e.target.value = ''
+        }
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault()
         try {
@@ -772,7 +902,27 @@ function UploadProblems({ user }) {
                     <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>Coding Problems</h2>
                     <p style={{ color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>Manage your problem library (C, C++, Python, Java, SQL)</p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
+                    <button
+                        onClick={() => csvInputRef.current?.click()}
+                        disabled={uploading}
+                        style={{
+                            padding: '0.75rem 1.25rem',
+                            background: 'linear-gradient(135deg, #10b981, #059669)',
+                            border: 'none',
+                            borderRadius: '8px',
+                            color: 'white',
+                            fontSize: '0.9rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}
+                    >
+                        <Upload size={18} /> {uploading ? 'Uploading...' : 'CSV Upload'}
+                    </button>
                     <button
                         onClick={() => setShowAIChat(true)}
                         style={{
@@ -887,7 +1037,7 @@ function UploadProblems({ user }) {
                         <tbody>
                             {displayedProblems.length === 0 ? (
                                 <tr>
-                                    <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                                    <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                                         No {activeTab === 'sql' ? 'SQL' : 'coding'} problems found. Create one to get started!
                                     </td>
                                 </tr>
@@ -2041,6 +2191,17 @@ function SubmissionReportModal({ submission, onClose }) {
                         }}>
                             {submission.code}
                         </pre>
+                    </div>
+
+                    {/* Inline Code Feedback */}
+                    <div style={{ marginTop: '1.5rem' }}>
+                        <h4 style={{ margin: '0 0 0.75rem' }}>💬 Code Feedback</h4>
+                        <InlineCodeFeedback
+                            submissionId={submission.id}
+                            code={submission.code}
+                            mentorId={submission.mentorId}
+                            studentId={submission.studentId}
+                        />
                     </div>
                 </div>
             </div>
