@@ -814,28 +814,72 @@ function UploadProblems({ user }) {
         const file = e.target.files[0]
         if (!file) return
         setUploading(true)
+        
         try {
             const text = await file.text()
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            const lines = text.split('\n').filter(l => l.trim()).map(l => l.trim())
             if (lines.length < 2) { alert('CSV must have header + at least one row'); return }
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+            
+            // Parse CSV with proper quote handling
+            const parseCSVLine = (line) => {
+                const result = []
+                let current = ''
+                let insideQuotes = false
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i]
+                    if (char === '"') {
+                        insideQuotes = !insideQuotes
+                    } else if (char === ',' && !insideQuotes) {
+                        result.push(current.trim())
+                        current = ''
+                    } else {
+                        current += char
+                    }
+                }
+                result.push(current.trim())
+                return result
+            }
+            
+            const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
             let created = 0
+            
             for (let i = 1; i < lines.length; i++) {
-                const vals = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.trim().replace(/^"|"$/g, '')) || []
+                if (!lines[i].trim()) continue
+                const vals = parseCSVLine(lines[i])
                 const row = {}
                 headers.forEach((h, idx) => row[h] = vals[idx] || '')
-                if (!row.title) continue
+                
+                if (!row.title || !row.description) continue
+                
                 const isSQL = (row.type || '').toUpperCase() === 'SQL' || (row.language || '').toUpperCase() === 'SQL'
+                
+                // Map various column name variations
+                const getTestInput = () => {
+                    return row['testinput'] || row['test_input'] || row['testinput'] || row['sample_input'] || row['sampleinput'] || row['sample input'] || row['test input'] || ''
+                }
+                
+                const getExpectedOutput = () => {
+                    return row['expectedoutput'] || row['expected_output'] || row['expectedresult'] || row['expected_result'] || row['expected output'] || row['expected result'] || ''
+                }
+                
+                const getSQLSchema = () => {
+                    return row['sqlschema'] || row['sql_schema'] || row['schema'] || row['sql schema'] || ''
+                }
+                
+                const getExpectedQueryResult = () => {
+                    return row['expectedqueryresult'] || row['expected_query_result'] || row['expectedresult'] || row['expected_result'] || row['expected query result'] || ''
+                }
+                
                 await axios.post(`${API_BASE}/problems`, {
                     title: row.title,
                     type: isSQL ? 'SQL' : (row.type || 'Coding'),
                     language: isSQL ? 'SQL' : (row.language || 'Python'),
-                    difficulty: row.difficulty || 'Medium',
+                    difficulty: (row.difficulty || 'Medium').charAt(0).toUpperCase() + (row.difficulty || 'Medium').slice(1).toLowerCase(),
                     description: row.description || '',
-                    testInput: row.testinput || row.test_input || '',
-                    expectedOutput: row.expectedoutput || row.expected_output || '',
-                    sqlSchema: isSQL ? (row.sqlschema || row.schema || '') : '',
-                    expectedQueryResult: isSQL ? (row.expectedqueryresult || row.expected_result || '') : '',
+                    testInput: getTestInput(),
+                    expectedOutput: getExpectedOutput(),
+                    sqlSchema: isSQL ? getSQLSchema() : '',
+                    expectedQueryResult: isSQL ? getExpectedQueryResult() : '',
                     deadline: row.deadline || '',
                     status: row.status || 'live',
                     mentorId: user.id
