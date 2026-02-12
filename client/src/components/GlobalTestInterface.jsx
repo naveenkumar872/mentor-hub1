@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { X, Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, Brain, FileText, Layers, Code, Database, CheckCircle, XCircle, Video, VideoOff, Mic, MicOff, Shield, Eye, Smartphone, Target, Play, Lightbulb, Zap, Award, Sparkles } from 'lucide-react'
+import { X, Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, Brain, FileText, Layers, Code, Database, CheckCircle, XCircle, Video, VideoOff, Mic, MicOff, Shield, Eye, Smartphone, Target, Play, Lightbulb, Zap, Award, Sparkles, ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
@@ -8,6 +8,7 @@ import CodeOutputPreview from '@/components/CodeOutputPreview'
 import SQLValidator from '@/components/SQLValidator'
 import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
+import socketService from '@/services/socketService'
 
 const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
@@ -77,6 +78,8 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const [consoleOutput, setConsoleOutput] = useState({})
     const [hint, setHint] = useState('')
     const [loadingHint, setLoadingHint] = useState(false)
+    const [isConsoleOpen, setIsConsoleOpen] = useState(true)
+    const [consoleHeight, setConsoleHeight] = useState(300) // Default height in pixels
 
     const [activeTab, setActiveTab] = useState({}) // { [id]: 'input' | 'output' | 'tests' }
     const [customInputs, setCustomInputs] = useState({})
@@ -142,7 +145,22 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         (async () => {
             try { await document.documentElement.requestFullscreen() } catch (_) { }
         })()
-        return () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => { }) }
+
+        // Initialize Socket Connection
+        if (test && user) {
+            socketService.emitSubmissionStarted(
+                user.id,
+                user.name || user.email,
+                test.id,
+                test.title,
+                null, // mentorId
+                test.proctoring?.enabled || false
+            )
+        }
+
+        return () => {
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => { })
+        }
     }, [])
 
     useEffect(() => {
@@ -431,6 +449,20 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         try {
             const timeSpent = (test.duration || 120) * 60 - timeLeftRef.current
             console.log('[Submit] Sending submission...')
+
+            // Emit completion to live monitoring
+            if (user && test) {
+                socketService.emitSubmissionCompleted(
+                    user.id,
+                    user.name || user.email,
+                    test.id,
+                    test.title,
+                    null,
+                    'success',
+                    Math.round(((Object.keys(answersRef.current).length) / totalQuestions) * 100) // Rough score estimate or just 100 on completion
+                )
+            }
+
             const res = await axios.post(`${API_BASE}/global-tests/${test.id}/submit`, {
                 studentId: user.id,
                 answers: answersRef.current,
@@ -1137,196 +1169,185 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                     </button>
                                 )}
                             </div>
-                            <div style={{ flex: 1, position: 'relative' }}>
-                                <Editor
-                                    height="100%"
-                                    defaultLanguage={isSql ? 'sql' : 'python'}
-                                    language={LANGUAGE_CONFIG[currentLang]?.monacoLang || 'python'}
-                                    theme="vs-dark"
-                                    value={codeOrSql}
-                                    onChange={v => setAnswers(prev => ({ ...prev, [currentQ.id]: v || '' }))}
-                                    options={{ minimap: { enabled: false }, fontSize: 14, padding: { top: 16 } }}
-                                />
-                            </div>
+                            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div style={{ flex: 1, position: 'relative' }}>
+                                    <Editor
+                                        height="100%"
+                                        defaultLanguage={isSql ? 'sql' : 'python'}
+                                        language={LANGUAGE_CONFIG[currentLang]?.monacoLang || 'python'}
+                                        theme="vs-dark"
+                                        value={codeOrSql}
+                                        onChange={v => setAnswers(prev => ({ ...prev, [currentQ.id]: v || '' }))}
+                                        options={{ minimap: { enabled: false }, fontSize: 14, padding: { top: 16 } }}
+                                    />
+                                </div>
 
-                            {/* SQL TOOLS PANEL */}
-                            {isSql && (
-                                <div style={{ height: '350px', borderTop: '1px solid #334151', background: '#020617', display: 'flex', flexDirection: 'column' }}>
-                                    <div style={{
-                                        padding: '0.75rem 1.25rem',
-                                        background: '#0f172a',
-                                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
-                                    }}>
-                                        <div style={{ display: 'flex', gap: '1.25rem' }}>
-                                            <button
-                                                onClick={() => setSqlTool('validator')}
-                                                style={{
-                                                    padding: '0.5rem 0.75rem',
-                                                    background: 'transparent',
-                                                    color: sqlTool === 'validator' ? '#3b82f6' : '#94a3b8',
-                                                    border: 'none',
-                                                    borderBottom: `2px solid ${sqlTool === 'validator' ? '#3b82f6' : 'transparent'}`,
-                                                    cursor: 'pointer',
-                                                    fontSize: '0.85rem',
-                                                    fontWeight: 600,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.6rem',
-                                                    transition: 'all 0.2s',
-                                                    marginTop: '2px'
-                                                }}
-                                            >
-                                                <Shield size={16} /> Validator
-                                            </button>
-                                            <button
-                                                onClick={() => setSqlTool('visualizer')}
-                                                style={{
-                                                    padding: '0.5rem 0.75rem',
-                                                    background: 'transparent',
-                                                    color: sqlTool === 'visualizer' ? '#8b5cf6' : '#94a3b8',
-                                                    border: 'none',
-                                                    borderBottom: `2px solid ${sqlTool === 'visualizer' ? '#8b5cf6' : 'transparent'}`,
-                                                    cursor: 'pointer',
-                                                    fontSize: '0.85rem',
-                                                    fontWeight: 600,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.6rem',
-                                                    transition: 'all 0.2s',
-                                                    marginTop: '2px'
-                                                }}
-                                            >
-                                                <Database size={16} /> ER Diagram
-                                            </button>
-                                            <button
-                                                onClick={() => setSqlTool('debugger')}
-                                                style={{
-                                                    padding: '0.5rem 0.75rem',
-                                                    background: 'transparent',
-                                                    color: sqlTool === 'debugger' ? '#10b981' : '#94a3b8',
-                                                    border: 'none',
-                                                    borderBottom: `2px solid ${sqlTool === 'debugger' ? '#10b981' : 'transparent'}`,
-                                                    cursor: 'pointer',
-                                                    fontSize: '0.85rem',
-                                                    fontWeight: 600,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.6rem',
-                                                    transition: 'all 0.2s',
-                                                    marginTop: '2px'
-                                                }}
-                                            >
-                                                <Layers size={16} /> Debugger
-                                            </button>
+                                {/* COLLAPSIBLE CONSOLE AREA */}
+                                <div style={{
+                                    height: isConsoleOpen ? (isSql ? '350px' : `${consoleHeight}px`) : '40px',
+                                    transition: 'height 0.2s ease-in-out',
+                                    borderTop: '1px solid #334151',
+                                    background: '#020617',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    flexShrink: 0
+                                }}>
+
+                                    {/* Console Toggle Header (Only visible when closed, or part of tab bar) */}
+                                    {!isConsoleOpen && (
+                                        <div
+                                            onClick={() => setIsConsoleOpen(true)}
+                                            style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 1.25rem', cursor: 'pointer', background: '#0f172a', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}
+                                        >
+                                            <ChevronUp size={16} /> Show Console & Test Results
                                         </div>
-                                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', fontWeight: 500, textTransform: 'uppercase' }}>Advanced SQL Tools</div>
-                                    </div>
-                                    <div style={{ flex: 1, overflow: 'auto', padding: '1.25rem', background: 'radial-gradient(circle at top left, rgba(30,41,59,0.3), transparent)' }}>
-                                        {sqlTool === 'validator' && <SQLValidator query={codeOrSql} schemaContext={currentQ.sqlSchema || currentQ.starterCode} />}
-                                        {sqlTool === 'visualizer' && <SQLVisualizer schema={currentQ.sqlSchema || currentQ.starterCode} />}
-                                        {sqlTool === 'debugger' && <SQLDebugger query={codeOrSql} schema={currentQ.sqlSchema || currentQ.starterCode} />}
-                                    </div>
-                                </div>
-                            )}
+                                    )}
 
+                                    {/* SQL TOOLS PANEL */}
+                                    {isSql && isConsoleOpen && (
+                                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                            <div style={{
+                                                padding: '0.75rem 1.25rem',
+                                                background: '#0f172a',
+                                                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center'
+                                            }}>
+                                                <div style={{ display: 'flex', gap: '1.25rem' }}>
+                                                    <button onClick={() => setSqlTool('validator')} style={{ padding: '0.5rem 0.75rem', background: 'transparent', color: sqlTool === 'validator' ? '#3b82f6' : '#94a3b8', border: 'none', borderBottom: `2px solid ${sqlTool === 'validator' ? '#3b82f6' : 'transparent'}`, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.6rem', transition: 'all 0.2s', marginTop: '2px' }}>
+                                                        <Shield size={16} /> Validator
+                                                    </button>
+                                                    <button onClick={() => setSqlTool('visualizer')} style={{ padding: '0.5rem 0.75rem', background: 'transparent', color: sqlTool === 'visualizer' ? '#8b5cf6' : '#94a3b8', border: 'none', borderBottom: `2px solid ${sqlTool === 'visualizer' ? '#8b5cf6' : 'transparent'}`, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.6rem', transition: 'all 0.2s', marginTop: '2px' }}>
+                                                        <Database size={16} /> ER Diagram
+                                                    </button>
+                                                    <button onClick={() => setSqlTool('debugger')} style={{ padding: '0.5rem 0.75rem', background: 'transparent', color: sqlTool === 'debugger' ? '#10b981' : '#94a3b8', border: 'none', borderBottom: `2px solid ${sqlTool === 'debugger' ? '#10b981' : 'transparent'}`, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.6rem', transition: 'all 0.2s', marginTop: '2px' }}>
+                                                        <Layers size={16} /> Debugger
+                                                    </button>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', fontWeight: 500, textTransform: 'uppercase' }}>Advanced SQL Tools</div>
+                                                    <button onClick={() => setIsConsoleOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}><ChevronDown size={18} /></button>
+                                                </div>
+                                            </div>
+                                            <div style={{ flex: 1, overflow: 'auto', padding: '1.25rem', background: 'radial-gradient(circle at top left, rgba(30,41,59,0.3), transparent)' }}>
+                                                {sqlTool === 'validator' && <SQLValidator query={codeOrSql} schemaContext={currentQ.sqlSchema || currentQ.starterCode} />}
+                                                {sqlTool === 'visualizer' && <SQLVisualizer schema={currentQ.sqlSchema || currentQ.starterCode} />}
+                                                {sqlTool === 'debugger' && <SQLDebugger query={codeOrSql} schema={currentQ.sqlSchema || currentQ.starterCode} />}
+                                            </div>
+                                        </div>
+                                    )}
 
-                            {/* STANDARD CONSOLE OUTPUT (FOR NON-SQL) */}
-                            {!isSql && (
-                                <div style={{ height: '350px', borderTop: '1px solid #334155', background: '#020617', display: 'flex', flexDirection: 'column' }}>
-                                    {/* Tabs */}
-                                    <div style={{ display: 'flex', borderBottom: '1px solid #1e293b', background: '#0f172a' }}>
-                                        {['input', 'output', 'tests'].map(tab => {
-                                            const isActive = (activeTab[currentQ.id] || 'input') === tab
-                                            return (
-                                                <button
-                                                    key={tab}
-                                                    onClick={() => setActiveTab(prev => ({ ...prev, [currentQ.id]: tab }))}
-                                                    style={{
-                                                        padding: '0.75rem 1.25rem',
-                                                        background: isActive ? '#1e293b' : 'transparent',
-                                                        border: 'none',
-                                                        borderBottom: isActive ? `2px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#10b981'}` : '2px solid transparent',
-                                                        color: isActive ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#4ade80') : '#64748b',
-                                                        cursor: 'pointer',
-                                                        fontSize: '0.85rem',
-                                                        fontWeight: 500,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '0.5rem'
-                                                    }}
-                                                >
-                                                    {tab === 'input' && <><FileText size={14} /> Custom Input</>}
-                                                    {tab === 'output' && <><Code size={14} /> Output <span style={{ width: 6, height: 6, borderRadius: '50%', background: consoleOutput[currentQ.id] ? '#10b981' : 'transparent', marginLeft: 4 }}></span></>}
-                                                    {tab === 'tests' && <><CheckCircle size={14} /> Test Cases
-                                                        {testResults[currentQ.id] && (
-                                                            <span style={{ fontSize: '0.7rem', background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: 4, marginLeft: 4 }}>
-                                                                {testResults[currentQ.id].passed}/{testResults[currentQ.id].total}
-                                                            </span>
-                                                        )}
-                                                    </>}
+                                    {/* STANDARD CONSOLE OUTPUT (FOR NON-SQL) */}
+                                    {!isSql && isConsoleOpen && (
+                                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                            {/* Tabs */}
+                                            <div style={{ display: 'flex', borderBottom: '1px solid #1e293b', background: '#0f172a', justifyContent: 'space-between', paddingRight: '0.5rem' }}>
+                                                <div style={{ display: 'flex' }}>
+                                                    {['input', 'output', 'tests'].map(tab => {
+                                                        const isActive = (activeTab[currentQ.id] || 'input') === tab
+                                                        return (
+                                                            <button
+                                                                key={tab}
+                                                                onClick={() => setActiveTab(prev => ({ ...prev, [currentQ.id]: tab }))}
+                                                                style={{
+                                                                    padding: '0.75rem 1.25rem',
+                                                                    background: isActive ? '#1e293b' : 'transparent',
+                                                                    border: 'none',
+                                                                    borderBottom: isActive ? `2px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#10b981'}` : '2px solid transparent',
+                                                                    color: isActive ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#4ade80') : '#64748b',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.85rem',
+                                                                    fontWeight: 500,
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '0.5rem'
+                                                                }}
+                                                            >
+                                                                {tab === 'input' && <><FileText size={14} /> Custom Input</>}
+                                                                {tab === 'output' && <><Code size={14} /> Output <span style={{ width: 6, height: 6, borderRadius: '50%', background: consoleOutput[currentQ.id] ? '#10b981' : 'transparent', marginLeft: 4 }}></span></>}
+                                                                {tab === 'tests' && <><CheckCircle size={14} /> Test Cases
+                                                                    {testResults[currentQ.id] && (
+                                                                        <span style={{ fontSize: '0.7rem', background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: 4, marginLeft: 4 }}>
+                                                                            {testResults[currentQ.id].passed}/{testResults[currentQ.id].total}
+                                                                        </span>
+                                                                    )}
+                                                                </>}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                                <button onClick={() => setIsConsoleOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                                                    <ChevronDown size={18} />
                                                 </button>
-                                            )
-                                        })}
-                                    </div>
-
-                                    {/* Tab Content */}
-                                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                                        {(activeTab[currentQ.id] || 'input') === 'input' && (
-                                            <div style={{ padding: '0.75rem', flex: 1 }}>
-                                                <textarea
-                                                    value={customInputs[currentQ.id] || ''}
-                                                    onChange={(e) => setCustomInputs(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
-                                                    placeholder="Enter custom input here..."
-                                                    style={{
-                                                        width: '100%',
-                                                        height: '100%',
-                                                        background: '#0f172a',
-                                                        color: '#e2e8f0',
-                                                        border: '1px solid #334155',
-                                                        borderRadius: '8px',
-                                                        padding: '0.75rem',
-                                                        fontFamily: 'monospace',
-                                                        resize: 'none',
-                                                        outline: 'none',
-                                                        fontSize: '0.9rem'
-                                                    }}
-                                                />
                                             </div>
-                                        )}
 
-                                        {(activeTab[currentQ.id] || 'input') === 'output' && (
-                                            <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1 }}>
-                                                {consoleOutput[currentQ.id] || 'No output yet. Run your code to see results.'}
-                                            </div>
-                                        )}
+                                            {/* Tab Content */}
+                                            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                                                {(activeTab[currentQ.id] || 'input') === 'input' && (
+                                                    <div style={{ padding: '0.75rem', flex: 1 }}>
+                                                        <textarea
+                                                            value={customInputs[currentQ.id] || ''}
+                                                            onChange={(e) => setCustomInputs(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
+                                                            placeholder="Enter custom input here..."
+                                                            style={{
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                background: '#0f172a',
+                                                                color: '#e2e8f0',
+                                                                border: '1px solid #334155',
+                                                                borderRadius: '8px',
+                                                                padding: '0.75rem',
+                                                                fontFamily: 'monospace',
+                                                                resize: 'none',
+                                                                outline: 'none',
+                                                                fontSize: '0.9rem'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
 
-                                        {(activeTab[currentQ.id] || 'input') === 'tests' && (
-                                            <div style={{ padding: '1rem' }}>
-                                                <CodeOutputPreview
-                                                    problemId={currentQ.id}
-                                                    code={codeOrSql}
-                                                    language={currentQ.testCases?.language || 'python'}
-                                                    isGlobalTest={true}
-                                                    onRunComplete={(results) => {
-                                                        if (results?.testResults) {
-                                                            setTestResults(prev => ({
-                                                                ...prev,
-                                                                [currentQ.id]: {
-                                                                    passed: results.testResults.filter(r => r.passed).length,
-                                                                    total: results.testResults.length
+                                                {(activeTab[currentQ.id] || 'input') === 'output' && (
+                                                    <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1 }}>
+                                                        {consoleOutput[currentQ.id] || 'No output yet. Run your code to see results.'}
+                                                    </div>
+                                                )}
+
+                                                {(activeTab[currentQ.id] || 'input') === 'tests' && (
+                                                    <div style={{ padding: '1rem' }}>
+                                                        <CodeOutputPreview
+                                                            problemId={currentQ.id}
+                                                            code={codeOrSql}
+                                                            language={currentQ.testCases?.language || 'python'}
+                                                            isGlobalTest={true}
+                                                            onRunComplete={(results) => {
+                                                                if (results?.testResults) {
+                                                                    const passed = results.testResults.filter(r => r.passed).length
+                                                                    const total = results.testResults.length
+
+                                                                    setTestResults(prev => ({
+                                                                        ...prev,
+                                                                        [currentQ.id]: {
+                                                                            passed,
+                                                                            total
+                                                                        }
+                                                                    }))
+
+                                                                    // Emit progress to live monitoring
+                                                                    if (user && socketService) {
+                                                                        const progress = Math.round((passed / total) * 100)
+                                                                        socketService.emitProgressUpdate(user.id, currentQ.id, progress, null)
+                                                                    }
                                                                 }
-                                                            }))
-                                                        }
-                                                    }}
-                                                />
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
 
                         </div>
                     </>
