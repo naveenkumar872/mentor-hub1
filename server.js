@@ -1174,7 +1174,7 @@ const optionalFileUpload = (req, res, next) => {
 app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
     try {
         const { studentId, problemId, language, code, submissionType, tabSwitches, copyPasteAttempts, cameraBlockedCount, phoneDetectionCount, timeSpent, faceNotDetectedCount, multipleFacesDetectionCount, faceLookawayCount } = req.body;
-        
+
         // Validate required fields
         if (!studentId || !problemId || !language || !code) {
             console.error('❌ Missing required fields in proctored submission:', {
@@ -2315,7 +2315,8 @@ app.get('/api/global-tests', async (req, res) => {
             deadline: t.deadline,
             maxAttempts: t.max_attempts ?? 1,
             maxTabSwitches: t.max_tab_switches ?? 3,
-            sectionConfig: t.section_config ? (typeof t.section_config === 'string' ? JSON.parse(t.section_config) : t.section_config) : null
+            sectionConfig: t.section_config ? (typeof t.section_config === 'string' ? JSON.parse(t.section_config) : t.section_config) : null,
+            proctoring: t.proctoring_config ? (typeof t.proctoring_config === 'string' ? JSON.parse(t.proctoring_config) : t.proctoring_config) : null
         }));
         res.json(tests);
     } catch (error) {
@@ -2373,6 +2374,7 @@ app.get('/api/global-tests/:id', async (req, res) => {
             maxAttempts: t.max_attempts ?? 1,
             maxTabSwitches: t.max_tab_switches ?? 3,
             sectionConfig,
+            proctoring: t.proctoring_config ? (typeof t.proctoring_config === 'string' ? JSON.parse(t.proctoring_config) : t.proctoring_config) : null,
             questionsBySection: bySection,
             questions: questions.map(q => ({
                 id: q.question_id,
@@ -2401,9 +2403,10 @@ app.post('/api/global-tests', async (req, res) => {
         const testId = uuidv4();
         const {
             title, type, difficulty, duration, passingScore, description, startTime, deadline,
-            maxAttempts, maxTabSwitches, status, createdBy, sectionConfig
+            maxAttempts, maxTabSwitches, status, createdBy, sectionConfig, proctoring
         } = req.body;
         const sectionConfigJson = sectionConfig ? JSON.stringify(sectionConfig) : null;
+        const proctoringConfigJson = proctoring ? JSON.stringify(proctoring) : null;
         const totalQuestions = (sectionConfig && sectionConfig.sections)
             ? sectionConfig.sections.reduce((sum, s) => sum + (s.enabled ? (s.questionsCount || 0) : 0), 0)
             : 0;
@@ -2435,9 +2438,9 @@ app.post('/api/global-tests', async (req, res) => {
         }
 
         await connection.query(
-            `INSERT INTO global_tests (id, title, type, difficulty, duration, total_questions, passing_score, status, created_by, description, start_time, deadline, max_attempts, max_tab_switches, section_config)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [testId, title || 'Untitled', type || 'comprehensive', difficulty, duration || 180, totalQuestions, passingScore ?? 60, status || 'draft', createdBy || null, description || '', formattedStartTime, formattedDeadline, maxAttempts ?? 1, maxTabSwitches ?? 3, sectionConfigJson]
+            `INSERT INTO global_tests (id, title, type, difficulty, duration, total_questions, passing_score, status, created_by, description, start_time, deadline, max_attempts, max_tab_switches, section_config, proctoring_config)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [testId, title || 'Untitled', type || 'comprehensive', difficulty, duration || 180, totalQuestions, passingScore ?? 60, status || 'draft', createdBy || null, description || '', formattedStartTime, formattedDeadline, maxAttempts ?? 1, maxTabSwitches ?? 3, sectionConfigJson, proctoringConfigJson]
         );
         await connection.commit();
         res.json({
@@ -2467,9 +2470,10 @@ app.put('/api/global-tests/:id', async (req, res) => {
         const { id } = req.params;
         const {
             title, type, difficulty, duration, passingScore, description, startTime, deadline,
-            maxAttempts, maxTabSwitches, status, sectionConfig
+            maxAttempts, maxTabSwitches, status, sectionConfig, proctoring
         } = req.body;
         const sectionConfigJson = sectionConfig ? JSON.stringify(sectionConfig) : null;
+        const proctoringConfigJson = proctoring ? JSON.stringify(proctoring) : null;
         let totalQuestions = null;
         if (sectionConfig && sectionConfig.sections) {
             totalQuestions = sectionConfig.sections.reduce((sum, s) => sum + (s.enabled ? (s.questionsCount || 0) : 0), 0);
@@ -2507,6 +2511,7 @@ app.put('/api/global-tests/:id', async (req, res) => {
         if (maxTabSwitches !== undefined) { updates.push('max_tab_switches = ?'); params.push(maxTabSwitches); }
         if (status !== undefined) { updates.push('status = ?'); params.push(status); }
         if (sectionConfigJson !== undefined) { updates.push('section_config = ?'); params.push(sectionConfigJson); }
+        if (proctoringConfigJson !== undefined) { updates.push('proctoring_config = ?'); params.push(proctoringConfigJson); }
         if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
         params.push(id);
         await pool.query(`UPDATE global_tests SET ${updates.join(', ')} WHERE id = ?`, params);

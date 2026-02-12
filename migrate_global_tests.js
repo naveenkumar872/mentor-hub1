@@ -56,6 +56,7 @@ async function migrate() {
                 max_attempts INT DEFAULT 1,
                 max_tab_switches INT DEFAULT 3,
                 section_config JSON,
+                proctoring_config JSON,
                 FOREIGN KEY (created_by) REFERENCES users(id)
             )
         `);
