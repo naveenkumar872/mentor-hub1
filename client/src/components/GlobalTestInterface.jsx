@@ -79,7 +79,10 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const [hint, setHint] = useState('')
     const [loadingHint, setLoadingHint] = useState(false)
     const [isConsoleOpen, setIsConsoleOpen] = useState(true)
-    const [consoleHeight, setConsoleHeight] = useState(300) // Default height in pixels
+    const [consoleHeight, setConsoleHeight] = useState(200) // Default height in pixels - reduced for more code space
+    const [isConsoleMaximized, setIsConsoleMaximized] = useState(false)
+    const consoleResizeRef = useRef(null)
+    const isResizingRef = useRef(false)
 
     const [activeTab, setActiveTab] = useState({}) // { [id]: 'input' | 'output' | 'tests' }
     const [customInputs, setCustomInputs] = useState({})
@@ -101,6 +104,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const [mediaStream, setMediaStream] = useState(null)
     const [cameraBlocked, setCameraBlocked] = useState(false)
     const [cameraBlockedCount, setCameraBlockedCount] = useState(0)
+    const [cameraReady, setCameraReady] = useState(false)
+    const [cameraAccessDenied, setCameraAccessDenied] = useState(false)
+    const [showCameraSetup, setShowCameraSetup] = useState(proctoring.enabled && proctoring.enableVideoAudio)
     const [phoneDetected, setPhoneDetected] = useState(false)
     const [phoneDetectionCount, setPhoneDetectionCount] = useState(0)
     const [copyPasteAttempts, setCopyPasteAttempts] = useState(0)
@@ -184,6 +190,14 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             if (document.hidden && !result) {
                 setTabSwitches(prev => {
                     const next = prev + 1
+                    // Emit proctoring violation to server for admin monitoring
+                    socketService.emitProctoringViolation(
+                        user.id,
+                        user.name || user.email,
+                        'window_switch',
+                        next >= maxTabSwitches ? 'critical' : 'warning',
+                        null // mentorId for global test
+                    )
                     if (next >= maxTabSwitches) {
                         setWarningMessage(`Disqualified: max tab switches (${next}) exceeded.`)
                         setShowWarning(true)
@@ -201,42 +215,59 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         return () => document.removeEventListener('visibilitychange', handleVisibility)
     }, [result, maxTabSwitches])
 
-    // Enhanced Proctoring: Video/Audio Initialization
-    useEffect(() => {
-        if (proctoring.enabled && proctoring.enableVideoAudio) {
-            const initMedia = async () => {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'user', width: 320, height: 240 },
-                        audio: true
-                    })
-                    setMediaStream(stream)
-                    setVideoEnabled(true)
-                    setAudioEnabled(true)
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream
-                        videoRef.current.play().catch(() => { })
-                    }
-                    if (proctoring.detectCameraBlocking) {
-                        cameraCheckIntervalRef.current = setInterval(checkCameraObstruction, 2000)
-                    }
+    // Function to initialize camera - called when user clicks "Allow Camera"
+    const initializeCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: 320, height: 240 },
+                audio: true
+            })
+            setMediaStream(stream)
+            setVideoEnabled(true)
+            setAudioEnabled(true)
+            setCameraReady(true)
+            setCameraAccessDenied(false)
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream
+                videoRef.current.play().catch(() => { })
+            }
+            if (proctoring.detectCameraBlocking) {
+                cameraCheckIntervalRef.current = setInterval(checkCameraObstruction, 1500) // Check more frequently
+            }
 
-                    // Load Object Detection Model
-                    if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking) {
-                        try {
-                            await tf.ready()
-                            const model = await cocoSsd.load()
-                            objectDetectorRef.current = model
-                            phoneCheckIntervalRef.current = setInterval(detectObjects, 3000)
-                        } catch (e) {
-                            console.warn('Failed to load object detector:', e)
-                        }
-                    }
+            // Load Object Detection Model
+            if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking) {
+                try {
+                    await tf.ready()
+                    const model = await cocoSsd.load()
+                    objectDetectorRef.current = model
+                    phoneCheckIntervalRef.current = setInterval(detectObjects, 3000)
                 } catch (e) {
-                    console.warn('Media access ignored:', e)
+                    console.warn('Failed to load object detector:', e)
                 }
             }
-            initMedia()
+            return true
+        } catch (e) {
+            console.error('Camera access denied:', e)
+            setCameraAccessDenied(true)
+            setCameraReady(false)
+            return false
+        }
+    }
+
+    // Enhanced Proctoring: Video/Audio Initialization
+    useEffect(() => {
+        // Only auto-init if proctoring is NOT enabled (non-proctored tests)
+        // For proctored tests, we wait for user to click "Start Test" in the camera setup modal
+        if (proctoring.enabled && proctoring.enableVideoAudio) {
+            // Don't auto-initialize - wait for camera setup modal
+            return
+        }
+        
+        // For non-proctored tests, just continue normally
+        if (!proctoring.enabled || !proctoring.enableVideoAudio) {
+            setCameraReady(true)
+            setShowCameraSetup(false)
         }
         return () => {
             if (cameraCheckIntervalRef.current) clearInterval(cameraCheckIntervalRef.current)
@@ -264,6 +295,14 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                         setWarningMessage(`📵 Mobile Phone Detected! (${next})`)
                         setShowWarning(true)
                         setTimeout(() => setShowWarning(false), 3000)
+                        // Emit proctoring violation to server for admin monitoring
+                        socketService.emitProctoringViolation(
+                            user.id,
+                            user.name || user.email,
+                            'phone_detected',
+                            next >= 3 ? 'critical' : 'warning',
+                            null // mentorId for global test
+                        )
                         return next
                     })
                 } else {
@@ -277,7 +316,16 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 setFaceMissingCount(prev => {
                     const next = prev + 1
                     faceMissingCountRef.current = next
-                    // Optional: warn user
+                    // Emit proctoring violation to server for admin monitoring (only every 3rd occurrence to reduce spam)
+                    if (next % 3 === 0) {
+                        socketService.emitProctoringViolation(
+                            user.id,
+                            user.name || user.email,
+                            'face_not_detected',
+                            next >= 9 ? 'critical' : 'warning',
+                            null // mentorId for global test
+                        )
+                    }
                     return next
                 })
             }
@@ -291,6 +339,10 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         if (!videoRef.current || !canvasRef.current) return
         const video = videoRef.current
         const canvas = canvasRef.current
+        
+        // Check if video is actually playing and has frames
+        if (video.readyState < 2 || video.videoWidth === 0) return
+        
         const ctx = canvas.getContext('2d')
         canvas.width = video.videoWidth || 320
         canvas.height = video.videoHeight || 240
@@ -298,26 +350,45 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = imageData.data
         let totalBrightness = 0
+        let darkPixelCount = 0
         let pixelCount = canvas.width * canvas.height
+        
         for (let i = 0; i < data.length; i += 4) {
-            totalBrightness += (data[i] + data[i + 1] + data[i + 2]) / 3
+            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3
+            totalBrightness += brightness
+            if (brightness < 15) darkPixelCount++
         }
+        
         const avgBrightness = totalBrightness / pixelCount
-        const isBlocked = avgBrightness < 20
-        if (isBlocked && !cameraBlocked) {
+        const darkPixelRatio = darkPixelCount / pixelCount
+        
+        // Camera is blocked if average brightness is very low OR most pixels are dark
+        const isBlocked = avgBrightness < 25 || darkPixelRatio > 0.85
+        
+        if (isBlocked && !cameraBlockedRef.current) {
+            cameraBlockedRef.current = true
             setCameraBlocked(true)
             setCameraBlockedCount(prev => {
                 const next = prev + 1
                 cameraBlockedCountRef.current = next
-                setWarningMessage(`⚠️ Camera blocked detected! (${next})`)
+                setWarningMessage(`⚠️ Camera blocked detected! Please uncover your camera. (${next})`)
                 setShowWarning(true)
-                setTimeout(() => setShowWarning(false), 3000)
+                // Emit proctoring violation to server for admin monitoring
+                socketService.emitProctoringViolation(
+                    user.id,
+                    user.name || user.email,
+                    'camera_blocked',
+                    next >= 3 ? 'critical' : 'warning',
+                    null // mentorId for global test
+                )
                 return next
             })
-        } else if (!isBlocked && cameraBlocked) {
+        } else if (!isBlocked && cameraBlockedRef.current) {
+            cameraBlockedRef.current = false
             setCameraBlocked(false)
+            setShowWarning(false)
         }
-    }, [cameraBlocked])
+    }, [user])
 
     useEffect(() => {
         if (!proctoring.enabled || !proctoring.disableCopyPaste) return
@@ -329,6 +400,14 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 setWarningMessage(`📋 Copy attempt blocked! (${next})`)
                 setShowWarning(true)
                 setTimeout(() => setShowWarning(false), 2000)
+                // Emit proctoring violation to server for admin monitoring
+                socketService.emitProctoringViolation(
+                    user.id,
+                    user.name || user.email,
+                    'copy_attempt',
+                    next >= 5 ? 'critical' : 'warning',
+                    null // mentorId for global test
+                )
                 return next
             })
         }
@@ -340,6 +419,14 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 setWarningMessage(`📋 Paste attempt blocked! (${next})`)
                 setShowWarning(true)
                 setTimeout(() => setShowWarning(false), 2000)
+                // Emit proctoring violation to server for admin monitoring
+                socketService.emitProctoringViolation(
+                    user.id,
+                    user.name || user.email,
+                    'paste_attempt',
+                    next >= 5 ? 'critical' : 'warning',
+                    null // mentorId for global test
+                )
                 return next
             })
         }
@@ -784,6 +871,194 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                     <style>{`@keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } }`}</style>
                 </div>
             )}
+
+            {/* Camera Access Required Modal - Must allow camera before test starts */}
+            {showCameraSetup && proctoring.enabled && proctoring.enableVideoAudio && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(15, 23, 42, 0.98)',
+                    zIndex: 100001,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '2rem'
+                }}>
+                    <div style={{
+                        background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+                        borderRadius: '20px',
+                        padding: '3rem',
+                        maxWidth: '500px',
+                        width: '100%',
+                        border: '1px solid rgba(139, 92, 246, 0.3)',
+                        boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)'
+                    }}>
+                        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                            <div style={{
+                                width: '80px',
+                                height: '80px',
+                                borderRadius: '50%',
+                                background: 'rgba(139, 92, 246, 0.2)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                margin: '0 auto 1.5rem'
+                            }}>
+                                <Video size={40} color="#8b5cf6" />
+                            </div>
+                            <h2 style={{ margin: 0, color: 'white', fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem' }}>
+                                Camera Access Required
+                            </h2>
+                            <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '1rem', lineHeight: 1.6 }}>
+                                This is a proctored test. You must allow camera and microphone access to continue.
+                            </p>
+                        </div>
+
+                        <div style={{
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: '12px',
+                            padding: '1rem',
+                            marginBottom: '2rem'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <Shield size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                <div style={{ fontSize: '0.9rem', color: '#fbbf24', lineHeight: 1.5 }}>
+                                    <strong>Proctoring features enabled:</strong>
+                                    <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem' }}>
+                                        {proctoring.enableVideoAudio && <li>Camera & Audio monitoring</li>}
+                                        {proctoring.detectCameraBlocking && <li>Camera obstruction detection</li>}
+                                        {proctoring.detectPhoneUsage && <li>Phone usage detection</li>}
+                                        {proctoring.disableCopyPaste && <li>Copy/Paste disabled</li>}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        {cameraAccessDenied && (
+                            <div style={{
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                borderRadius: '12px',
+                                padding: '1rem',
+                                marginBottom: '1.5rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem'
+                            }}>
+                                <AlertTriangle size={20} color="#ef4444" />
+                                <div style={{ color: '#fca5a5', fontSize: '0.9rem' }}>
+                                    Camera access was denied. Please allow camera access in your browser settings and try again.
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <button
+                                onClick={onClose}
+                                style={{
+                                    flex: 1,
+                                    padding: '1rem',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'transparent',
+                                    color: 'rgba(255,255,255,0.7)',
+                                    fontSize: '1rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const success = await initializeCamera()
+                                    if (success) {
+                                        setShowCameraSetup(false)
+                                    }
+                                }}
+                                style={{
+                                    flex: 2,
+                                    padding: '1rem',
+                                    borderRadius: '12px',
+                                    border: 'none',
+                                    background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                    color: 'white',
+                                    fontSize: '1rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.5rem',
+                                    boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)'
+                                }}
+                            >
+                                <Video size={20} /> Allow Camera & Start Test
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Camera Blocked Overlay - Persistent warning when camera is covered */}
+            {cameraBlocked && proctoring.enabled && proctoring.detectCameraBlocking && !showCameraSetup && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(239, 68, 68, 0.95)',
+                    zIndex: 99999,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '2rem'
+                }}>
+                    <div style={{
+                        background: 'rgba(0,0,0,0.3)',
+                        borderRadius: '20px',
+                        padding: '3rem',
+                        textAlign: 'center',
+                        maxWidth: '500px'
+                    }}>
+                        <div style={{
+                            width: '100px',
+                            height: '100px',
+                            borderRadius: '50%',
+                            background: 'rgba(255,255,255,0.2)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 1.5rem',
+                            animation: 'pulse 1.5s ease-in-out infinite'
+                        }}>
+                            <VideoOff size={50} color="white" />
+                        </div>
+                        <h2 style={{ margin: 0, color: 'white', fontSize: '2rem', fontWeight: 700, marginBottom: '1rem' }}>
+                            Camera Blocked!
+                        </h2>
+                        <p style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontSize: '1.1rem', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+                            Your camera appears to be covered or obstructed. Please uncover your camera to continue the test.
+                        </p>
+                        <div style={{
+                            background: 'rgba(0,0,0,0.2)',
+                            borderRadius: '12px',
+                            padding: '1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem'
+                        }}>
+                            <AlertTriangle size={20} color="white" />
+                            <span style={{ color: 'white', fontWeight: 600 }}>
+                                Violations logged: {cameraBlockedCount}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <header style={{ padding: '1rem 2rem', borderBottom: '1px solid rgba(139,92,246,0.2)', background: 'rgba(15,23,42,0.95)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -1183,23 +1458,78 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                 </div>
 
                                 {/* COLLAPSIBLE CONSOLE AREA */}
-                                <div style={{
-                                    height: isConsoleOpen ? (isSql ? '350px' : `${consoleHeight}px`) : '40px',
-                                    transition: 'height 0.2s ease-in-out',
-                                    borderTop: '1px solid #334151',
-                                    background: '#020617',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    flexShrink: 0
-                                }}>
+                                <div 
+                                    ref={consoleResizeRef}
+                                    style={{
+                                        height: !isConsoleOpen ? '36px' : isConsoleMaximized ? '70%' : (isSql ? '350px' : `${consoleHeight}px`),
+                                        minHeight: isConsoleOpen ? '100px' : '36px',
+                                        maxHeight: isConsoleOpen ? '70%' : '36px',
+                                        transition: isResizingRef.current ? 'none' : 'height 0.2s ease-in-out',
+                                        borderTop: '1px solid #334151',
+                                        background: '#020617',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        flexShrink: 0,
+                                        position: 'relative'
+                                    }}>
 
-                                    {/* Console Toggle Header (Only visible when closed, or part of tab bar) */}
+                                    {/* Resize Handle - Only show when console is open and not SQL */}
+                                    {isConsoleOpen && !isSql && !isConsoleMaximized && (
+                                        <div
+                                            onMouseDown={(e) => {
+                                                e.preventDefault()
+                                                isResizingRef.current = true
+                                                const startY = e.clientY
+                                                const startHeight = consoleHeight
+
+                                                const handleMouseMove = (moveEvent) => {
+                                                    const deltaY = startY - moveEvent.clientY
+                                                    const newHeight = Math.min(Math.max(startHeight + deltaY, 100), 500)
+                                                    setConsoleHeight(newHeight)
+                                                }
+
+                                                const handleMouseUp = () => {
+                                                    isResizingRef.current = false
+                                                    document.removeEventListener('mousemove', handleMouseMove)
+                                                    document.removeEventListener('mouseup', handleMouseUp)
+                                                }
+
+                                                document.addEventListener('mousemove', handleMouseMove)
+                                                document.addEventListener('mouseup', handleMouseUp)
+                                            }}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                right: 0,
+                                                height: '6px',
+                                                cursor: 'ns-resize',
+                                                background: 'linear-gradient(to bottom, rgba(59, 130, 246, 0.3), transparent)',
+                                                zIndex: 10,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '40px',
+                                                height: '4px',
+                                                background: '#475569',
+                                                borderRadius: '2px'
+                                            }} />
+                                        </div>
+                                    )}
+
+                                    {/* Console Toggle Header (Only visible when closed) */}
                                     {!isConsoleOpen && (
                                         <div
                                             onClick={() => setIsConsoleOpen(true)}
-                                            style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 1.25rem', cursor: 'pointer', background: '#0f172a', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem' }}
+                                            style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 1.25rem', cursor: 'pointer', background: '#0f172a', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', justifyContent: 'space-between' }}
                                         >
-                                            <ChevronUp size={16} /> Show Console & Test Results
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <ChevronUp size={16} /> Show Console & Test Results
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Drag edge or click to expand</div>
                                         </div>
                                     )}
 
@@ -1277,9 +1607,67 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                         )
                                                     })}
                                                 </div>
-                                                <button onClick={() => setIsConsoleOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                                                    <ChevronDown size={18} />
-                                                </button>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    {/* Size presets */}
+                                                    <div style={{ display: 'flex', gap: '2px', marginRight: '0.5rem' }}>
+                                                        <button 
+                                                            onClick={() => { setConsoleHeight(120); setIsConsoleMaximized(false); }}
+                                                            title="Small"
+                                                            style={{ 
+                                                                padding: '4px 8px', 
+                                                                background: consoleHeight <= 150 && !isConsoleMaximized ? '#374151' : 'transparent', 
+                                                                border: '1px solid #374151', 
+                                                                borderRadius: '4px 0 0 4px', 
+                                                                cursor: 'pointer', 
+                                                                color: '#94a3b8', 
+                                                                fontSize: '0.7rem' 
+                                                            }}
+                                                        >S</button>
+                                                        <button 
+                                                            onClick={() => { setConsoleHeight(200); setIsConsoleMaximized(false); }}
+                                                            title="Medium"
+                                                            style={{ 
+                                                                padding: '4px 8px', 
+                                                                background: consoleHeight > 150 && consoleHeight <= 280 && !isConsoleMaximized ? '#374151' : 'transparent', 
+                                                                border: '1px solid #374151', 
+                                                                borderLeft: 'none',
+                                                                cursor: 'pointer', 
+                                                                color: '#94a3b8', 
+                                                                fontSize: '0.7rem' 
+                                                            }}
+                                                        >M</button>
+                                                        <button 
+                                                            onClick={() => { setConsoleHeight(350); setIsConsoleMaximized(false); }}
+                                                            title="Large"
+                                                            style={{ 
+                                                                padding: '4px 8px', 
+                                                                background: consoleHeight > 280 && !isConsoleMaximized ? '#374151' : 'transparent', 
+                                                                border: '1px solid #374151', 
+                                                                borderLeft: 'none',
+                                                                borderRadius: '0 4px 4px 0', 
+                                                                cursor: 'pointer', 
+                                                                color: '#94a3b8', 
+                                                                fontSize: '0.7rem' 
+                                                            }}
+                                                        >L</button>
+                                                    </div>
+                                                    {/* Maximize/Minimize toggle */}
+                                                    <button 
+                                                        onClick={() => setIsConsoleMaximized(prev => !prev)} 
+                                                        title={isConsoleMaximized ? "Restore" : "Maximize"}
+                                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isConsoleMaximized ? '#3b82f6' : '#64748b', display: 'flex', alignItems: 'center', padding: '4px' }}
+                                                    >
+                                                        {isConsoleMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                                                    </button>
+                                                    {/* Collapse */}
+                                                    <button 
+                                                        onClick={() => setIsConsoleOpen(false)} 
+                                                        title="Minimize to bar"
+                                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: '4px' }}
+                                                    >
+                                                        <ChevronDown size={18} />
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             {/* Tab Content */}
@@ -1308,13 +1696,13 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                 )}
 
                                                 {(activeTab[currentQ.id] || 'input') === 'output' && (
-                                                    <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1 }}>
+                                                    <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflow: 'auto', maxHeight: '100%' }}>
                                                         {consoleOutput[currentQ.id] || 'No output yet. Run your code to see results.'}
                                                     </div>
                                                 )}
 
                                                 {(activeTab[currentQ.id] || 'input') === 'tests' && (
-                                                    <div style={{ padding: '1rem' }}>
+                                                    <div style={{ padding: '1rem', overflow: 'auto', flex: 1 }}>
                                                         <CodeOutputPreview
                                                             problemId={currentQ.id}
                                                             code={codeOrSql}
