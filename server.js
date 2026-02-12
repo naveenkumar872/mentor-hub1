@@ -1154,11 +1154,48 @@ Scoring Guide:
 });
 
 // Proctored submission with video upload
-app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (req, res) => {
+// Middleware for handling optional file uploads (support both JSON and FormData)
+const optionalFileUpload = (req, res, next) => {
+    // Check if Content-Type is multipart/form-data (file upload)
+    if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+        // Handle as file upload
+        upload.single('proctoringVideo')(req, res, (err) => {
+            if (err) {
+                console.warn('⚠️ File upload error (continuing without file):', err.message);
+                req.file = null;
+            }
+            next();
+        });
+    } else {
+        // Content-Type is application/json or other - skip file handling
+        req.file = null;
+        next();
+    }
+};
+
+app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
     try {
         const { studentId, problemId, language, code, submissionType, tabSwitches, copyPasteAttempts, cameraBlockedCount, phoneDetectionCount, timeSpent, faceNotDetectedCount, multipleFacesDetectionCount, faceLookawayCount } = req.body;
+        
+        // Validate required fields
+        if (!studentId || !problemId || !language || !code) {
+            console.error('❌ Missing required fields in proctored submission:', {
+                studentId: !!studentId,
+                problemId: !!problemId,
+                language: !!language,
+                code: !!code,
+                bodyKeys: Object.keys(req.body)
+            });
+            return res.status(400).json({
+                error: 'Missing required fields',
+                details: 'studentId, problemId, language, and code are required'
+            });
+        }
+
         const submissionId = uuidv4();
         const submittedAt = new Date();
+
+        console.log(`📝 Processing proctored submission for student ${studentId}, problem ${problemId}, language: ${language}`);
 
         // Get video file info if uploaded and convert to MP4
         let videoFilename = null;
@@ -1182,6 +1219,8 @@ app.post('/api/submissions/proctored', upload.single('proctoringVideo'), async (
                 // Keep the original WebM if conversion fails
                 videoFilename = webmFilename;
             }
+        } else {
+            console.log(`ℹ️ No video file in request (may be JSON-only submission)`);
         }
 
         // Get problem details for AI evaluation
@@ -1495,7 +1534,7 @@ Respond in this exact JSON format:
                 tab_switches, copy_paste_attempts, camera_blocked_count, phone_detection_count,
                 face_not_detected_count, multiple_faces_count, face_lookaway_count,
                 integrity_violation, proctoring_video, submitted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 submissionId, studentId, problemId, code, submissionType || 'editor', language,
                 finalScore, finalStatus, evaluationResult.feedback, evaluationResult.aiExplanation || '',

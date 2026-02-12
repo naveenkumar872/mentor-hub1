@@ -2438,30 +2438,73 @@ function GlobalProblems() {
         setUploading(true)
         try {
             const text = await file.text()
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+            const lines = text.split('\n').filter(l => l.trim()).map(l => l.trim())
             if (lines.length < 2) { alert('CSV must have a header row and at least one data row'); setUploading(false); return }
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+            
+            // Parse CSV with proper quote handling
+            const parseCSVLine = (line) => {
+                const result = []
+                let current = ''
+                let insideQuotes = false
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i]
+                    if (char === '"') {
+                        insideQuotes = !insideQuotes
+                    } else if (char === ',' && !insideQuotes) {
+                        result.push(current.trim())
+                        current = ''
+                    } else {
+                        current += char
+                    }
+                }
+                result.push(current.trim())
+                return result
+            }
+            
+            const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
             const rows = lines.slice(1)
             let created = 0
+            
             for (const row of rows) {
-                const vals = row.match(/(".*?"|[^,]*)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || []
+                if (!row.trim()) continue
+                const vals = parseCSVLine(row)
                 const obj = {}
                 headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+                
                 const isSQL = (obj.type || '').toUpperCase() === 'SQL' || (obj.language || '').toUpperCase() === 'SQL'
+                
+                // Map various column name variations
+                const getSampleInput = () => {
+                    return obj['sample_input'] || obj['sampleinput'] || obj['testinput'] || obj['test_input'] || obj['sample input'] || obj['test input'] || ''
+                }
+                
+                const getExpectedOutput = () => {
+                    return obj['expected_output'] || obj['expectedoutput'] || obj['expectedresult'] || obj['expected_result'] || obj['expected output'] || obj['expected result'] || ''
+                }
+                
+                const getSQLSchema = () => {
+                    return obj['sql_schema'] || obj['sqlschema'] || obj['schema'] || obj['sql schema'] || ''
+                }
+                
+                const getExpectedQueryResult = () => {
+                    return obj['expected_query_result'] || obj['expectedqueryresult'] || obj['expected_result'] || obj['expectedresult'] || obj['expected query result'] || ''
+                }
+                
                 const probData = {
-                    title: obj.title || obj.name || '',
-                    type: isSQL ? 'SQL' : (obj.type || 'Coding'),
-                    language: isSQL ? 'SQL' : (obj.language || 'Python'),
-                    difficulty: obj.difficulty || 'Medium',
-                    description: obj.description || '',
-                    sampleInput: obj.sample_input || obj.sampleinput || '',
-                    expectedOutput: obj.expected_output || obj.expectedoutput || '',
-                    sqlSchema: isSQL ? (obj.sql_schema || obj.schema || '') : '',
-                    expectedQueryResult: isSQL ? (obj.expected_query_result || obj.expected_result || '') : '',
-                    status: obj.status || 'live',
+                    title: obj['title'] || obj['name'] || '',
+                    type: isSQL ? 'SQL' : (obj['type'] || 'Coding'),
+                    language: isSQL ? 'SQL' : (obj['language'] || 'Python'),
+                    difficulty: (obj['difficulty'] || 'Medium').charAt(0).toUpperCase() + (obj['difficulty'] || 'Medium').slice(1).toLowerCase(),
+                    description: obj['description'] || '',
+                    sampleInput: getSampleInput(),
+                    expectedOutput: getExpectedOutput(),
+                    sqlSchema: isSQL ? getSQLSchema() : '',
+                    expectedQueryResult: isSQL ? getExpectedQueryResult() : '',
+                    status: obj['status'] || 'live',
                     mentorId: ADMIN_ID
                 }
-                if (!probData.title) continue
+                
+                if (!probData.title || !probData.description) continue
                 await axios.post(`${API_BASE}/problems`, probData)
                 created++
             }
