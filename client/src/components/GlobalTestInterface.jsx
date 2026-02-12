@@ -147,10 +147,33 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     useEffect(() => { tabSwitchesRef.current = tabSwitches }, [tabSwitches])
     useEffect(() => { timeLeftRef.current = timeLeft }, [timeLeft])
 
+    // Handle fullscreen - auto re-enter if exited during test
     useEffect(() => {
-        (async () => {
-            try { await document.documentElement.requestFullscreen() } catch (_) { }
-        })()
+        const enterFullscreen = async () => {
+            try {
+                if (!document.fullscreenElement && !showResult && !isSubmitting) {
+                    await document.documentElement.requestFullscreen()
+                }
+            } catch (_) { }
+        }
+
+        // Enter fullscreen on mount
+        enterFullscreen()
+
+        // Re-enter fullscreen if user exits (proctored tests)
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement && !showResult && !isSubmitting && proctoring.enabled) {
+                // Show warning and re-enter fullscreen
+                setWarningMessage('⚠️ Fullscreen mode required! Re-entering...')
+                setShowWarning(true)
+                setTimeout(() => {
+                    enterFullscreen()
+                    setShowWarning(false)
+                }, 1500)
+            }
+        }
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange)
 
         // Initialize Socket Connection
         if (test && user) {
@@ -165,9 +188,10 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         }
 
         return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange)
             if (document.fullscreenElement) document.exitFullscreen().catch(() => { })
         }
-    }, [])
+    }, [showResult, isSubmitting, proctoring.enabled])
 
     useEffect(() => {
         if (result || !totalQuestions) return
@@ -566,9 +590,17 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             // Ensure we have valid result data
             const submissionResult = res.data.submission || res.data
             if (submissionResult) {
+                // Exit fullscreen first before showing results
+                if (document.fullscreenElement) {
+                    try {
+                        await document.exitFullscreen()
+                    } catch (_) { }
+                }
+                // Small delay to ensure fullscreen exit completes
+                await new Promise(resolve => setTimeout(resolve, 100))
+                setIsSubmitting(false)
                 setResult(submissionResult)
                 setShowResult(true)
-                setIsSubmitting(false)
             } else {
                 console.error('[Submit] No submission data in response')
                 setIsSubmitting(false)
@@ -606,10 +638,6 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     }
 
     if (showResult && result) {
-        // Auto-exit fullscreen when showing result
-        if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => { })
-        }
         const sectionScores = result.sectionScores || {}
         const isPassed = result.status === 'passed'
         return (
@@ -831,11 +859,37 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     }, [currentQ])
 
     return (
-        <div style={{ position: 'fixed', inset: 0, background: '#0f172a', zIndex: 9999, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)', 
+            zIndex: 9999, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            overflow: 'hidden' 
+        }}>
+            {/* Professional Warning Banner */}
             {showWarning && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, padding: '1rem 2rem', background: '#f59e0b', color: '#1f2937', textAlign: 'center', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <div style={{ 
+                    position: 'fixed', 
+                    top: 0, 
+                    left: 0, 
+                    right: 0, 
+                    padding: '0.75rem 2rem', 
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)', 
+                    color: '#1f2937', 
+                    textAlign: 'center', 
+                    zIndex: 10000, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '0.75rem',
+                    boxShadow: '0 4px 20px rgba(245, 158, 11, 0.4)',
+                    animation: 'slideDown 0.3s ease-out'
+                }}>
+                    <style>{`@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }`}</style>
                     <AlertTriangle size={20} />
-                    <span>{warningMessage}</span>
+                    <span style={{ fontWeight: 600 }}>{warningMessage}</span>
                 </div>
             )}
 
@@ -1059,55 +1113,147 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 </div>
             )}
 
-            <header style={{ padding: '1rem 2rem', borderBottom: '1px solid rgba(139,92,246,0.2)', background: 'rgba(15,23,42,0.95)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ display: 'flex', gap: '0.25rem' }}>
-                        {sectionsWithQuestions.map((sec, i) => (
-                            <button key={sec} type="button" onClick={() => { setCurrentSectionIndex(i); setCurrentQuestionIndex(0) }} style={{ padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid rgba(139,92,246,0.3)', background: currentSectionIndex === i ? 'rgba(139,92,246,0.2)' : 'transparent', color: document.body.classList.contains('light') ? (currentSectionIndex === i ? '#8b5cf6' : '#64748b') : 'white', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                {SECTION_META[sec]?.icon && <span style={{ opacity: 0.7 }}><Layers size={14} /></span>}
-                                {SECTION_META[sec]?.label || sec}
-                            </button>
-                        ))}
+            <header style={{ 
+                padding: '0.75rem 2rem', 
+                borderBottom: '1px solid rgba(139,92,246,0.2)', 
+                background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                backdropFilter: 'blur(12px)',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                    {/* Logo/Brand */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingRight: '1.5rem', borderRight: '1px solid rgba(139,92,246,0.2)' }}>
+                        <Sparkles size={20} color="#8b5cf6" />
+                        <span style={{ fontWeight: 700, fontSize: '1.1rem', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Assessment</span>
+                    </div>
+                    {/* Section tabs */}
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        {sectionsWithQuestions.map((sec, i) => {
+                            const Icon = SECTION_META[sec]?.icon || Layers
+                            const isActive = currentSectionIndex === i
+                            return (
+                                <button 
+                                    key={sec} 
+                                    type="button" 
+                                    onClick={() => { setCurrentSectionIndex(i); setCurrentQuestionIndex(0) }} 
+                                    style={{ 
+                                        padding: '0.5rem 1rem', 
+                                        borderRadius: 10, 
+                                        border: isActive ? '1px solid rgba(139,92,246,0.5)' : '1px solid transparent',
+                                        background: isActive ? 'linear-gradient(135deg, rgba(139,92,246,0.25), rgba(99,102,241,0.15))' : 'transparent', 
+                                        color: isActive ? '#a78bfa' : '#94a3b8', 
+                                        cursor: 'pointer', 
+                                        fontSize: '0.85rem', 
+                                        fontWeight: isActive ? 600 : 500,
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.5rem',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    <Icon size={14} />
+                                    {SECTION_META[sec]?.label || sec}
+                                </button>
+                            )
+                        })}
                     </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
                     {proctoring.enabled && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingRight: '1.5rem', borderRight: '1px solid rgba(255,255,255,0.1)' }}>
-                            <div className="flex items-center gap-2" style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: 600 }}>
-                                <Shield size={16} />
-                                <span>Proctored Session Active</span>
-                            </div>
+                        <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.5rem', 
+                            padding: '0.4rem 0.75rem',
+                            background: 'rgba(239,68,68,0.15)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            borderRadius: '8px'
+                        }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
+                            <span style={{ fontSize: '0.75rem', color: '#fca5a5', fontWeight: 600, letterSpacing: '0.5px' }}>PROCTORED</span>
                         </div>
                     )}
-                    <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem' }}>{Object.keys(answers).length}/{totalQuestions} answered</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)', borderRadius: 8, border: `1px solid ${timeLeft < 300 ? '#ef4444' : '#10b981'}` }}>
-                        <Clock size={18} color={timeLeft < 300 ? '#ef4444' : '#10b981'} />
-                        <span style={{ fontVariantNumeric: 'tabular-nums', color: 'white', fontWeight: 600 }}>{formatTime(timeLeft)}</span>
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem',
+                        padding: '0.4rem 0.75rem',
+                        background: 'rgba(139,92,246,0.1)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(139,92,246,0.2)'
+                    }}>
+                        <CheckCircle size={14} color="#a78bfa" />
+                        <span style={{ color: '#a78bfa', fontSize: '0.85rem', fontWeight: 600 }}>{Object.keys(answers).length}/{totalQuestions}</span>
                     </div>
-                    <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer' }}>Exit</button>
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem', 
+                        padding: '0.5rem 1rem', 
+                        background: timeLeft < 300 ? 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.1))' : 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(5,150,105,0.1))', 
+                        borderRadius: 10, 
+                        border: `1px solid ${timeLeft < 300 ? 'rgba(239,68,68,0.4)' : 'rgba(16,185,129,0.4)'}`,
+                        boxShadow: timeLeft < 300 ? '0 0 20px rgba(239,68,68,0.2)' : 'none'
+                    }}>
+                        <Clock size={16} color={timeLeft < 300 ? '#ef4444' : '#10b981'} />
+                        <span style={{ fontVariantNumeric: 'tabular-nums', color: timeLeft < 300 ? '#fca5a5' : '#6ee7b7', fontWeight: 700, fontSize: '1rem' }}>{formatTime(timeLeft)}</span>
+                    </div>
                 </div>
             </header>
 
             {/* MAIN CONTENT - Conditional Layouts */}
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-                <div style={{ width: '280px', background: 'rgba(15,23,42,0.8)', borderRight: '1px solid rgba(139,92,246,0.2)', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
+                <div style={{ 
+                    width: '300px', 
+                    background: 'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 100%)', 
+                    borderRight: '1px solid rgba(139,92,246,0.15)', 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    backdropFilter: 'blur(12px)'
+                }}>
+                    <div style={{ flex: 1, padding: '1.25rem', overflowY: 'auto' }}>
                         {proctoring.enabled && (
-                            <div style={{ marginBottom: '2rem' }}>
-                                <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: '#ef4444', fontWeight: 700, fontSize: '0.85rem', marginBottom: '1.25rem', letterSpacing: '0.5px' }}>
-                                    <Shield size={16} /> PROCTORED MODE
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <div style={{ 
+                                    background: 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.1))', 
+                                    border: '1px solid rgba(239,68,68,0.3)', 
+                                    borderRadius: 10, 
+                                    padding: '0.5rem 0.75rem', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    gap: '0.5rem', 
+                                    color: '#fca5a5', 
+                                    fontWeight: 600, 
+                                    fontSize: '0.8rem', 
+                                    marginBottom: '1rem', 
+                                    letterSpacing: '0.5px' 
+                                }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
+                                    PROCTORED MODE
                                 </div>
 
                                 {proctoring.enableVideoAudio && (
-                                    <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '2px solid rgba(139,92,246,0.3)', background: '#000', marginBottom: '1.25rem', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+                                    <div style={{ 
+                                        position: 'relative', 
+                                        borderRadius: 12, 
+                                        overflow: 'hidden', 
+                                        border: '2px solid rgba(139,92,246,0.3)', 
+                                        background: '#000', 
+                                        marginBottom: '1rem', 
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)' 
+                                    }}>
                                         <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', display: 'block', transform: 'scaleX(-1)', aspectRatio: '4/3', objectFit: 'cover' }} />
-                                        <div style={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', gap: 6 }}>
-                                            <div style={{ padding: 6, borderRadius: '50%', background: videoEnabled ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)', backdropFilter: 'blur(4px)' }}><Video size={12} color="white" /></div>
-                                            <div style={{ padding: 6, borderRadius: '50%', background: audioEnabled ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)', backdropFilter: 'blur(4px)' }}><Mic size={12} color="white" /></div>
+                                        <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 4 }}>
+                                            <div style={{ padding: 5, borderRadius: '50%', background: videoEnabled ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)', backdropFilter: 'blur(4px)' }}><Video size={10} color="white" /></div>
+                                            <div style={{ padding: 5, borderRadius: '50%', background: audioEnabled ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)', backdropFilter: 'blur(4px)' }}><Mic size={10} color="white" /></div>
                                         </div>
-                                        <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 20, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', animation: 'pulse 2s infinite' }}></div>
-                                            <span style={{ fontSize: '0.65rem', color: 'white', fontWeight: 600 }}>LIVE</span>
+                                        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', animation: 'pulse 2s infinite' }}></div>
+                                            <span style={{ fontSize: '0.6rem', color: 'white', fontWeight: 600 }}>REC</span>
                                         </div>
                                     </div>
                                 )}
@@ -1367,42 +1513,38 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                     <button onClick={handleGetHint} disabled={loadingHint} style={{ width: '100%', padding: '0.75rem', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                                         <Lightbulb size={16} /> {loadingHint ? 'Loading...' : 'Get AI Hint'}
                                     </button>
-                                    {hint && <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(16,185,129,0.1)', color: '#4ade80', borderRadius: 8, fontSize: '0.9rem' }}>💡 {hint}</div>}
+                                    {hint && <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', color: '#4ade80', borderRadius: 10, fontSize: '0.9rem' }}>💡 {hint}</div>}
                                 </div>
                             </div>
-                            <div style={{ padding: '1rem', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'space-between' }}>
-                                <button onClick={prevQuestion} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', borderRadius: 6, cursor: 'pointer' }}>Prev</button>
-                                <button onClick={nextQuestion} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', borderRadius: 6, cursor: 'pointer' }}>Next</button>
-                            </div>
                         </div>
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#111827' }}>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'linear-gradient(180deg, #111827 0%, #0f172a 100%)' }}>
                             <div style={{
-                                padding: '0.75rem 1.25rem',
-                                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                padding: '0.65rem 1.25rem',
+                                borderBottom: '1px solid rgba(59, 130, 246, 0.15)',
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
-                                background: 'rgba(31, 41, 55, 0.4)'
+                                background: 'linear-gradient(180deg, rgba(31, 41, 55, 0.6) 0%, rgba(31, 41, 55, 0.3) 100%)'
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <Zap size={14} color="#f59e0b" style={{ opacity: 0.8 }} />
-                                        <div style={{ color: '#9ca3af', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Language</div>
+                                        <Code size={14} color="#3b82f6" />
+                                        <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Language</div>
                                     </div>
                                     <select
                                         value={currentLang}
                                         onChange={(e) => handleLanguageChange(currentQ.id, e.target.value)}
                                         disabled={isSql}
                                         style={{
-                                            background: '#1f2937',
+                                            background: 'rgba(30, 41, 59, 0.8)',
                                             color: '#f3f4f6',
-                                            border: '1px solid #374151',
+                                            border: '1px solid rgba(59, 130, 246, 0.3)',
                                             borderRadius: '8px',
                                             padding: '0.4rem 0.75rem',
                                             cursor: isSql ? 'default' : 'pointer',
                                             fontSize: '0.85rem',
                                             outline: 'none',
-                                            boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                                         }}
                                     >
                                         {Object.keys(LANGUAGE_CONFIG).map(lang => (
@@ -1416,8 +1558,8 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                         onClick={() => handleRunCode(currentQ.id, codeOrSql, currentLang, currentQ.sqlSchema)}
                                         disabled={isRunning}
                                         style={{
-                                            padding: '0.6rem 1.25rem',
-                                            background: isRunning ? '#374151' : 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                                            padding: '0.5rem 1.25rem',
+                                            background: isRunning ? '#374151' : 'linear-gradient(135deg, #10b981, #059669)',
                                             border: 'none',
                                             borderRadius: '8px',
                                             color: 'white',
@@ -1461,35 +1603,42 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                 <div 
                                     ref={consoleResizeRef}
                                     style={{
-                                        height: !isConsoleOpen ? '36px' : isConsoleMaximized ? '70%' : (isSql ? '350px' : `${consoleHeight}px`),
-                                        minHeight: isConsoleOpen ? '100px' : '36px',
-                                        maxHeight: isConsoleOpen ? '70%' : '36px',
-                                        transition: isResizingRef.current ? 'none' : 'height 0.2s ease-in-out',
-                                        borderTop: '1px solid #334151',
-                                        background: '#020617',
+                                        height: !isConsoleOpen ? '40px' : isConsoleMaximized ? '60%' : `${consoleHeight}px`,
+                                        minHeight: isConsoleOpen ? '120px' : '40px',
+                                        maxHeight: isConsoleOpen ? '60%' : '40px',
+                                        transition: isResizingRef.current ? 'none' : 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        borderTop: '2px solid rgba(59, 130, 246, 0.3)',
+                                        background: 'linear-gradient(180deg, #0a0f1a 0%, #020617 100%)',
                                         display: 'flex',
                                         flexDirection: 'column',
                                         flexShrink: 0,
-                                        position: 'relative'
+                                        position: 'relative',
+                                        boxShadow: '0 -4px 20px rgba(0,0,0,0.3)'
                                     }}>
 
-                                    {/* Resize Handle - Only show when console is open and not SQL */}
-                                    {isConsoleOpen && !isSql && !isConsoleMaximized && (
+                                    {/* Resize Handle - Works for both SQL and coding */}
+                                    {isConsoleOpen && !isConsoleMaximized && (
                                         <div
                                             onMouseDown={(e) => {
                                                 e.preventDefault()
+                                                e.stopPropagation()
                                                 isResizingRef.current = true
                                                 const startY = e.clientY
                                                 const startHeight = consoleHeight
+                                                document.body.style.cursor = 'ns-resize'
+                                                document.body.style.userSelect = 'none'
 
                                                 const handleMouseMove = (moveEvent) => {
+                                                    moveEvent.preventDefault()
                                                     const deltaY = startY - moveEvent.clientY
-                                                    const newHeight = Math.min(Math.max(startHeight + deltaY, 100), 500)
+                                                    const newHeight = Math.min(Math.max(startHeight + deltaY, 120), 600)
                                                     setConsoleHeight(newHeight)
                                                 }
 
                                                 const handleMouseUp = () => {
                                                     isResizingRef.current = false
+                                                    document.body.style.cursor = ''
+                                                    document.body.style.userSelect = ''
                                                     document.removeEventListener('mousemove', handleMouseMove)
                                                     document.removeEventListener('mouseup', handleMouseUp)
                                                 }
@@ -1499,24 +1648,29 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                             }}
                                             style={{
                                                 position: 'absolute',
-                                                top: 0,
+                                                top: '-4px',
                                                 left: 0,
                                                 right: 0,
-                                                height: '6px',
+                                                height: '12px',
                                                 cursor: 'ns-resize',
-                                                background: 'linear-gradient(to bottom, rgba(59, 130, 246, 0.3), transparent)',
-                                                zIndex: 10,
+                                                background: 'transparent',
+                                                zIndex: 20,
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center'
                                             }}
                                         >
                                             <div style={{
-                                                width: '40px',
-                                                height: '4px',
-                                                background: '#475569',
-                                                borderRadius: '2px'
-                                            }} />
+                                                width: '60px',
+                                                height: '5px',
+                                                background: 'linear-gradient(90deg, transparent, #3b82f6, transparent)',
+                                                borderRadius: '3px',
+                                                opacity: 0.7,
+                                                transition: 'opacity 0.2s, width 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.width = '80px'; }}
+                                            onMouseLeave={(e) => { e.target.style.opacity = '0.7'; e.target.style.width = '60px'; }}
+                                            />
                                         </div>
                                     )}
 
@@ -1524,12 +1678,50 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                     {!isConsoleOpen && (
                                         <div
                                             onClick={() => setIsConsoleOpen(true)}
-                                            style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 1.25rem', cursor: 'pointer', background: '#0f172a', gap: '0.5rem', color: '#94a3b8', fontSize: '0.85rem', justifyContent: 'space-between' }}
+                                            style={{ 
+                                                flex: 1, 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                padding: '0 1.5rem', 
+                                                cursor: 'pointer', 
+                                                background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)', 
+                                                gap: '0.75rem', 
+                                                color: '#94a3b8', 
+                                                fontSize: '0.85rem', 
+                                                justifyContent: 'space-between',
+                                                borderTop: '1px solid rgba(59, 130, 246, 0.2)',
+                                                transition: 'background 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = 'linear-gradient(180deg, #1e293b 0%, #334155 100%)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)'}
                                         >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <ChevronUp size={16} /> Show Console & Test Results
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                <div style={{ 
+                                                    padding: '0.35rem', 
+                                                    background: 'rgba(59, 130, 246, 0.2)', 
+                                                    borderRadius: '6px',
+                                                    display: 'flex',
+                                                    alignItems: 'center'
+                                                }}>
+                                                    <ChevronUp size={16} color="#3b82f6" />
+                                                </div>
+                                                <span style={{ fontWeight: 600 }}>Console & Test Results</span>
                                             </div>
-                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Drag edge or click to expand</div>
+                                            <div style={{ 
+                                                fontSize: '0.75rem', 
+                                                color: '#64748b',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem'
+                                            }}>
+                                                <kbd style={{ 
+                                                    padding: '2px 6px', 
+                                                    background: 'rgba(255,255,255,0.1)', 
+                                                    borderRadius: '4px',
+                                                    fontSize: '0.7rem'
+                                                }}>Click</kbd>
+                                                to expand
+                                            </div>
                                         </div>
                                     )}
 
@@ -1743,13 +1935,81 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             </div>
 
             {/* GLOBAL SUBMIT FOOTER */}
-            <div style={{ padding: '1rem 2rem', borderTop: '1px solid rgba(139,92,246,0.2)', background: 'rgba(15,23,42,0.95)', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ 
+                padding: '0.75rem 2rem', 
+                borderTop: '1px solid rgba(139,92,246,0.2)', 
+                background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)', 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backdropFilter: 'blur(12px)',
+                boxShadow: '0 -4px 20px rgba(0,0,0,0.2)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                        Question {allQuestions.indexOf(currentQ) + 1} of {totalQuestions}
+                    </span>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button 
+                            onClick={prevQuestion}
+                            style={{
+                                padding: '0.5rem 1rem',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                background: 'rgba(255,255,255,0.05)',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem',
+                                fontWeight: 500,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <ChevronLeft size={16} /> Prev
+                        </button>
+                        <button 
+                            onClick={nextQuestion}
+                            style={{
+                                padding: '0.5rem 1rem',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                background: 'rgba(255,255,255,0.05)',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem',
+                                fontWeight: 500,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Next <ChevronRight size={16} />
+                        </button>
+                    </div>
+                </div>
                 <button
                     onClick={() => handleSubmit(false)}
                     disabled={isSubmitting}
-                    style={{ padding: '0.8rem 2rem', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', color: 'white', fontWeight: 700, cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)' }}
+                    style={{ 
+                        padding: '0.75rem 2rem', 
+                        borderRadius: 12, 
+                        border: 'none', 
+                        background: isSubmitting ? '#374151' : 'linear-gradient(135deg, #8b5cf6, #6366f1)', 
+                        color: 'white', 
+                        fontWeight: 700, 
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem', 
+                        boxShadow: isSubmitting ? 'none' : '0 4px 20px rgba(139, 92, 246, 0.4)',
+                        transition: 'all 0.2s',
+                        fontSize: '0.95rem'
+                    }}
                 >
-                    <Send size={20} /> {isSubmitting ? 'Submitting Test...' : 'Submit Complete Test'}
+                    <Send size={18} /> {isSubmitting ? 'Submitting...' : 'Submit Test'}
                 </button>
             </div>
 
