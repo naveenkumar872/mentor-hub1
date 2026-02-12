@@ -9,8 +9,8 @@ class SocketService {
     connect() {
         if (this.socket) return this.socket;
 
-        const isDev = import.meta.env.MODE === 'development';
-        const socketURL = isDev ? 'https://mentor-hub-backend-tkil.onrender.com' : window.location.origin;
+        //const isDev = import.meta.env.MODE === 'development';
+        const socketURL = 'https://mentor-hub-backend-tkil.onrender.com';
 
         this.socket = io(socketURL, {
             reconnection: true,

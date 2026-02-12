@@ -4,10 +4,10 @@ import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
 import * as cocoSsd from '@tensorflow-models/coco-ssd'
-import CodeOutputPreview from './CodeOutputPreview'
-import SQLValidator from './SQLValidator'
-import SQLVisualizer from './SQLVisualizer'
-import SQLDebugger from './SQLDebugger'
+import CodeOutputPreview from '@/components/CodeOutputPreview'
+import SQLValidator from '@/components/SQLValidator'
+import SQLVisualizer from '@/components/SQLVisualizer'
+import SQLDebugger from '@/components/SQLDebugger'
 
 const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
@@ -109,6 +109,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const cameraBlockedCountRef = useRef(0)
     const phoneDetectionCountRef = useRef(0)
     const copyPasteAttemptsRef = useRef(0)
+    const [faceMissingCount, setFaceMissingCount] = useState(0)
+    const faceMissingCountRef = useRef(0)
+    const cameraBlockedRef = useRef(false)
 
     const sectionsWithQuestions = useMemo(() => {
         const bySection = test.questionsBySection || {}
@@ -199,6 +202,18 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                     if (proctoring.detectCameraBlocking) {
                         cameraCheckIntervalRef.current = setInterval(checkCameraObstruction, 2000)
                     }
+
+                    // Load Object Detection Model
+                    if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking) {
+                        try {
+                            await tf.ready()
+                            const model = await cocoSsd.load()
+                            objectDetectorRef.current = model
+                            phoneCheckIntervalRef.current = setInterval(detectObjects, 3000)
+                        } catch (e) {
+                            console.warn('Failed to load object detector:', e)
+                        }
+                    }
                 } catch (e) {
                     console.warn('Media access ignored:', e)
                 }
@@ -211,6 +226,48 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop())
         }
     }, [proctoring.enabled, proctoring.enableVideoAudio])
+
+    useEffect(() => { cameraBlockedRef.current = cameraBlocked }, [cameraBlocked])
+
+    const detectObjects = useCallback(async () => {
+        if (!objectDetectorRef.current || !videoRef.current || videoRef.current.readyState !== 4) return
+
+        try {
+            const predictions = await objectDetectorRef.current.detect(videoRef.current)
+
+            // Phone Detection
+            if (proctoring.detectPhoneUsage) {
+                const phone = predictions.find(p => p.class === 'cell phone' && p.score > 0.6)
+                if (phone) {
+                    setPhoneDetected(true)
+                    setPhoneDetectionCount(prev => {
+                        const next = prev + 1
+                        phoneDetectionCountRef.current = next
+                        setWarningMessage(`📵 Mobile Phone Detected! (${next})`)
+                        setShowWarning(true)
+                        setTimeout(() => setShowWarning(false), 3000)
+                        return next
+                    })
+                } else {
+                    setPhoneDetected(false)
+                }
+            }
+
+            // Face/Person Detection
+            const person = predictions.find(p => p.class === 'person' && p.score > 0.5)
+            if (!person && !cameraBlockedRef.current) {
+                setFaceMissingCount(prev => {
+                    const next = prev + 1
+                    faceMissingCountRef.current = next
+                    // Optional: warn user
+                    return next
+                })
+            }
+
+        } catch (e) {
+            console.error('Detection error:', e)
+        }
+    }, [proctoring.detectPhoneUsage])
 
     const checkCameraObstruction = useCallback(() => {
         if (!videoRef.current || !canvasRef.current) return
@@ -282,6 +339,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     useEffect(() => { cameraBlockedCountRef.current = cameraBlockedCount }, [cameraBlockedCount])
     useEffect(() => { phoneDetectionCountRef.current = phoneDetectionCount }, [phoneDetectionCount])
     useEffect(() => { copyPasteAttemptsRef.current = copyPasteAttempts }, [copyPasteAttempts])
+    useEffect(() => { faceMissingCountRef.current = faceMissingCount }, [faceMissingCount])
 
     const handleAnswerSelect = (questionId, answer) => {
         setAnswers(prev => ({ ...prev, [questionId]: answer }))
@@ -381,6 +439,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 copyPasteAttempts: copyPasteAttemptsRef.current,
                 cameraBlockedCount: cameraBlockedCountRef.current,
                 phoneDetectionCount: phoneDetectionCountRef.current,
+                faceMissingCount: faceMissingCountRef.current,
                 proctoringEnabled: proctoring.enabled || false
             })
             console.log('[Submit] Response:', res.data)
@@ -705,6 +764,14 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                    {proctoring.enabled && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingRight: '1.5rem', borderRight: '1px solid rgba(255,255,255,0.1)' }}>
+                            <div className="flex items-center gap-2" style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: 600 }}>
+                                <Shield size={16} />
+                                <span>Proctored Session Active</span>
+                            </div>
+                        </div>
+                    )}
                     <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem' }}>{Object.keys(answers).length}/{totalQuestions} answered</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)', borderRadius: 8, border: `1px solid ${timeLeft < 300 ? '#ef4444' : '#10b981'}` }}>
                         <Clock size={18} color={timeLeft < 300 ? '#ef4444' : '#10b981'} />
@@ -716,12 +783,72 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
             {/* MAIN CONTENT - Conditional Layouts */}
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-                <div style={{ width: '250px', background: 'rgba(30,41,59,0.5)', borderRight: '1px solid rgba(139,92,246,0.2)', padding: '1.5rem', overflowY: 'auto' }}>
-                    <h3 style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Target size={16} /> Question Palette</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
-                        {sectionQuestions.map((_, i) => (
-                            <button key={i} onClick={() => setCurrentQuestionIndex(i)} style={{ width: 36, height: 36, borderRadius: 8, border: currentQuestionIndex === i ? '2px solid #3b82f6' : '1px solid rgba(139,92,246,0.3)', background: answers[sectionQuestions[i].id] ? 'linear-gradient(135deg, #10b981, #06b6d4)' : (currentQuestionIndex === i ? 'rgba(59,130,246,0.3)' : 'transparent'), color: 'white', cursor: 'pointer', fontSize: '0.85rem' }}>{i + 1}</button>
-                        ))}
+                <div style={{ width: '280px', background: 'rgba(15,23,42,0.8)', borderRight: '1px solid rgba(139,92,246,0.2)', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
+                        {proctoring.enabled && (
+                            <div style={{ marginBottom: '2rem' }}>
+                                <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: '#ef4444', fontWeight: 700, fontSize: '0.85rem', marginBottom: '1.25rem', letterSpacing: '0.5px' }}>
+                                    <Shield size={16} /> PROCTORED MODE
+                                </div>
+
+                                {proctoring.enableVideoAudio && (
+                                    <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '2px solid rgba(139,92,246,0.3)', background: '#000', marginBottom: '1.25rem', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+                                        <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', display: 'block', transform: 'scaleX(-1)', aspectRatio: '4/3', objectFit: 'cover' }} />
+                                        <div style={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', gap: 6 }}>
+                                            <div style={{ padding: 6, borderRadius: '50%', background: videoEnabled ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)', backdropFilter: 'blur(4px)' }}><Video size={12} color="white" /></div>
+                                            <div style={{ padding: 6, borderRadius: '50%', background: audioEnabled ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)', backdropFilter: 'blur(4px)' }}><Mic size={12} color="white" /></div>
+                                        </div>
+                                        <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 20, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', animation: 'pulse 2s infinite' }}></div>
+                                            <span style={{ fontSize: '0.65rem', color: 'white', fontWeight: 600 }}>LIVE</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'grid', gap: '0.75rem', fontSize: '0.8rem', background: 'rgba(30,41,59,0.4)', padding: '1rem', borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontWeight: 500 }}>
+                                        <span>Tab Switches:</span>
+                                        <span style={{ color: tabSwitches > 0 ? '#f59e0b' : '#10b981', fontWeight: 700 }}>{tabSwitches}/{maxTabSwitches}</span>
+                                    </div>
+                                    {proctoring.detectCameraBlocking && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontWeight: 500 }}>
+                                            <span>Cam Blocks:</span>
+                                            <span style={{ color: cameraBlockedCount > 0 ? '#ef4444' : '#10b981', fontWeight: 700 }}>{cameraBlockedCount}</span>
+                                        </div>
+                                    )}
+                                    {proctoring.detectPhoneUsage && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontWeight: 500 }}>
+                                            <span>Phone Detected:</span>
+                                            <span style={{ color: phoneDetectionCount > 0 ? '#ef4444' : '#10b981', fontWeight: 700 }}>{phoneDetectionCount}</span>
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontWeight: 500 }}>
+                                        <span>Face Missing:</span>
+                                        <span style={{ color: faceMissingCount > 0 ? '#f59e0b' : '#10b981', fontWeight: 700 }}>{faceMissingCount}</span>
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: '1.5rem' }}>
+                                    <h4 style={{ color: 'rgba(239,68,68,0.9)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <AlertTriangle size={14} /> Proctoring Rules
+                                    </h4>
+                                    <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.75rem', color: '#94a3b8', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                        <li>Do not switch tabs or windows.</li>
+                                        {proctoring.enableVideoAudio && <li>Keep your camera and microphone on.</li>}
+                                        {proctoring.enforceFullscreen && <li>Do not exit fullscreen mode.</li>}
+                                        {proctoring.detectCameraBlocking && <li>Ensure your face is always visible.</li>}
+                                        {proctoring.detectPhoneUsage && <li>No mobile phones allowed.</li>}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+
+                        <h3 style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Target size={16} /> Question Palette</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+                            {sectionQuestions.map((_, i) => (
+                                <button key={i} onClick={() => setCurrentQuestionIndex(i)} style={{ width: 36, height: 36, borderRadius: 8, border: currentQuestionIndex === i ? '2px solid #3b82f6' : '1px solid rgba(139,92,246,0.3)', background: answers[sectionQuestions[i].id] ? 'linear-gradient(135deg, #10b981, #06b6d4)' : (currentQuestionIndex === i ? 'rgba(59,130,246,0.3)' : 'transparent'), color: 'white', cursor: 'pointer', fontSize: '0.85rem' }}>{i + 1}</button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
