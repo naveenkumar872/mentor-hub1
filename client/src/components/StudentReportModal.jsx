@@ -16,7 +16,7 @@ import {
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 const CHART_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4']
 

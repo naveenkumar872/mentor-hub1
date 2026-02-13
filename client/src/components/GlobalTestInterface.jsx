@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { X, Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, Brain, FileText, Layers, Code, Database, CheckCircle, XCircle, Video, VideoOff, Mic, MicOff, Shield, Eye, Smartphone, Target, Play, Lightbulb, Zap, Award, Sparkles, ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, Brain, FileText, Layers, Code, Database, CheckCircle, XCircle, Video, VideoOff, Mic, MicOff, Shield, Eye, Smartphone, Target, Play, Lightbulb, Zap, Award, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
@@ -10,7 +10,7 @@ import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
 import socketService from '@/services/socketService'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 
 
@@ -79,8 +79,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const [hint, setHint] = useState('')
     const [loadingHint, setLoadingHint] = useState(false)
     const [isConsoleOpen, setIsConsoleOpen] = useState(true)
-    const [consoleHeight, setConsoleHeight] = useState(200) // Default height in pixels - reduced for more code space
-    const [isConsoleMaximized, setIsConsoleMaximized] = useState(false)
+    const [consoleHeight, setConsoleHeight] = useState(350) // Default height in pixels
     const consoleResizeRef = useRef(null)
     const isResizingRef = useRef(false)
 
@@ -1587,7 +1586,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                 )}
                             </div>
                             <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                <div style={{ flex: 1, position: 'relative' }}>
+                                <div style={{ flex: 1, position: 'relative', minHeight: '200px' }}>
                                     <Editor
                                         height="100%"
                                         defaultLanguage={isSql ? 'sql' : 'python'}
@@ -1603,9 +1602,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                 <div 
                                     ref={consoleResizeRef}
                                     style={{
-                                        height: !isConsoleOpen ? '40px' : isConsoleMaximized ? '60%' : `${consoleHeight}px`,
-                                        minHeight: isConsoleOpen ? '120px' : '40px',
-                                        maxHeight: isConsoleOpen ? '60%' : '40px',
+                                        height: !isConsoleOpen ? '40px' : `${consoleHeight}px`,
+                                        flex: 0,
+                                        minHeight: isConsoleOpen ? '400px' : '40px',
                                         transition: isResizingRef.current ? 'none' : 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                                         borderTop: '2px solid rgba(59, 130, 246, 0.3)',
                                         background: 'linear-gradient(180deg, #0a0f1a 0%, #020617 100%)',
@@ -1613,11 +1612,12 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                         flexDirection: 'column',
                                         flexShrink: 0,
                                         position: 'relative',
+                                        overflow: 'hidden',
                                         boxShadow: '0 -4px 20px rgba(0,0,0,0.3)'
                                     }}>
 
                                     {/* Resize Handle - Works for both SQL and coding */}
-                                    {isConsoleOpen && !isConsoleMaximized && (
+                                    {isConsoleOpen && (
                                         <div
                                             onMouseDown={(e) => {
                                                 e.preventDefault()
@@ -1752,7 +1752,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                     <button onClick={() => setIsConsoleOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}><ChevronDown size={18} /></button>
                                                 </div>
                                             </div>
-                                            <div style={{ flex: 1, overflow: 'auto', padding: '1.25rem', background: 'radial-gradient(circle at top left, rgba(30,41,59,0.3), transparent)' }}>
+                                            <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem', background: 'radial-gradient(circle at top left, rgba(30,41,59,0.2), transparent)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                                 {sqlTool === 'validator' && <SQLValidator query={codeOrSql} schemaContext={currentQ.sqlSchema || currentQ.starterCode} />}
                                                 {sqlTool === 'visualizer' && <SQLVisualizer schema={currentQ.sqlSchema || currentQ.starterCode} />}
                                                 {sqlTool === 'debugger' && <SQLDebugger query={codeOrSql} schema={currentQ.sqlSchema || currentQ.starterCode} />}
@@ -1764,7 +1764,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                     {!isSql && isConsoleOpen && (
                                         <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                                             {/* Tabs */}
-                                            <div style={{ display: 'flex', borderBottom: '1px solid #1e293b', background: '#0f172a', justifyContent: 'space-between', paddingRight: '0.5rem' }}>
+                                            <div style={{ display: 'flex', borderBottom: '1px solid rgba(59, 130, 246, 0.1)', background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.8) 0%, rgba(15, 23, 42, 0.5) 100%)', justifyContent: 'space-between', paddingRight: '1rem' }}>
                                                 <div style={{ display: 'flex' }}>
                                                     {['input', 'output', 'tests'].map(tab => {
                                                         const isActive = (activeTab[currentQ.id] || 'input') === tab
@@ -1773,17 +1773,18 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                                 key={tab}
                                                                 onClick={() => setActiveTab(prev => ({ ...prev, [currentQ.id]: tab }))}
                                                                 style={{
-                                                                    padding: '0.75rem 1.25rem',
-                                                                    background: isActive ? '#1e293b' : 'transparent',
+                                                                    padding: '1rem 1.5rem',
+                                                                    background: isActive ? 'rgba(30, 41, 59, 0.8)' : 'transparent',
                                                                     border: 'none',
-                                                                    borderBottom: isActive ? `2px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#10b981'}` : '2px solid transparent',
-                                                                    color: isActive ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#4ade80') : '#64748b',
+                                                                    borderBottom: isActive ? `3px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#10b981'}` : '3px solid transparent',
+                                                                    color: isActive ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#4ade80') : '#94a3b8',
                                                                     cursor: 'pointer',
-                                                                    fontSize: '0.85rem',
-                                                                    fontWeight: 500,
+                                                                    fontSize: '0.9rem',
+                                                                    fontWeight: 600,
                                                                     display: 'flex',
                                                                     alignItems: 'center',
-                                                                    gap: '0.5rem'
+                                                                    gap: '0.75rem',
+                                                                    transition: 'all 0.2s'
                                                                 }}
                                                             >
                                                                 {tab === 'input' && <><FileText size={14} /> Custom Input</>}
@@ -1800,61 +1801,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                     })}
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                    {/* Size presets */}
-                                                    <div style={{ display: 'flex', gap: '2px', marginRight: '0.5rem' }}>
-                                                        <button 
-                                                            onClick={() => { setConsoleHeight(120); setIsConsoleMaximized(false); }}
-                                                            title="Small"
-                                                            style={{ 
-                                                                padding: '4px 8px', 
-                                                                background: consoleHeight <= 150 && !isConsoleMaximized ? '#374151' : 'transparent', 
-                                                                border: '1px solid #374151', 
-                                                                borderRadius: '4px 0 0 4px', 
-                                                                cursor: 'pointer', 
-                                                                color: '#94a3b8', 
-                                                                fontSize: '0.7rem' 
-                                                            }}
-                                                        >S</button>
-                                                        <button 
-                                                            onClick={() => { setConsoleHeight(200); setIsConsoleMaximized(false); }}
-                                                            title="Medium"
-                                                            style={{ 
-                                                                padding: '4px 8px', 
-                                                                background: consoleHeight > 150 && consoleHeight <= 280 && !isConsoleMaximized ? '#374151' : 'transparent', 
-                                                                border: '1px solid #374151', 
-                                                                borderLeft: 'none',
-                                                                cursor: 'pointer', 
-                                                                color: '#94a3b8', 
-                                                                fontSize: '0.7rem' 
-                                                            }}
-                                                        >M</button>
-                                                        <button 
-                                                            onClick={() => { setConsoleHeight(350); setIsConsoleMaximized(false); }}
-                                                            title="Large"
-                                                            style={{ 
-                                                                padding: '4px 8px', 
-                                                                background: consoleHeight > 280 && !isConsoleMaximized ? '#374151' : 'transparent', 
-                                                                border: '1px solid #374151', 
-                                                                borderLeft: 'none',
-                                                                borderRadius: '0 4px 4px 0', 
-                                                                cursor: 'pointer', 
-                                                                color: '#94a3b8', 
-                                                                fontSize: '0.7rem' 
-                                                            }}
-                                                        >L</button>
-                                                    </div>
-                                                    {/* Maximize/Minimize toggle */}
-                                                    <button 
-                                                        onClick={() => setIsConsoleMaximized(prev => !prev)} 
-                                                        title={isConsoleMaximized ? "Restore" : "Maximize"}
-                                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isConsoleMaximized ? '#3b82f6' : '#64748b', display: 'flex', alignItems: 'center', padding: '4px' }}
-                                                    >
-                                                        {isConsoleMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                                                    </button>
-                                                    {/* Collapse */}
                                                     <button 
                                                         onClick={() => setIsConsoleOpen(false)} 
-                                                        title="Minimize to bar"
+                                                        title="Collapse"
                                                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: '4px' }}
                                                     >
                                                         <ChevronDown size={18} />
@@ -1862,39 +1811,40 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                 </div>
                                             </div>
 
-                                            {/* Tab Content */}
-                                            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                                            {/* Tab Content - With better spacing */}
+                                            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '1.5rem' }}>
                                                 {(activeTab[currentQ.id] || 'input') === 'input' && (
-                                                    <div style={{ padding: '0.75rem', flex: 1 }}>
+                                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                                         <textarea
                                                             value={customInputs[currentQ.id] || ''}
                                                             onChange={(e) => setCustomInputs(prev => ({ ...prev, [currentQ.id]: e.target.value }))}
                                                             placeholder="Enter custom input here..."
                                                             style={{
                                                                 width: '100%',
-                                                                height: '100%',
-                                                                background: '#0f172a',
+                                                                flex: 1,
+                                                                background: 'rgba(15, 23, 42, 0.6)',
                                                                 color: '#e2e8f0',
-                                                                border: '1px solid #334155',
-                                                                borderRadius: '8px',
-                                                                padding: '0.75rem',
+                                                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                                                borderRadius: '12px',
+                                                                padding: '1.25rem',
                                                                 fontFamily: 'monospace',
                                                                 resize: 'none',
                                                                 outline: 'none',
-                                                                fontSize: '0.9rem'
+                                                                fontSize: '0.9rem',
+                                                                lineHeight: '1.6'
                                                             }}
                                                         />
                                                     </div>
                                                 )}
 
                                                 {(activeTab[currentQ.id] || 'input') === 'output' && (
-                                                    <div style={{ padding: '1rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflow: 'auto', maxHeight: '100%' }}>
+                                                    <div style={{ padding: '1.5rem', fontFamily: 'monospace', color: '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap', flex: 1, overflow: 'auto', maxHeight: '100%', lineHeight: '1.6' }}>
                                                         {consoleOutput[currentQ.id] || 'No output yet. Run your code to see results.'}
                                                     </div>
                                                 )}
 
                                                 {(activeTab[currentQ.id] || 'input') === 'tests' && (
-                                                    <div style={{ padding: '1rem', overflow: 'auto', flex: 1 }}>
+                                                    <div style={{ padding: '1.5rem', overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                                         <CodeOutputPreview
                                                             problemId={currentQ.id}
                                                             code={codeOrSql}

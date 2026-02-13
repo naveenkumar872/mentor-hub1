@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth, useTheme } from '../App'
 import { useI18n } from '../services/i18n.jsx'
-import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff } from 'lucide-react'
+import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import './DashboardLayout.css'
 
@@ -12,6 +12,7 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [isOnline, setIsOnline] = useState(navigator.onLine)
     const [showLangMenu, setShowLangMenu] = useState(false)
+    const [expandedGroups, setExpandedGroups] = useState({})
 
     useEffect(() => {
         const goOnline = () => setIsOnline(true)
@@ -32,6 +33,13 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
         document.addEventListener('keydown', handleEsc)
         return () => document.removeEventListener('keydown', handleEsc)
     }, [sidebarOpen])
+
+    const toggleGroup = (groupLabel) => {
+        setExpandedGroups(prev => ({
+            ...prev,
+            [groupLabel]: !prev[groupLabel]
+        }))
+    }
 
     return (
         <div className="dashboard-layout">
@@ -83,37 +91,82 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                 </div>
 
                 <nav className="sidebar-nav" aria-label={t('navigation')}>
-                    {navItems.map((item) => (
-                        <NavLink
-                            key={item.path}
-                            to={item.path}
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                            onClick={() => setSidebarOpen(false)}
-                            aria-current={({ isActive }) => isActive ? 'page' : undefined}
-                        >
-                            {item.icon}
-                            <span>{item.label}</span>
-                            {item.badge > 0 && (
-                                <span style={{
-                                    marginLeft: 'auto',
-                                    background: '#ef4444',
-                                    color: 'white',
-                                    borderRadius: '50%',
-                                    minWidth: '20px',
-                                    height: '20px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 700,
-                                    padding: '0 4px',
-                                    animation: 'pulse 2s infinite'
-                                }}>
-                                    {item.badge > 99 ? '99+' : item.badge}
-                                </span>
-                            )}
-                        </NavLink>
-                    ))}
+                    {navItems.map((item) => {
+                        // Group with children (collapsible)
+                        if (item.children && item.children.length > 0) {
+                            const isExpanded = expandedGroups[item.label] || item.defaultExpanded || false
+                            return (
+                                <div key={item.label} className="nav-group">
+                                    <button
+                                        className="nav-group-header"
+                                        onClick={() => toggleGroup(item.label)}
+                                        aria-expanded={isExpanded}
+                                    >
+                                        <span className="nav-group-left">
+                                            {item.icon}
+                                            <span>{item.label}</span>
+                                        </span>
+                                        <ChevronDown 
+                                            size={18} 
+                                            style={{
+                                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                transition: 'transform 0.2s ease'
+                                            }}
+                                        />
+                                    </button>
+                                    {isExpanded && (
+                                        <div className="nav-group-items">
+                                            {item.children.map((child, idx) => (
+                                                <NavLink
+                                                    key={idx}
+                                                    to={child.path}
+                                                    className={({ isActive }) => `nav-item nav-sub-item ${isActive ? 'active' : ''}`}
+                                                    onClick={() => setSidebarOpen(false)}
+                                                    aria-current={({ isActive }) => isActive ? 'page' : undefined}
+                                                >
+                                                    {child.icon}
+                                                    <span>{child.label}</span>
+                                                </NavLink>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        }
+                        
+                        // Regular item (no children)
+                        return (
+                            <NavLink
+                                key={item.path}
+                                to={item.path}
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                                onClick={() => setSidebarOpen(false)}
+                                aria-current={({ isActive }) => isActive ? 'page' : undefined}
+                            >
+                                {item.icon}
+                                <span>{item.label}</span>
+                                {item.badge > 0 && (
+                                    <span style={{
+                                        marginLeft: 'auto',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        borderRadius: '50%',
+                                        minWidth: '20px',
+                                        height: '20px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.65rem',
+                                        fontWeight: 700,
+                                        padding: '0 4px',
+                                        animation: 'pulse 2s infinite'
+                                    }}>
+                                        {item.badge > 99 ? '99+' : item.badge}
+                                    </span>
+                                )}
+                            </NavLink>
+                        )
+                    })}
                 </nav>
 
                 <div className="sidebar-footer">

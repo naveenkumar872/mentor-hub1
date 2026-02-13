@@ -17,7 +17,7 @@ import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 
 function MentorPortal() {
@@ -82,12 +82,26 @@ function MentorPortal() {
 
     const navItems = [
         { path: '/mentor', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
-        { path: '/mentor/upload-tasks', label: t('upload_ml_tasks'), icon: <Upload size={20} /> },
-        { path: '/mentor/upload-problems', label: t('upload_problems'), icon: <FileCode size={20} /> },
-        { path: '/mentor/leaderboard', label: t('leaderboard'), icon: <Trophy size={20} /> },
-        { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
-        { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
-        { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
+        {
+            label: 'Content Management',
+            icon: <FileCode size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/mentor/upload-tasks', label: t('upload_ml_tasks'), icon: <Upload size={20} /> },
+                { path: '/mentor/upload-problems', label: t('upload_problems'), icon: <FileCode size={20} /> }
+            ]
+        },
+        {
+            label: 'Monitoring',
+            icon: <Activity size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/mentor/leaderboard', label: t('leaderboard'), icon: <Trophy size={20} /> },
+                { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
+                { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
+                { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> }
+            ]
+        },
         { path: '/mentor/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount }
     ]
 

@@ -165,7 +165,7 @@ pool.getConnection()
 // Middleware - CORS configuration
 const allowedOrigins = [
     'http://localhost:5173', // Vite Frontend
-    'https://mentor-hub-backend-tkil.onrender.com', // Production Backend
+    'http://localhost:3000', // Local Backend
 ];
 
 app.use(cors({
@@ -4390,7 +4390,7 @@ app.post('/api/reports/bulk', async (req, res) => {
         const reports = [];
         for (const studentId of studentIds) {
             try {
-                const response = await axios.post(`https://mentor-hub-backend-tkil.onrender.com/api/reports/student/${studentId}`, {
+                const response = await axios.post(`http://localhost:3000/api/reports/student/${studentId}`, {
                     requestedBy,
                     requestedByRole
                 });

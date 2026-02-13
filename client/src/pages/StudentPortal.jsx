@@ -18,7 +18,7 @@ import GlobalReportModal from '@/components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -106,12 +106,26 @@ function StudentPortal() {
 
     const navItems = [
         { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
-        { path: '/student/tasks', label: t('ml_tasks'), icon: <ClipboardList size={20} /> },
-        { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
-        { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
-        { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-        { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
-        { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> },
+        {
+            label: 'Learning',
+            icon: <ClipboardList size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/student/tasks', label: t('ml_tasks'), icon: <ClipboardList size={20} /> },
+                { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
+                { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
+                { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> }
+            ]
+        },
+        {
+            label: 'Progress',
+            icon: <TrendingUp size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
+                { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> }
+            ]
+        },
         { path: '/student/messaging', label: 'Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
     ]
 
