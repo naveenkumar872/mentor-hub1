@@ -10,7 +10,7 @@ import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
 import socketService from '@/services/socketService'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 
 
@@ -286,7 +286,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             // Don't auto-initialize - wait for camera setup modal
             return
         }
-        
+
         // For non-proctored tests, just continue normally
         if (!proctoring.enabled || !proctoring.enableVideoAudio) {
             setCameraReady(true)
@@ -362,10 +362,10 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         if (!videoRef.current || !canvasRef.current) return
         const video = videoRef.current
         const canvas = canvasRef.current
-        
+
         // Check if video is actually playing and has frames
         if (video.readyState < 2 || video.videoWidth === 0) return
-        
+
         const ctx = canvas.getContext('2d')
         canvas.width = video.videoWidth || 320
         canvas.height = video.videoHeight || 240
@@ -375,19 +375,19 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         let totalBrightness = 0
         let darkPixelCount = 0
         let pixelCount = canvas.width * canvas.height
-        
+
         for (let i = 0; i < data.length; i += 4) {
             const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3
             totalBrightness += brightness
             if (brightness < 15) darkPixelCount++
         }
-        
+
         const avgBrightness = totalBrightness / pixelCount
         const darkPixelRatio = darkPixelCount / pixelCount
-        
+
         // Camera is blocked if average brightness is very low OR most pixels are dark
         const isBlocked = avgBrightness < 25 || darkPixelRatio > 0.85
-        
+
         if (isBlocked && !cameraBlockedRef.current) {
             cameraBlockedRef.current = true
             setCameraBlocked(true)
@@ -858,30 +858,30 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     }, [currentQ])
 
     return (
-        <div style={{ 
-            position: 'fixed', 
-            inset: 0, 
-            background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)', 
-            zIndex: 9999, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            overflow: 'hidden' 
+        <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
         }}>
             {/* Professional Warning Banner */}
             {showWarning && (
-                <div style={{ 
-                    position: 'fixed', 
-                    top: 0, 
-                    left: 0, 
-                    right: 0, 
-                    padding: '0.75rem 2rem', 
-                    background: 'linear-gradient(135deg, #f59e0b, #d97706)', 
-                    color: '#1f2937', 
-                    textAlign: 'center', 
-                    zIndex: 10000, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    padding: '0.75rem 2rem',
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#1f2937',
+                    textAlign: 'center',
+                    zIndex: 10000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     gap: '0.75rem',
                     boxShadow: '0 4px 20px rgba(245, 158, 11, 0.4)',
                     animation: 'slideDown 0.3s ease-out'
@@ -1112,12 +1112,12 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 </div>
             )}
 
-            <header style={{ 
-                padding: '0.75rem 2rem', 
-                borderBottom: '1px solid rgba(139,92,246,0.2)', 
-                background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)', 
-                display: 'flex', 
-                justifyContent: 'space-between', 
+            <header style={{
+                padding: '0.75rem 2rem',
+                borderBottom: '1px solid rgba(139,92,246,0.2)',
+                background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)',
+                display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 backdropFilter: 'blur(12px)',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
@@ -1134,21 +1134,21 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                             const Icon = SECTION_META[sec]?.icon || Layers
                             const isActive = currentSectionIndex === i
                             return (
-                                <button 
-                                    key={sec} 
-                                    type="button" 
-                                    onClick={() => { setCurrentSectionIndex(i); setCurrentQuestionIndex(0) }} 
-                                    style={{ 
-                                        padding: '0.5rem 1rem', 
-                                        borderRadius: 10, 
+                                <button
+                                    key={sec}
+                                    type="button"
+                                    onClick={() => { setCurrentSectionIndex(i); setCurrentQuestionIndex(0) }}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        borderRadius: 10,
                                         border: isActive ? '1px solid rgba(139,92,246,0.5)' : '1px solid transparent',
-                                        background: isActive ? 'linear-gradient(135deg, rgba(139,92,246,0.25), rgba(99,102,241,0.15))' : 'transparent', 
-                                        color: isActive ? '#a78bfa' : '#94a3b8', 
-                                        cursor: 'pointer', 
-                                        fontSize: '0.85rem', 
+                                        background: isActive ? 'linear-gradient(135deg, rgba(139,92,246,0.25), rgba(99,102,241,0.15))' : 'transparent',
+                                        color: isActive ? '#a78bfa' : '#94a3b8',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
                                         fontWeight: isActive ? 600 : 500,
-                                        display: 'flex', 
-                                        alignItems: 'center', 
+                                        display: 'flex',
+                                        alignItems: 'center',
                                         gap: '0.5rem',
                                         transition: 'all 0.2s ease'
                                     }}
@@ -1162,10 +1162,10 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
                     {proctoring.enabled && (
-                        <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '0.5rem', 
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
                             padding: '0.4rem 0.75rem',
                             background: 'rgba(239,68,68,0.15)',
                             border: '1px solid rgba(239,68,68,0.3)',
@@ -1175,9 +1175,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                             <span style={{ fontSize: '0.75rem', color: '#fca5a5', fontWeight: 600, letterSpacing: '0.5px' }}>PROCTORED</span>
                         </div>
                     )}
-                    <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
                         gap: '0.5rem',
                         padding: '0.4rem 0.75rem',
                         background: 'rgba(139,92,246,0.1)',
@@ -1187,13 +1187,13 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                         <CheckCircle size={14} color="#a78bfa" />
                         <span style={{ color: '#a78bfa', fontSize: '0.85rem', fontWeight: 600 }}>{Object.keys(answers).length}/{totalQuestions}</span>
                     </div>
-                    <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '0.5rem', 
-                        padding: '0.5rem 1rem', 
-                        background: timeLeft < 300 ? 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.1))' : 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(5,150,105,0.1))', 
-                        borderRadius: 10, 
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1rem',
+                        background: timeLeft < 300 ? 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.1))' : 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(5,150,105,0.1))',
+                        borderRadius: 10,
                         border: `1px solid ${timeLeft < 300 ? 'rgba(239,68,68,0.4)' : 'rgba(16,185,129,0.4)'}`,
                         boxShadow: timeLeft < 300 ? '0 0 20px rgba(239,68,68,0.2)' : 'none'
                     }}>
@@ -1205,45 +1205,45 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
             {/* MAIN CONTENT - Conditional Layouts */}
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-                <div style={{ 
-                    width: '300px', 
-                    background: 'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 100%)', 
-                    borderRight: '1px solid rgba(139,92,246,0.15)', 
-                    display: 'flex', 
+                <div style={{
+                    width: '300px',
+                    background: 'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 100%)',
+                    borderRight: '1px solid rgba(139,92,246,0.15)',
+                    display: 'flex',
                     flexDirection: 'column',
                     backdropFilter: 'blur(12px)'
                 }}>
                     <div style={{ flex: 1, padding: '1.25rem', overflowY: 'auto' }}>
                         {proctoring.enabled && (
                             <div style={{ marginBottom: '1.5rem' }}>
-                                <div style={{ 
-                                    background: 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.1))', 
-                                    border: '1px solid rgba(239,68,68,0.3)', 
-                                    borderRadius: 10, 
-                                    padding: '0.5rem 0.75rem', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center', 
-                                    gap: '0.5rem', 
-                                    color: '#fca5a5', 
-                                    fontWeight: 600, 
-                                    fontSize: '0.8rem', 
-                                    marginBottom: '1rem', 
-                                    letterSpacing: '0.5px' 
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.1))',
+                                    border: '1px solid rgba(239,68,68,0.3)',
+                                    borderRadius: 10,
+                                    padding: '0.5rem 0.75rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.5rem',
+                                    color: '#fca5a5',
+                                    fontWeight: 600,
+                                    fontSize: '0.8rem',
+                                    marginBottom: '1rem',
+                                    letterSpacing: '0.5px'
                                 }}>
                                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
                                     PROCTORED MODE
                                 </div>
 
                                 {proctoring.enableVideoAudio && (
-                                    <div style={{ 
-                                        position: 'relative', 
-                                        borderRadius: 12, 
-                                        overflow: 'hidden', 
-                                        border: '2px solid rgba(139,92,246,0.3)', 
-                                        background: '#000', 
-                                        marginBottom: '1rem', 
-                                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)' 
+                                    <div style={{
+                                        position: 'relative',
+                                        borderRadius: 12,
+                                        overflow: 'hidden',
+                                        border: '2px solid rgba(139,92,246,0.3)',
+                                        background: '#000',
+                                        marginBottom: '1rem',
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)'
                                     }}>
                                         <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', display: 'block', transform: 'scaleX(-1)', aspectRatio: '4/3', objectFit: 'cover' }} />
                                         <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 4 }}>
@@ -1599,7 +1599,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                 </div>
 
                                 {/* COLLAPSIBLE CONSOLE AREA */}
-                                <div 
+                                <div
                                     ref={consoleResizeRef}
                                     style={{
                                         height: !isConsoleOpen ? '40px' : `${consoleHeight}px`,
@@ -1668,8 +1668,8 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                 opacity: 0.7,
                                                 transition: 'opacity 0.2s, width 0.2s'
                                             }}
-                                            onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.width = '80px'; }}
-                                            onMouseLeave={(e) => { e.target.style.opacity = '0.7'; e.target.style.width = '60px'; }}
+                                                onMouseEnter={(e) => { e.target.style.opacity = '1'; e.target.style.width = '80px'; }}
+                                                onMouseLeave={(e) => { e.target.style.opacity = '0.7'; e.target.style.width = '60px'; }}
                                             />
                                         </div>
                                     )}
@@ -1678,16 +1678,16 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                     {!isConsoleOpen && (
                                         <div
                                             onClick={() => setIsConsoleOpen(true)}
-                                            style={{ 
-                                                flex: 1, 
-                                                display: 'flex', 
-                                                alignItems: 'center', 
-                                                padding: '0 1.5rem', 
-                                                cursor: 'pointer', 
-                                                background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)', 
-                                                gap: '0.75rem', 
-                                                color: '#94a3b8', 
-                                                fontSize: '0.85rem', 
+                                            style={{
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                padding: '0 1.5rem',
+                                                cursor: 'pointer',
+                                                background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+                                                gap: '0.75rem',
+                                                color: '#94a3b8',
+                                                fontSize: '0.85rem',
                                                 justifyContent: 'space-between',
                                                 borderTop: '1px solid rgba(59, 130, 246, 0.2)',
                                                 transition: 'background 0.2s'
@@ -1696,9 +1696,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)'}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                <div style={{ 
-                                                    padding: '0.35rem', 
-                                                    background: 'rgba(59, 130, 246, 0.2)', 
+                                                <div style={{
+                                                    padding: '0.35rem',
+                                                    background: 'rgba(59, 130, 246, 0.2)',
                                                     borderRadius: '6px',
                                                     display: 'flex',
                                                     alignItems: 'center'
@@ -1707,16 +1707,16 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                 </div>
                                                 <span style={{ fontWeight: 600 }}>Console & Test Results</span>
                                             </div>
-                                            <div style={{ 
-                                                fontSize: '0.75rem', 
+                                            <div style={{
+                                                fontSize: '0.75rem',
                                                 color: '#64748b',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '0.5rem'
                                             }}>
-                                                <kbd style={{ 
-                                                    padding: '2px 6px', 
-                                                    background: 'rgba(255,255,255,0.1)', 
+                                                <kbd style={{
+                                                    padding: '2px 6px',
+                                                    background: 'rgba(255,255,255,0.1)',
                                                     borderRadius: '4px',
                                                     fontSize: '0.7rem'
                                                 }}>Click</kbd>
@@ -1801,8 +1801,8 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                     })}
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                    <button 
-                                                        onClick={() => setIsConsoleOpen(false)} 
+                                                    <button
+                                                        onClick={() => setIsConsoleOpen(false)}
                                                         title="Collapse"
                                                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: '4px' }}
                                                     >
@@ -1885,11 +1885,11 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             </div>
 
             {/* GLOBAL SUBMIT FOOTER */}
-            <div style={{ 
-                padding: '0.75rem 2rem', 
-                borderTop: '1px solid rgba(139,92,246,0.2)', 
-                background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)', 
-                display: 'flex', 
+            <div style={{
+                padding: '0.75rem 2rem',
+                borderTop: '1px solid rgba(139,92,246,0.2)',
+                background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(15,23,42,0.95) 100%)',
+                display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 backdropFilter: 'blur(12px)',
@@ -1900,7 +1900,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                         Question {allQuestions.indexOf(currentQ) + 1} of {totalQuestions}
                     </span>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button 
+                        <button
                             onClick={prevQuestion}
                             style={{
                                 padding: '0.5rem 1rem',
@@ -1919,7 +1919,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                         >
                             <ChevronLeft size={16} /> Prev
                         </button>
-                        <button 
+                        <button
                             onClick={nextQuestion}
                             style={{
                                 padding: '0.5rem 1rem',
@@ -1943,17 +1943,17 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 <button
                     onClick={() => handleSubmit(false)}
                     disabled={isSubmitting}
-                    style={{ 
-                        padding: '0.75rem 2rem', 
-                        borderRadius: 12, 
-                        border: 'none', 
-                        background: isSubmitting ? '#374151' : 'linear-gradient(135deg, #8b5cf6, #6366f1)', 
-                        color: 'white', 
-                        fontWeight: 700, 
-                        cursor: isSubmitting ? 'not-allowed' : 'pointer', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '0.5rem', 
+                    style={{
+                        padding: '0.75rem 2rem',
+                        borderRadius: 12,
+                        border: 'none',
+                        background: isSubmitting ? '#374151' : 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                        color: 'white',
+                        fontWeight: 700,
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
                         boxShadow: isSubmitting ? 'none' : '0 4px 20px rgba(139, 92, 246, 0.4)',
                         transition: 'all 0.2s',
                         fontSize: '0.95rem'

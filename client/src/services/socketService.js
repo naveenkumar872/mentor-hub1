@@ -10,7 +10,7 @@ class SocketService {
         if (this.socket) return this.socket;
 
         //const isDev = import.meta.env.MODE === 'development';
-        const socketURL = 'http://localhost:3000';
+        const socketURL = 'https://mentor-hub-backend-tkil.onrender.com';
 
         this.socket = io(socketURL, {
             reconnection: true,

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { X, Clock, CheckCircle, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Send, Eye, Brain, Target, Award, Sparkles } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 // Seeded random shuffle - ensures same student gets same order on refresh
 function seededShuffle(array, seed) {

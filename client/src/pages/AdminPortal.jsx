@@ -19,7 +19,7 @@ import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -2475,7 +2475,7 @@ function GlobalProblems() {
             const text = await file.text()
             const lines = text.split('\n').filter(l => l.trim()).map(l => l.trim())
             if (lines.length < 2) { alert('CSV must have a header row and at least one data row'); setUploading(false); return }
-            
+
             // Parse CSV with proper quote handling
             const parseCSVLine = (line) => {
                 const result = []
@@ -2495,36 +2495,36 @@ function GlobalProblems() {
                 result.push(current.trim())
                 return result
             }
-            
+
             const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
             const rows = lines.slice(1)
             let created = 0
-            
+
             for (const row of rows) {
                 if (!row.trim()) continue
                 const vals = parseCSVLine(row)
                 const obj = {}
                 headers.forEach((h, i) => { obj[h] = vals[i] || '' })
-                
+
                 const isSQL = (obj.type || '').toUpperCase() === 'SQL' || (obj.language || '').toUpperCase() === 'SQL'
-                
+
                 // Map various column name variations
                 const getSampleInput = () => {
                     return obj['sample_input'] || obj['sampleinput'] || obj['testinput'] || obj['test_input'] || obj['sample input'] || obj['test input'] || ''
                 }
-                
+
                 const getExpectedOutput = () => {
                     return obj['expected_output'] || obj['expectedoutput'] || obj['expectedresult'] || obj['expected_result'] || obj['expected output'] || obj['expected result'] || ''
                 }
-                
+
                 const getSQLSchema = () => {
                     return obj['sql_schema'] || obj['sqlschema'] || obj['schema'] || obj['sql schema'] || ''
                 }
-                
+
                 const getExpectedQueryResult = () => {
                     return obj['expected_query_result'] || obj['expectedqueryresult'] || obj['expected_result'] || obj['expectedresult'] || obj['expected query result'] || ''
                 }
-                
+
                 const probData = {
                     title: obj['title'] || obj['name'] || '',
                     type: isSQL ? 'SQL' : (obj['type'] || 'Coding'),
@@ -2538,7 +2538,7 @@ function GlobalProblems() {
                     status: obj['status'] || 'live',
                     mentorId: ADMIN_ID
                 }
-                
+
                 if (!probData.title || !probData.description) continue
                 await axios.post(`${API_BASE}/problems`, probData)
                 created++
