@@ -536,10 +536,12 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         if (!currentQ) return
         setLoadingHint(true)
         try {
+            const isSqlQ = currentQ.type === 'SQL' || currentQ.questionType === 'sql'
+            const lang = selectedLanguages[currentQ.id] || (isSqlQ ? 'SQL' : 'Python')
             const res = await axios.post(`${API_BASE}/hints`, {
                 problemDescription: currentQ.question,
                 currentCode: answers[currentQ.id] || '',
-                language: currentQ.testCases?.language || 'python'
+                language: lang
             })
             setHint(res.data.hint)
         } catch (err) {
@@ -581,6 +583,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             const res = await axios.post(`${API_BASE}/global-tests/${test.id}/submit`, {
                 studentId: user.id,
                 answers: answersRef.current,
+                selectedLanguages: selectedLanguages,
                 timeSpent,
                 tabSwitches: tabSwitchesRef.current,
                 copyPasteAttempts: copyPasteAttemptsRef.current,
@@ -1853,7 +1856,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                                                         <CodeOutputPreview
                                                             problemId={currentQ.id}
                                                             code={codeOrSql}
-                                                            language={currentQ.testCases?.language || 'python'}
+                                                            language={currentLang}
                                                             isGlobalTest={true}
                                                             onRunComplete={(results) => {
                                                                 if (results?.testResults) {

@@ -1679,21 +1679,13 @@ app.post('/api/run', async (req, res) => {
     try {
         const { code, language, problemId, sqlSchema, stdin } = req.body;
 
-        // Map languages to Piston runtimes
-        const localLanguageMap = {
-            'Python': { language: 'python', version: '3.10.0' },
-            'JavaScript': { language: 'javascript', version: '18.15.0' },
-            'Java': { language: 'java', version: '15.0.2' },
-            'C': { language: 'c', version: '10.2.0' },
-            'C++': { language: 'cpp', version: '10.2.0' },
-            'SQL': { language: 'sqlite3', version: '3.36.0' }
-        };
-
-        const runtime = localLanguageMap[language] || { language: language.toLowerCase(), version: '*' };
+        // Use the global getLanguageRuntime helper for consistent language handling
+        const runtime = getLanguageRuntime(language);
+        const langKey = (language || 'python').toLowerCase();
 
         // For SQL, prepend the schema to create tables before running the query
         let codeToExecute = code;
-        if (language === 'SQL') {
+        if (langKey === 'sql' || langKey === 'sqlite') {
             let schemaToUse = sqlSchema;
 
             // If no schema passed, try to get from database
@@ -2657,7 +2649,7 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
     try {
         await connection.beginTransaction();
         const testId = req.params.id;
-        const { studentId, answers, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
+        const { studentId, answers, selectedLanguages, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
         if (!studentId) return res.status(400).json({ error: 'studentId required' });
 
         const [tests] = await connection.query('SELECT * FROM global_tests WHERE id = ?', [testId]);
@@ -2690,7 +2682,9 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
 
             if (q.question_type === 'coding') {
                 const testCasesRaw = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
-                const language = (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
+                // Use submitted language if available, otherwise fall back to test case language, then Python
+                const storedLanguage = (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
+                const language = (selectedLanguages && selectedLanguages[q.question_id]) ? selectedLanguages[q.question_id] : storedLanguage;
                 const cases = Array.isArray(testCasesRaw) ? testCasesRaw : (testCasesRaw && testCasesRaw.cases) ? testCasesRaw.cases : [];
                 const result = await runInlineCodingTests(userAns, language, cases);
                 isCorrect = result.isCorrect;
@@ -3669,25 +3663,92 @@ app.delete('/api/test-cases/:testCaseId', async (req, res) => {
 });
 
 // Run code against inline test cases (for global test coding questions)
+// Language mapping - supports both capitalized and lowercase keys
 const languageMap = {
     'Python': { language: 'python', version: '3.10.0' },
+    'python': { language: 'python', version: '3.10.0' },
     'JavaScript': { language: 'javascript', version: '18.15.0' },
+    'javascript': { language: 'javascript', version: '18.15.0' },
     'Java': { language: 'java', version: '15.0.2' },
+    'java': { language: 'java', version: '15.0.2' },
     'C': { language: 'c', version: '10.2.0' },
+    'c': { language: 'c', version: '10.2.0' },
     'C++': { language: 'cpp', version: '10.2.0' },
-    'SQL': { language: 'sqlite3', version: '3.36.0' }
+    'c++': { language: 'cpp', version: '10.2.0' },
+    'cpp': { language: 'cpp', version: '10.2.0' },
+    'Cpp': { language: 'cpp', version: '10.2.0' },
+    'SQL': { language: 'sqlite3', version: '3.36.0' },
+    'sql': { language: 'sqlite3', version: '3.36.0' },
+    'sqlite': { language: 'sqlite3', version: '3.36.0' },
+    'SQLite': { language: 'sqlite3', version: '3.36.0' }
 };
+
+// Helper to get runtime for a language (case-insensitive)
+function getLanguageRuntime(lang) {
+    if (!lang) return { language: 'python', version: '3.10.0' };
+    return languageMap[lang] || languageMap[lang.toLowerCase()] || { language: lang.toLowerCase(), version: '*' };
+}
 
 // Normalize output for comparison - handles line endings, trailing spaces, and whitespace differences
 function normalizeOutput(str) {
-    if (!str) return '';
-    return str
+    if (str === null || str === undefined) return '';
+    // Ensure we have a string
+    const s = typeof str === 'string' ? str : String(str);
+    return s
         .replace(/\r\n/g, '\n')     // Normalize Windows line endings
         .replace(/\r/g, '\n')        // Normalize old Mac line endings
         .split('\n')                 // Split into lines
         .map(line => line.trim())    // Trim each line
         .join('\n')                  // Rejoin
         .trim();                     // Final trim
+}
+
+// Convert test case input to proper stdin format
+// Handles JSON arrays like [5, 7] -> "5\n7", objects, etc.
+function formatTestInput(input) {
+    if (input === null || input === undefined) return '';
+    
+    // If already a string, check if it looks like JSON
+    if (typeof input === 'string') {
+        const trimmed = input.trim();
+        // Try to parse JSON array/object format
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || 
+            (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    // Convert array elements to newline-separated values
+                    return parsed.map(item => 
+                        typeof item === 'object' ? JSON.stringify(item) : String(item)
+                    ).join('\n');
+                } else if (typeof parsed === 'object') {
+                    // For objects, convert values to newline-separated
+                    return Object.values(parsed).map(v => 
+                        typeof v === 'object' ? JSON.stringify(v) : String(v)
+                    ).join('\n');
+                }
+            } catch (e) {
+                // Not valid JSON, return as-is
+            }
+        }
+        return trimmed;
+    }
+    
+    // Handle arrays directly
+    if (Array.isArray(input)) {
+        return input.map(item => 
+            typeof item === 'object' ? JSON.stringify(item) : String(item)
+        ).join('\n');
+    }
+    
+    // Handle objects
+    if (typeof input === 'object') {
+        return Object.values(input).map(v => 
+            typeof v === 'object' ? JSON.stringify(v) : String(v)
+        ).join('\n');
+    }
+    
+    return String(input);
 }
 
 // Compare outputs with multiple strategies for flexibility
@@ -3742,17 +3803,17 @@ async function runInlineCodingTests(code, language, testCases) {
     if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
         return { passedCount: 0, total: 0, percentage: 0, isCorrect: false, details: [] };
     }
-    const runtime = languageMap[language] || { language: 'python', version: '3.10.0' };
+    const runtime = getLanguageRuntime(language);
     let passedCount = 0;
     const details = [];
     
     for (const tc of testCases) {
-        // Ensure input is properly formatted as string with proper line endings
-        let input = (tc.input != null ? tc.input : '').toString();
-        // Normalize input line endings for consistency
+        // Format input properly - handles JSON arrays like [5, 7] -> "5\n7"
+        let input = formatTestInput(tc.input);
+        // Normalize line endings for consistency
         input = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         
-        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString();
+        const expected = normalizeOutput(tc.expected_output || tc.expectedOutput || '');
         
         try {
             const data = await executeWithRetry({
@@ -3769,7 +3830,7 @@ async function runInlineCodingTests(code, language, testCases) {
             
             details.push({
                 input: input.substring(0, 100),
-                expected: normalizeOutput(expected),
+                expected: expected,
                 actual: normalizeOutput(actual),
                 passed,
                 error: data.run?.stderr || null
@@ -3777,7 +3838,7 @@ async function runInlineCodingTests(code, language, testCases) {
         } catch (err) {
             details.push({
                 input: input.substring(0, 100),
-                expected: normalizeOutput(expected),
+                expected: expected,
                 actual: '',
                 passed: false,
                 error: err.message
@@ -3923,17 +3984,20 @@ app.post('/api/run-with-tests', async (req, res) => {
             testCases = rows;
         }
 
-        // Language mapping for Piston
+        // Language mapping for Piston (case-insensitive)
         const languageMap = {
-            'Python': { language: 'python', version: '3.10.0' },
-            'JavaScript': { language: 'javascript', version: '18.15.0' },
-            'Java': { language: 'java', version: '15.0.2' },
-            'C': { language: 'c', version: '10.2.0' },
-            'C++': { language: 'cpp', version: '10.2.0' },
-            'SQL': { language: 'sqlite3', version: '3.36.0' }
+            'python': { language: 'python', version: '3.10.0' },
+            'javascript': { language: 'javascript', version: '18.15.0' },
+            'java': { language: 'java', version: '15.0.2' },
+            'c': { language: 'c', version: '10.2.0' },
+            'c++': { language: 'cpp', version: '10.2.0' },
+            'cpp': { language: 'cpp', version: '10.2.0' },
+            'sql': { language: 'sqlite3', version: '3.36.0' },
+            'sqlite': { language: 'sqlite3', version: '3.36.0' }
         };
 
-        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
+        const langKey = (language || 'python').toLowerCase();
+        const runtime = languageMap[langKey] || { language: langKey, version: '*' };
         const results = [];
         let passedCount = 0;
         let totalPoints = 0;
@@ -3942,7 +4006,7 @@ app.post('/api/run-with-tests', async (req, res) => {
         // If no test cases, run code once and return output
         if (testCases.length === 0) {
             let codeToExecute = code;
-            if (language === 'SQL' && sqlSchema) {
+            if ((langKey === 'sql' || langKey === 'sqlite') && sqlSchema) {
                 codeToExecute = `${sqlSchema}\n\n${code}`;
             }
 
@@ -3966,14 +4030,15 @@ app.post('/api/run-with-tests', async (req, res) => {
             totalPoints += tc.points || 10;
 
             let codeWithInput = code;
-            if (language === 'SQL') {
+            if (langKey === 'sql' || langKey === 'sqlite') {
                 codeWithInput = sqlSchema ? `${sqlSchema}\n\n${code}` : code;
             } else {
                 codeWithInput = code;
             }
 
-            // Normalize input line endings
-            let testInput = (tc.input || '').toString();
+            // Format input properly - handles JSON arrays like [5, 7] -> "5\n7"
+            let testInput = formatTestInput(tc.input);
+            // Normalize line endings
             testInput = testInput.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
             try {
