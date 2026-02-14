@@ -2046,10 +2046,10 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
         let correctCount = 0;
         const questionResults = questions.map(q => {
             const userAnswer = answers[q.question_id];
-            // Get all options for this question
-            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
-            // Get the correct option text using the index
-            const correctOptionText = options[q.correct_answer];
+            // Keep all options for correct index lookup (don't use filtered array as it shifts indices)
+            const allOptions = [q.option_1, q.option_2, q.option_3, q.option_4];
+            // Get the correct option text using the index from unfiltered array
+            const correctOptionText = allOptions[q.correct_answer] || '';
             // Compare user's answer (option text) with correct option text
             const isCorrect = userAnswer === correctOptionText;
             if (isCorrect) correctCount++;
@@ -2686,7 +2686,9 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
         const questionResults = [];
         for (const q of questions) {
             const userAns = answers && answers[q.question_id] !== undefined ? String(answers[q.question_id]).trim() : '';
-            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            // Keep all options including empty ones for correct index lookup
+            const allOptions = [q.option_1, q.option_2, q.option_3, q.option_4];
+            const options = allOptions.filter(Boolean);
             let isCorrect = false;
             let pointsEarned = 0;
             let correctAnswerText = '';
@@ -2712,9 +2714,12 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
                     : `Expected: ${expectedOutput.substring(0, 200)}${expectedOutput.length > 200 ? '...' : ''} | User Output: ${(result.output || 'Error/No output').substring(0, 150)}`;
             } else {
                 const correctText = q.correct_answer;
-                isCorrect = options.length ? (userAns === correctText || (options[Number(correctText)] !== undefined && userAns === options[Number(correctText)])) : (userAns === correctText);
+                // Use allOptions for correct index lookup (don't use filtered options array as it shifts indices)
+                const correctIndex = Number(correctText);
+                const correctOptionByIndex = allOptions[correctIndex];
+                isCorrect = options.length ? (userAns === correctText || (correctOptionByIndex !== undefined && correctOptionByIndex !== '' && userAns === correctOptionByIndex)) : (userAns === correctText);
                 pointsEarned = isCorrect ? (q.points ?? 1) : 0;
-                correctAnswerText = options.length ? (options[Number(correctText)] !== undefined ? options[Number(correctText)] : correctText) : correctText;
+                correctAnswerText = (correctOptionByIndex !== undefined && correctOptionByIndex !== '') ? correctOptionByIndex : correctText;
             }
 
             if (isCorrect) sectionCorrect[q.section]++;
