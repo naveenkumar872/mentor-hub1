@@ -3562,12 +3562,6 @@ function GlobalTestsAdmin() {
 
     const handleCreateOrUpdate = async () => {
         if (!newTest.title.trim()) { alert('Enter test title'); return }
-        const codingEnabled = newTest.sectionConfig?.sections?.find(s => s.id === 'coding' && s.enabled)
-        const sqlEnabled = newTest.sectionConfig?.sections?.find(s => s.id === 'sql' && s.enabled)
-        const codingCount = (questionsBySection.coding || []).length
-        const sqlCount = (questionsBySection.sql || []).length
-        if (codingEnabled && codingCount < 2) { alert('Coding section requires at least 2 problems (minimum)'); return }
-        if (sqlEnabled && sqlCount < 1) { alert('SQL section requires at least 1 question (minimum)'); return }
         const totalQ = Object.values(questionsBySection).reduce((sum, arr) => sum + arr.length, 0)
         if (totalQ === 0) { alert('Add questions in sections'); return }
         try {

@@ -1680,7 +1680,7 @@ app.post('/api/run', async (req, res) => {
         const { code, language, problemId, sqlSchema, stdin } = req.body;
 
         // Map languages to Piston runtimes
-        const languageMap = {
+        const localLanguageMap = {
             'Python': { language: 'python', version: '3.10.0' },
             'JavaScript': { language: 'javascript', version: '18.15.0' },
             'Java': { language: 'java', version: '15.0.2' },
@@ -1689,7 +1689,7 @@ app.post('/api/run', async (req, res) => {
             'SQL': { language: 'sqlite3', version: '3.36.0' }
         };
 
-        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
+        const runtime = localLanguageMap[language] || { language: language.toLowerCase(), version: '*' };
 
         // For SQL, prepend the schema to create tables before running the query
         let codeToExecute = code;
@@ -1710,27 +1710,22 @@ app.post('/api/run', async (req, res) => {
             }
         }
 
-        // Piston Execution API
-        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                language: runtime.language,
-                version: runtime.version,
-                files: [
-                    {
-                        content: codeToExecute
-                    }
-                ],
-                stdin: stdin || ''
-            })
-        });
+        // Normalize input line endings for consistent handling
+        let normalizedStdin = (stdin || '').toString();
+        normalizedStdin = normalizedStdin.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-        const data = await response.json();
+        // Use retry logic for reliability
+        const data = await executeWithRetry({
+            language: runtime.language,
+            version: runtime.version,
+            files: [{ content: codeToExecute }],
+            stdin: normalizedStdin
+        });
 
         if (data.run) {
             res.json({
                 output: data.run.output || 'No output detected',
+                stderr: data.run.stderr || '',
                 status: data.run.code === 0 ? 'success' : 'error'
             });
         } else {
@@ -3683,34 +3678,115 @@ const languageMap = {
     'SQL': { language: 'sqlite3', version: '3.36.0' }
 };
 
-async function runInlineCodingTests(code, language, testCases) {
-    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
-        return { passedCount: 0, total: 0, percentage: 0, isCorrect: false };
-    }
-    const runtime = languageMap[language] || { language: 'python', version: '3.10.0' };
-    let passedCount = 0;
-    for (const tc of testCases) {
-        const input = (tc.input != null ? tc.input : '').toString();
-        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString().trim();
+// Normalize output for comparison - handles line endings, trailing spaces, and whitespace differences
+function normalizeOutput(str) {
+    if (!str) return '';
+    return str
+        .replace(/\r\n/g, '\n')     // Normalize Windows line endings
+        .replace(/\r/g, '\n')        // Normalize old Mac line endings
+        .split('\n')                 // Split into lines
+        .map(line => line.trim())    // Trim each line
+        .join('\n')                  // Rejoin
+        .trim();                     // Final trim
+}
+
+// Compare outputs with multiple strategies for flexibility
+function compareOutputs(actual, expected) {
+    const normActual = normalizeOutput(actual);
+    const normExpected = normalizeOutput(expected);
+    
+    // Exact match after normalization
+    if (normActual === normExpected) return true;
+    
+    // Case-insensitive match for string outputs
+    if (normActual.toLowerCase() === normExpected.toLowerCase()) return true;
+    
+    // Numeric comparison - if both are numbers, compare values
+    const numActual = parseFloat(normActual);
+    const numExpected = parseFloat(normExpected);
+    if (!isNaN(numActual) && !isNaN(numExpected) && Math.abs(numActual - numExpected) < 0.0001) return true;
+    
+    // Whitespace-agnostic comparison (all whitespace collapsed to single space)
+    const collapseWs = s => s.replace(/\s+/g, ' ').trim();
+    if (collapseWs(normActual) === collapseWs(normExpected)) return true;
+    
+    return false;
+}
+
+// Execute code with retry logic
+async function executeWithRetry(payload, maxRetries = 2) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
             const response = await fetch('https://emkc.org/api/v2/piston/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    language: runtime.language,
-                    version: runtime.version,
-                    files: [{ content: code }],
-                    stdin: input
-                })
+                body: JSON.stringify(payload)
             });
-            const data = await response.json();
-            const actual = (data.run?.output || '').trim();
-            if (actual === expected) passedCount++;
-        } catch (_) { /* fail this case */ }
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return await response.json();
+        } catch (err) {
+            lastError = err;
+            if (attempt < maxRetries) {
+                // Wait before retry (exponential backoff)
+                await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+            }
+        }
+    }
+    throw lastError || new Error('Execution failed after retries');
+}
+
+async function runInlineCodingTests(code, language, testCases) {
+    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+        return { passedCount: 0, total: 0, percentage: 0, isCorrect: false, details: [] };
+    }
+    const runtime = languageMap[language] || { language: 'python', version: '3.10.0' };
+    let passedCount = 0;
+    const details = [];
+    
+    for (const tc of testCases) {
+        // Ensure input is properly formatted as string with proper line endings
+        let input = (tc.input != null ? tc.input : '').toString();
+        // Normalize input line endings for consistency
+        input = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        
+        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString();
+        
+        try {
+            const data = await executeWithRetry({
+                language: runtime.language,
+                version: runtime.version,
+                files: [{ content: code }],
+                stdin: input
+            });
+            
+            const actual = data.run?.output || '';
+            const passed = compareOutputs(actual, expected);
+            
+            if (passed) passedCount++;
+            
+            details.push({
+                input: input.substring(0, 100),
+                expected: normalizeOutput(expected),
+                actual: normalizeOutput(actual),
+                passed,
+                error: data.run?.stderr || null
+            });
+        } catch (err) {
+            details.push({
+                input: input.substring(0, 100),
+                expected: normalizeOutput(expected),
+                actual: '',
+                passed: false,
+                error: err.message
+            });
+        }
     }
     const total = testCases.length;
     const percentage = total ? Math.round((passedCount / total) * 100) : 0;
-    return { passedCount, total, percentage, isCorrect: passedCount === total };
+    return { passedCount, total, percentage, isCorrect: passedCount === total, details };
 }
 
 async function runSqlAndCompare(schema, query, expectedOutput) {
@@ -3870,20 +3946,16 @@ app.post('/api/run-with-tests', async (req, res) => {
                 codeToExecute = `${sqlSchema}\n\n${code}`;
             }
 
-            const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    language: runtime.language,
-                    version: runtime.version,
-                    files: [{ content: codeToExecute }]
-                })
+            const data = await executeWithRetry({
+                language: runtime.language,
+                version: runtime.version,
+                files: [{ content: codeToExecute }]
             });
 
-            const data = await response.json();
             return res.json({
                 hasTestCases: false,
                 output: data.run?.output || 'No output',
+                stderr: data.run?.stderr || '',
                 status: data.run?.code === 0 ? 'success' : 'error',
                 results: []
             });
@@ -3897,27 +3969,28 @@ app.post('/api/run-with-tests', async (req, res) => {
             if (language === 'SQL') {
                 codeWithInput = sqlSchema ? `${sqlSchema}\n\n${code}` : code;
             } else {
-                // For other languages, we might need to handle input differently
-                // This is a simplified version - in production you'd want stdin support
                 codeWithInput = code;
             }
 
+            // Normalize input line endings
+            let testInput = (tc.input || '').toString();
+            testInput = testInput.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
             try {
-                const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        language: runtime.language,
-                        version: runtime.version,
-                        files: [{ content: codeWithInput }],
-                        stdin: tc.input || ''
-                    })
+                const data = await executeWithRetry({
+                    language: runtime.language,
+                    version: runtime.version,
+                    files: [{ content: codeWithInput }],
+                    stdin: testInput
                 });
 
-                const data = await response.json();
-                const actualOutput = (data.run?.output || '').trim();
-                const expectedOutput = (tc.expected_output || '').trim();
-                const passed = actualOutput === expectedOutput;
+                const actualOutput = data.run?.output || '';
+                const expectedOutput = tc.expected_output || '';
+                const passed = compareOutputs(actualOutput, expectedOutput);
+
+                // Normalize outputs for display (helps with debugging)
+                const normalizedActual = normalizeOutput(actualOutput);
+                const normalizedExpected = normalizeOutput(expectedOutput);
 
                 if (passed) {
                     passedCount++;
@@ -3928,8 +4001,10 @@ app.post('/api/run-with-tests', async (req, res) => {
                     testCaseId: tc.id,
                     description: tc.description,
                     input: tc.input,
-                    expectedOutput: tc.is_hidden ? '(Hidden)' : expectedOutput,
-                    actualOutput: tc.is_hidden ? (passed ? 'Correct' : 'Incorrect') : actualOutput,
+                    expectedOutput: tc.is_hidden ? '(Hidden)' : normalizedExpected,
+                    actualOutput: tc.is_hidden ? (passed ? 'Correct' : 'Incorrect') : normalizedActual,
+                    rawActual: tc.is_hidden ? null : actualOutput,
+                    stderr: tc.is_hidden ? null : (data.run?.stderr || null),
                     passed,
                     isHidden: tc.is_hidden,
                     points: tc.points || 10,

@@ -519,7 +519,12 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 sqlSchema,
                 stdin: customInputs[questionId] || ''
             })
-            setConsoleOutput(prev => ({ ...prev, [questionId]: res.data.output || res.data.error || 'No output' }))
+            // Show both stdout and stderr if available
+            let output = res.data.output || ''
+            if (res.data.stderr) {
+                output = output ? `${output}\n\n--- Errors ---\n${res.data.stderr}` : res.data.stderr
+            }
+            setConsoleOutput(prev => ({ ...prev, [questionId]: output || res.data.error || 'No output' }))
         } catch (err) {
             setConsoleOutput(prev => ({ ...prev, [questionId]: 'Error: ' + (err.response?.data?.error || err.message) }))
         } finally {
