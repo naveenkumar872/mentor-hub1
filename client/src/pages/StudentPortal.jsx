@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import AptitudeTestInterface from '@/components/AptitudeTestInterface'
 import GlobalTestInterface from '@/components/GlobalTestInterface'
@@ -387,6 +387,7 @@ function Tasks({ user }) {
     const [tasks, setTasks] = useState([])
     const [loading, setLoading] = useState(true)
     const [activeTask, setActiveTask] = useState(null)
+    const [viewingTask, setViewingTask] = useState(null)
 
     useEffect(() => {
         axios.get(`${API_BASE}/students/${user.id}/tasks`)
@@ -423,37 +424,157 @@ function Tasks({ user }) {
                                 </div>
                                 <span className={`difficulty-badge ${task.difficulty?.toLowerCase()}`}>{task.difficulty}</span>
                             </div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6', marginBottom: '1rem' }}>{task.description}</p>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6', marginBottom: '1rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{task.description}</p>
                             {task.requirements && (
                                 <div style={{ background: 'var(--bg-dark)', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                                     <strong style={{ color: 'var(--primary)' }}>Requirements:</strong><br />
                                     {task.requirements.split('\n').slice(0, 2).join('\n')}...
                                 </div>
                             )}
-                            <div className="item-card-footer" style={{ paddingTop: '1rem', marginTop: 'auto' }}>
+                            <div className="item-card-footer" style={{ paddingTop: '1rem', marginTop: 'auto', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                 <span className={`status-badge ${task.status || 'live'}`}>{task.status || 'Active'}</span>
-                                <button
-                                    onClick={() => setActiveTask(task)}
-                                    className="btn-create-new"
-                                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                                >
-                                    <Upload size={16} /> Submit Task
-                                </button>
+                                <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+                                    <button
+                                        onClick={() => setViewingTask(task)}
+                                        className="btn-reset"
+                                        style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                    >
+                                        <Eye size={14} /> View Details
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTask(task)}
+                                        className="btn-create-new"
+                                        style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                                    >
+                                        <Upload size={16} /> Submit
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))
                 )}
             </div>
+            {viewingTask && <TaskDetailsModal task={viewingTask} onClose={() => setViewingTask(null)} onSubmit={() => { setViewingTask(null); setActiveTask(viewingTask); }} />}
             {activeTask && <TaskSubmitModal task={activeTask} user={user} onClose={() => setActiveTask(null)} />}
         </>
+    )
+}
+
+// ==================== TASK DETAILS MODAL ====================
+function TaskDetailsModal({ task, onClose, onSubmit }) {
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '85vh', overflowY: 'auto' }}>
+                <div className="modal-header">
+                    <div className="modal-title-with-icon">
+                        <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, var(--secondary), var(--primary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <BookOpen size={20} color="white" />
+                        </div>
+                        <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--primary)', textTransform: 'uppercase', fontWeight: 600 }}>ML Task Details</span>
+                            <h2 style={{ margin: 0 }}>{task.title}</h2>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="modal-close"><XCircle size={20} /></button>
+                </div>
+                <div className="modal-body" style={{ padding: '1.5rem' }}>
+                    {/* Difficulty & Status */}
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                        <span className={`difficulty-badge ${task.difficulty?.toLowerCase()}`} style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}>
+                            {task.difficulty}
+                        </span>
+                        <span className={`status-badge ${task.status || 'live'}`} style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}>
+                            {task.status || 'Active'}
+                        </span>
+                    </div>
+
+                    {/* Description */}
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <h4 style={{ color: 'var(--text-main)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <FileText size={18} color="var(--primary)" /> Description
+                        </h4>
+                        <p style={{ color: 'var(--text-muted)', lineHeight: '1.8', fontSize: '0.95rem', background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', margin: 0 }}>
+                            {task.description}
+                        </p>
+                    </div>
+
+                    {/* Requirements */}
+                    {task.requirements && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ color: 'var(--text-main)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Target size={18} color="var(--secondary)" /> Requirements
+                            </h4>
+                            <div style={{ background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                                {task.requirements.split('\n').map((req, idx) => (
+                                    <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: idx < task.requirements.split('\n').length - 1 ? '0.75rem' : 0 }}>
+                                        <CheckCircle size={16} color="var(--success)" style={{ marginTop: '3px', flexShrink: 0 }} />
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>{req.replace(/^[-•*]\s*/, '')}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Submission Guidelines */}
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <h4 style={{ color: 'var(--text-main)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Lightbulb size={18} color="var(--warning)" /> Submission Guidelines
+                        </h4>
+                        <div style={{ background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.05), rgba(245, 158, 11, 0.08))', padding: '1rem', borderRadius: '0.75rem', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+                            <ul style={{ margin: 0, paddingLeft: '1.25rem', color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.8' }}>
+                                <li>You can submit a <strong>file</strong> (.py, .ipynb, .zip) or a <strong>GitHub repository URL</strong></li>
+                                <li>For GitHub submissions, ensure the repository is <strong>public</strong> or share access</li>
+                                <li>Include a <strong>README.md</strong> with instructions to run your code</li>
+                                <li>Your submission will be evaluated by AI based on the requirements</li>
+                                <li>You will receive a score and detailed feedback after evaluation</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    {/* Sample Input/Output if available */}
+                    {(task.sampleInput || task.expectedOutput) && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ color: 'var(--text-main)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Code size={18} color="var(--info)" /> Sample Data
+                            </h4>
+                            <div style={{ display: 'grid', gap: '1rem' }}>
+                                {task.sampleInput && (
+                                    <div>
+                                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>Sample Input</label>
+                                        <pre style={{ background: 'var(--bg-dark)', padding: '0.75rem', borderRadius: '0.5rem', margin: 0, fontSize: '0.85rem', overflow: 'auto' }}>{task.sampleInput}</pre>
+                                    </div>
+                                )}
+                                {task.expectedOutput && (
+                                    <div>
+                                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>Expected Output</label>
+                                        <pre style={{ background: 'var(--bg-dark)', padding: '0.75rem', borderRadius: '0.5rem', margin: 0, fontSize: '0.85rem', overflow: 'auto' }}>{task.expectedOutput}</pre>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer with Submit Button */}
+                <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button onClick={onClose} className="btn-reset">Close</button>
+                    <button onClick={onSubmit} className="btn-create-new" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Upload size={16} /> Submit Solution
+                    </button>
+                </div>
+            </div>
+        </div>
     )
 }
 
 // ==================== TASK SUBMIT MODAL ====================
 function TaskSubmitModal({ task, user, onClose }) {
     const [file, setFile] = useState(null)
+    const [githubUrl, setGithubUrl] = useState('')
+    const [submissionType, setSubmissionType] = useState('file') // 'file' or 'github'
     const [submitting, setSubmitting] = useState(false)
     const [result, setResult] = useState(null)
+    const [evaluating, setEvaluating] = useState(false)
 
     const handleFileChange = (e) => {
         const selectedFile = e.target.files[0]
@@ -462,79 +583,215 @@ function TaskSubmitModal({ task, user, onClose }) {
         }
     }
 
-    const handleSubmit = async () => {
-        if (!file) return
-        setSubmitting(true)
+    const isValidGithubUrl = (url) => {
+        const githubRegex = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?.*$/i
+        return githubRegex.test(url)
+    }
 
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-            try {
-                const response = await axios.post(`${API_BASE}/submissions`, {
+    const handleSubmit = async () => {
+        if (submissionType === 'file' && !file) return
+        if (submissionType === 'github' && !githubUrl) return
+        if (submissionType === 'github' && !isValidGithubUrl(githubUrl)) {
+            alert('Please enter a valid GitHub repository URL')
+            return
+        }
+
+        setSubmitting(true)
+        setEvaluating(true)
+
+        try {
+            if (submissionType === 'file') {
+                const reader = new FileReader()
+                reader.onload = async (e) => {
+                    try {
+                        const response = await axios.post(`${API_BASE}/submissions/ml-task`, {
+                            studentId: user.id,
+                            taskId: task.id,
+                            submissionType: 'file',
+                            code: e.target.result,
+                            fileName: file.name,
+                            taskTitle: task.title,
+                            taskDescription: task.description,
+                            taskRequirements: task.requirements
+                        })
+                        setResult(response.data)
+                    } catch (error) {
+                        console.error(error)
+                        setResult({ status: 'error', score: 0, feedback: error.response?.data?.error || 'Submission failed. Please try again.' })
+                    } finally {
+                        setSubmitting(false)
+                        setEvaluating(false)
+                    }
+                }
+                reader.readAsText(file)
+            } else {
+                // GitHub URL submission
+                const response = await axios.post(`${API_BASE}/submissions/ml-task`, {
                     studentId: user.id,
                     taskId: task.id,
-                    language: 'Python',
-                    code: e.target.result,
-                    submissionType: 'file',
-                    fileName: file.name
+                    submissionType: 'github',
+                    githubUrl: githubUrl,
+                    taskTitle: task.title,
+                    taskDescription: task.description,
+                    taskRequirements: task.requirements
                 })
                 setResult(response.data)
-            } catch (error) {
-                console.error(error)
-                setResult({ status: 'rejected', score: 0, feedback: 'Submission failed.' })
-            } finally {
                 setSubmitting(false)
+                setEvaluating(false)
             }
+        } catch (error) {
+            console.error(error)
+            setResult({ status: 'error', score: 0, feedback: error.response?.data?.error || 'Submission failed. Please try again.' })
+            setSubmitting(false)
+            setEvaluating(false)
         }
-        reader.readAsText(file)
     }
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
                 <div className="modal-header">
                     <div className="modal-title-with-icon">
                         <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, var(--secondary), var(--primary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Upload size={20} color="white" />
                         </div>
-                        <h2>Submit: {task.title}</h2>
+                        <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Submit Solution</span>
+                            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{task.title}</h2>
+                        </div>
                     </div>
                     <button onClick={onClose} className="modal-close"><XCircle size={20} /></button>
                 </div>
                 <div className="modal-body">
                     {!result ? (
                         <>
-                            <div className="form-group">
-                                <label className="form-label">Upload Your Solution File</label>
-                                <div style={{
-                                    border: '2px dashed var(--border-color)',
-                                    borderRadius: '1rem',
-                                    padding: '2rem',
-                                    textAlign: 'center',
-                                    background: 'var(--bg-dark)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.3s'
-                                }}
-                                    onClick={() => document.getElementById('file-input').click()}
-                                >
-                                    <input type="file" id="file-input" onChange={handleFileChange} accept=".py,.ipynb,.csv,.pkl,.h5,.zip" style={{ display: 'none' }} />
-                                    <Upload size={40} style={{ color: 'var(--secondary)', marginBottom: '1rem' }} />
-                                    {file ? (
-                                        <div>
-                                            <p style={{ fontWeight: 600, color: 'var(--success)' }}>{file.name}</p>
-                                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{(file.size / 1024).toFixed(2)} KB</p>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <p style={{ fontWeight: 600 }}>Click to upload or drag and drop</p>
-                                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Supports: .py, .ipynb, .csv, .pkl, .h5, .zip</p>
-                                        </div>
-                                    )}
+                            {/* Submission Type Toggle */}
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <label className="form-label" style={{ marginBottom: '0.75rem', display: 'block' }}>Choose Submission Method</label>
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    <button
+                                        onClick={() => setSubmissionType('file')}
+                                        style={{
+                                            flex: 1,
+                                            padding: '1rem',
+                                            borderRadius: '0.75rem',
+                                            border: `2px solid ${submissionType === 'file' ? 'var(--primary)' : 'var(--border-color)'}`,
+                                            background: submissionType === 'file' ? 'var(--primary-alpha)' : 'var(--bg-dark)',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Upload size={24} color={submissionType === 'file' ? 'var(--primary)' : 'var(--text-muted)'} />
+                                        <span style={{ fontWeight: 600, color: submissionType === 'file' ? 'var(--primary)' : 'var(--text-muted)' }}>Upload File</span>
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>.py, .ipynb, .zip</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setSubmissionType('github')}
+                                        style={{
+                                            flex: 1,
+                                            padding: '1rem',
+                                            borderRadius: '0.75rem',
+                                            border: `2px solid ${submissionType === 'github' ? 'var(--primary)' : 'var(--border-color)'}`,
+                                            background: submissionType === 'github' ? 'var(--primary-alpha)' : 'var(--bg-dark)',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <Github size={24} color={submissionType === 'github' ? 'var(--primary)' : 'var(--text-muted)'} />
+                                        <span style={{ fontWeight: 600, color: submissionType === 'github' ? 'var(--primary)' : 'var(--text-muted)' }}>GitHub URL</span>
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Repository link</span>
+                                    </button>
                                 </div>
                             </div>
+
+                            {/* File Upload Section */}
+                            {submissionType === 'file' && (
+                                <div className="form-group">
+                                    <label className="form-label">Upload Your Solution File</label>
+                                    <div style={{
+                                        border: '2px dashed var(--border-color)',
+                                        borderRadius: '1rem',
+                                        padding: '2rem',
+                                        textAlign: 'center',
+                                        background: 'var(--bg-dark)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.3s'
+                                    }}
+                                        onClick={() => document.getElementById('file-input').click()}
+                                    >
+                                        <input type="file" id="file-input" onChange={handleFileChange} accept=".py,.ipynb,.csv,.pkl,.h5,.zip" style={{ display: 'none' }} />
+                                        <Upload size={40} style={{ color: 'var(--secondary)', marginBottom: '1rem' }} />
+                                        {file ? (
+                                            <div>
+                                                <p style={{ fontWeight: 600, color: 'var(--success)' }}>{file.name}</p>
+                                                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{(file.size / 1024).toFixed(2)} KB</p>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <p style={{ fontWeight: 600 }}>Click to upload or drag and drop</p>
+                                                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Supports: .py, .ipynb, .csv, .pkl, .h5, .zip</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* GitHub URL Section */}
+                            {submissionType === 'github' && (
+                                <div className="form-group">
+                                    <label className="form-label">GitHub Repository URL</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Github size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                        <input
+                                            type="url"
+                                            value={githubUrl}
+                                            onChange={(e) => setGithubUrl(e.target.value)}
+                                            placeholder="https://github.com/username/repository"
+                                            style={{
+                                                width: '100%',
+                                                padding: '0.875rem 1rem 0.875rem 2.75rem',
+                                                borderRadius: '0.75rem',
+                                                border: '1px solid var(--border-color)',
+                                                background: 'var(--bg-dark)',
+                                                color: 'var(--text-main)',
+                                                fontSize: '0.95rem'
+                                            }}
+                                        />
+                                    </div>
+                                    {githubUrl && !isValidGithubUrl(githubUrl) && (
+                                        <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+                                            Please enter a valid GitHub URL (e.g., https://github.com/username/repo)
+                                        </p>
+                                    )}
+                                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '0.5rem', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                            <strong style={{ color: 'var(--info)' }}>Note:</strong> Make sure your repository is public. Include a README.md with setup instructions.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="form-actions">
                                 <button type="button" className="btn-reset" onClick={onClose}>Cancel</button>
-                                <button type="button" className="btn-create-new" onClick={handleSubmit} disabled={!file || submitting}>
-                                    {submitting ? 'Submitting...' : <><Send size={16} /> Submit for Evaluation</>}
+                                <button 
+                                    type="button" 
+                                    className="btn-create-new" 
+                                    onClick={handleSubmit} 
+                                    disabled={(submissionType === 'file' && !file) || (submissionType === 'github' && (!githubUrl || !isValidGithubUrl(githubUrl))) || submitting}
+                                >
+                                    {submitting ? (
+                                        <><span className="spinner-small"></span> {evaluating ? 'Evaluating...' : 'Submitting...'}</>
+                                    ) : (
+                                        <><Send size={16} /> Submit for Evaluation</>
+                                    )}
                                 </button>
                             </div>
                         </>
@@ -542,16 +799,59 @@ function TaskSubmitModal({ task, user, onClose }) {
                         <div style={{ textAlign: 'center', padding: '2rem 0' }}>
                             <div style={{
                                 width: '80px', height: '80px', borderRadius: '50%',
-                                background: result.status === 'accepted' ? 'var(--success-alpha)' : 'var(--danger-alpha)',
+                                background: result.status === 'accepted' || result.score >= 60 ? 'var(--success-alpha)' : result.status === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'var(--warning-alpha)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem'
                             }}>
-                                {result.status === 'accepted' ? <CheckCircle size={40} color="var(--success)" /> : <XCircle size={40} color="var(--danger)" />}
+                                {result.status === 'accepted' || result.score >= 60 ? (
+                                    <CheckCircle size={40} color="var(--success)" />
+                                ) : result.status === 'error' ? (
+                                    <XCircle size={40} color="var(--danger)" />
+                                ) : (
+                                    <AlertTriangle size={40} color="var(--warning)" />
+                                )}
                             </div>
-                            <h3 style={{ marginBottom: '0.5rem', color: result.status === 'accepted' ? 'var(--success)' : 'var(--danger)' }}>
-                                {result.status === 'accepted' ? 'Submission Accepted!' : 'Submission Rejected'}
+                            <h3 style={{ marginBottom: '0.5rem', color: result.status === 'accepted' || result.score >= 60 ? 'var(--success)' : result.status === 'error' ? 'var(--danger)' : 'var(--warning)' }}>
+                                {result.status === 'error' ? 'Submission Error' : result.score >= 80 ? 'Excellent Work!' : result.score >= 60 ? 'Good Job!' : 'Needs Improvement'}
                             </h3>
-                            <p style={{ fontSize: '2rem', fontWeight: 800, margin: '1rem 0' }}>Score: {result.score}/100</p>
-                            <p style={{ color: 'var(--text-muted)', maxWidth: '400px', margin: '0 auto' }}>{result.feedback}</p>
+                            
+                            {result.score !== undefined && (
+                                <div style={{ margin: '1.5rem 0' }}>
+                                    <div style={{ fontSize: '3rem', fontWeight: 800, background: 'linear-gradient(135deg, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                                        {result.score}/100
+                                    </div>
+                                    <div style={{ width: '200px', height: '8px', background: 'var(--bg-dark)', borderRadius: '4px', margin: '1rem auto', overflow: 'hidden' }}>
+                                        <div style={{ 
+                                            width: `${result.score}%`, 
+                                            height: '100%', 
+                                            background: result.score >= 80 ? 'var(--success)' : result.score >= 60 ? 'var(--warning)' : 'var(--danger)',
+                                            borderRadius: '4px',
+                                            transition: 'width 0.5s ease'
+                                        }} />
+                                    </div>
+                                </div>
+                            )}
+
+                            {result.feedback && (
+                                <div style={{ textAlign: 'left', background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', marginTop: '1rem' }}>
+                                    <h4 style={{ margin: '0 0 0.5rem', color: 'var(--primary)', fontSize: '0.9rem' }}>AI Feedback</h4>
+                                    <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{result.feedback}</p>
+                                </div>
+                            )}
+
+                            {result.breakdown && (
+                                <div style={{ textAlign: 'left', marginTop: '1rem' }}>
+                                    <h4 style={{ margin: '0 0 0.75rem', color: 'var(--text-main)', fontSize: '0.9rem' }}>Score Breakdown</h4>
+                                    <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                        {Object.entries(result.breakdown).map(([key, value]) => (
+                                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', background: 'var(--bg-dark)', borderRadius: '0.5rem' }}>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
+                                                <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{value}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <button className="btn-create-new" onClick={onClose} style={{ marginTop: '2rem' }}>Close</button>
                         </div>
                     )}

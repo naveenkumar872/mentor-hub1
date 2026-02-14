@@ -1151,6 +1151,248 @@ Scoring Guide:
     }
 });
 
+// ML Task Submission with File or GitHub URL
+app.post('/api/submissions/ml-task', async (req, res) => {
+    try {
+        const { 
+            studentId, 
+            taskId, 
+            submissionType, // 'file' or 'github'
+            code, // file content if type is file
+            fileName,
+            githubUrl, // GitHub URL if type is github
+            taskTitle,
+            taskDescription,
+            taskRequirements
+        } = req.body;
+
+        if (!studentId || !taskId) {
+            return res.status(400).json({ error: 'studentId and taskId are required' });
+        }
+
+        const submissionId = uuidv4();
+        const submittedAt = new Date();
+        let codeContent = '';
+        let githubRepoInfo = null;
+
+        // Handle GitHub URL submission - fetch repo details
+        if (submissionType === 'github' && githubUrl) {
+            try {
+                // Parse GitHub URL to get owner and repo
+                const urlMatch = githubUrl.match(/github\.com\/([^\/]+)\/([^\/\?#]+)/);
+                if (!urlMatch) {
+                    return res.status(400).json({ error: 'Invalid GitHub URL format' });
+                }
+                const [, owner, repo] = urlMatch;
+                const repoName = repo.replace(/\.git$/, '');
+
+                // Fetch repository info from GitHub API
+                const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
+                    headers: { 'Accept': 'application/vnd.github.v3+json' }
+                });
+                
+                if (!repoResponse.ok) {
+                    return res.status(400).json({ error: 'Could not access GitHub repository. Make sure it is public.' });
+                }
+                
+                githubRepoInfo = await repoResponse.json();
+
+                // Try to fetch README
+                let readmeContent = '';
+                try {
+                    const readmeResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}/readme`, {
+                        headers: { 'Accept': 'application/vnd.github.v3+json' }
+                    });
+                    if (readmeResponse.ok) {
+                        const readmeData = await readmeResponse.json();
+                        readmeContent = Buffer.from(readmeData.content, 'base64').toString('utf-8');
+                    }
+                } catch (e) { /* No README */ }
+
+                // Fetch main Python/Notebook files
+                let mainFiles = [];
+                try {
+                    const contentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}/contents`, {
+                        headers: { 'Accept': 'application/vnd.github.v3+json' }
+                    });
+                    if (contentsResponse.ok) {
+                        const contents = await contentsResponse.json();
+                        const codeFiles = contents.filter(f => 
+                            f.type === 'file' && 
+                            (f.name.endsWith('.py') || f.name.endsWith('.ipynb'))
+                        ).slice(0, 3); // Limit to first 3 files
+
+                        for (const file of codeFiles) {
+                            try {
+                                const fileResponse = await fetch(file.download_url);
+                                if (fileResponse.ok) {
+                                    const content = await fileResponse.text();
+                                    mainFiles.push({ name: file.name, content: content.substring(0, 5000) }); // Limit content
+                                }
+                            } catch (e) { /* Skip file */ }
+                        }
+                    }
+                } catch (e) { /* No contents */ }
+
+                // Build code content for evaluation
+                codeContent = `=== GitHub Repository: ${githubUrl} ===
+Repository: ${githubRepoInfo.full_name}
+Description: ${githubRepoInfo.description || 'No description'}
+Stars: ${githubRepoInfo.stargazers_count}
+Language: ${githubRepoInfo.language || 'Unknown'}
+Last Updated: ${githubRepoInfo.updated_at}
+
+=== README ===
+${readmeContent.substring(0, 2000) || 'No README found'}
+
+=== Code Files ===
+${mainFiles.map(f => `--- ${f.name} ---\n${f.content}`).join('\n\n') || 'No Python/Notebook files found at root level'}
+`;
+            } catch (githubError) {
+                console.error('GitHub fetch error:', githubError);
+                return res.status(400).json({ error: 'Failed to fetch GitHub repository information' });
+            }
+        } else if (submissionType === 'file' && code) {
+            codeContent = code;
+        } else {
+            return res.status(400).json({ error: 'Please provide either a file or GitHub URL' });
+        }
+
+        // Build evaluation prompt for ML task
+        const evaluationPrompt = `You are an expert ML/AI project evaluator for an educational platform.
+
+=== TASK DETAILS ===
+Title: ${taskTitle || 'ML Task'}
+Description: ${taskDescription || 'No description provided'}
+Requirements:
+${taskRequirements || 'No specific requirements'}
+
+=== SUBMISSION ===
+Submission Type: ${submissionType === 'github' ? 'GitHub Repository' : 'File Upload'}
+${submissionType === 'github' ? `GitHub URL: ${githubUrl}` : `File Name: ${fileName || 'unknown'}`}
+
+=== SUBMITTED CONTENT ===
+${codeContent.substring(0, 8000)}
+
+=== EVALUATION CRITERIA ===
+Evaluate this ML task submission based on:
+1. **Completeness (25 pts)**: Does it address all requirements? Is it a complete solution?
+2. **Code Quality (25 pts)**: Is the code well-structured, readable, and follows Python/ML best practices?
+3. **ML Approach (25 pts)**: Is the ML approach appropriate? Are proper techniques used (data preprocessing, model selection, evaluation metrics)?
+4. **Documentation (15 pts)**: Is the code documented? README present? Comments explaining logic?
+5. **Innovation (10 pts)**: Any creative approaches or improvements beyond basic requirements?
+
+Respond with JSON:
+{
+    "score": 0-100,
+    "status": "accepted" | "partial" | "rejected",
+    "feedback": "Detailed, encouraging feedback for the student (3-5 sentences). Be constructive.",
+    "breakdown": {
+        "completeness": "X/25",
+        "code_quality": "X/25", 
+        "ml_approach": "X/25",
+        "documentation": "X/15",
+        "innovation": "X/10"
+    },
+    "strengths": ["strength1", "strength2"],
+    "improvements": ["area1", "area2"]
+}
+
+Be fair but thorough. Consider students are learning. Provide actionable feedback.`;
+
+        let evaluationResult = {
+            score: 0,
+            status: 'rejected',
+            feedback: 'Evaluation in progress...',
+            breakdown: {
+                completeness: '0/25',
+                code_quality: '0/25',
+                ml_approach: '0/25',
+                documentation: '0/15',
+                innovation: '0/10'
+            }
+        };
+
+        try {
+            const evaluation = await cerebrasChat([
+                { role: 'system', content: 'You are an expert ML/AI evaluator for student projects. Be fair, encouraging, and provide constructive feedback.' },
+                { role: 'user', content: evaluationPrompt }
+            ], {
+                model: 'llama-3.3-70b',
+                temperature: 0.3,
+                max_tokens: 1000,
+                response_format: { type: 'json_object' }
+            });
+
+            const result = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
+            evaluationResult = {
+                score: result.score || 0,
+                status: result.score >= 60 ? 'accepted' : result.score >= 40 ? 'partial' : 'rejected',
+                feedback: result.feedback || 'Evaluation complete.',
+                breakdown: result.breakdown || evaluationResult.breakdown,
+                strengths: result.strengths || [],
+                improvements: result.improvements || []
+            };
+        } catch (aiError) {
+            console.error('AI Evaluation error for ML task:', aiError);
+            evaluationResult.feedback = 'Your submission was received but automatic evaluation encountered an error. A mentor will review it manually.';
+            evaluationResult.score = 50; // Default pending score
+            evaluationResult.status = 'partial';
+        }
+
+        // Save to database
+        await pool.query(
+            `INSERT INTO submissions (
+                id, student_id, task_id, code, submission_type, file_name, language,
+                score, status, feedback, ai_explanation, submitted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                submissionId,
+                studentId,
+                taskId,
+                submissionType === 'github' ? githubUrl : code.substring(0, 50000),
+                submissionType,
+                submissionType === 'github' ? githubUrl : fileName,
+                'Python',
+                evaluationResult.score,
+                evaluationResult.status,
+                evaluationResult.feedback,
+                JSON.stringify({ breakdown: evaluationResult.breakdown, strengths: evaluationResult.strengths, improvements: evaluationResult.improvements }),
+                submittedAt
+            ]
+        );
+
+        // Mark task as completed if score >= 60
+        if (evaluationResult.score >= 60) {
+            try {
+                await pool.query(
+                    'INSERT IGNORE INTO task_completions (task_id, student_id, completed_at, score) VALUES (?, ?, ?, ?)',
+                    [taskId, studentId, submittedAt, evaluationResult.score]
+                );
+                await updateUserStreak(studentId, { tasksCompleted: 1, submissionsCount: 1 });
+            } catch (e) { /* Ignore */ }
+        } else {
+            try { await updateUserStreak(studentId, { submissionsCount: 1 }); } catch (e) { /* Ignore */ }
+        }
+
+        // Return result
+        res.json({
+            id: submissionId,
+            score: evaluationResult.score,
+            status: evaluationResult.status,
+            feedback: evaluationResult.feedback,
+            breakdown: evaluationResult.breakdown,
+            strengths: evaluationResult.strengths,
+            improvements: evaluationResult.improvements,
+            submittedAt
+        });
+
+    } catch (error) {
+        console.error('ML Task Submission Error:', error);
+        res.status(500).json({ error: 'Failed to process ML task submission', details: error.message });
+    }
+});
+
 // Proctored submission with video upload
 // Middleware for handling optional file uploads (support both JSON and FormData)
 const optionalFileUpload = (req, res, next) => {
