@@ -15,6 +15,7 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
     const [result, setResult] = useState(null);
     const [error, setError] = useState('');
     const [tabSwitchCount, setTabSwitchCount] = useState(0);
+    const [showConfirm, setShowConfirm] = useState(false);
     const timerRef = useRef(null);
 
     useEffect(() => {
@@ -42,7 +43,7 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
             await axios.post(`${API}/api/skill-tests/proctoring/log`, {
                 attemptId, testStage: 'mcq', eventType, details, severity
             });
-        } catch {}
+        } catch { }
     };
 
     const startMCQ = async () => {
@@ -75,12 +76,18 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
         setAnswers(prev => ({ ...prev, [String(questionId)]: option }));
     };
 
+    const trySubmitMCQ = () => {
+        const unanswered = questions.length - Object.keys(answers).length;
+        if (unanswered > 0) {
+            setShowConfirm(true);
+            return;
+        }
+        submitMCQ(false);
+    };
+
     const submitMCQ = async (autoSubmit = false) => {
         if (submitting) return;
-        if (!autoSubmit) {
-            const unanswered = questions.length - Object.keys(answers).length;
-            if (unanswered > 0 && !window.confirm(`You have ${unanswered} unanswered questions. Submit anyway?`)) return;
-        }
+        setShowConfirm(false);
 
         setSubmitting(true);
         if (timerRef.current) clearInterval(timerRef.current);
@@ -135,7 +142,7 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
     const answeredCount = Object.keys(answers).length;
 
     return (
-        <div>
+        <div style={{ paddingBottom: '80px' }}>
             {/* Top Bar */}
             <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -158,7 +165,7 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
                     <Clock size={16} /> {formatTime(timeLeft)}
                 </div>
 
-                <button onClick={() => submitMCQ(false)} disabled={submitting} style={{
+                <button onClick={trySubmitMCQ} disabled={submitting} style={{
                     padding: '8px 20px', background: '#8b5cf6', color: 'white', border: 'none',
                     borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px',
                     display: 'flex', alignItems: 'center', gap: '6px', opacity: submitting ? 0.6 : 1
@@ -271,6 +278,35 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
                             }}>
                             Next <ChevronRight size={14} />
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Confirm Modal (replaces window.confirm to avoid fullscreen exit) */}
+            {showConfirm && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div style={{
+                        background: '#1e293b', borderRadius: '16px', padding: '28px', maxWidth: '400px',
+                        width: '90%', border: '1px solid #334155', textAlign: 'center'
+                    }}>
+                        <AlertTriangle size={36} color="#fbbf24" style={{ marginBottom: '12px' }} />
+                        <h3 style={{ margin: '0 0 8px', color: '#f1f5f9', fontSize: '18px' }}>Unanswered Questions</h3>
+                        <p style={{ color: '#94a3b8', fontSize: '14px', margin: '0 0 20px' }}>
+                            You have {questions.length - Object.keys(answers).length} unanswered question(s). Submit anyway?
+                        </p>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setShowConfirm(false)} style={{
+                                flex: 1, padding: '10px', background: '#334155', color: '#94a3b8',
+                                border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            }}>Cancel</button>
+                            <button onClick={() => submitMCQ(false)} style={{
+                                flex: 1, padding: '10px', background: '#8b5cf6', color: 'white',
+                                border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            }}>Submit Anyway</button>
+                        </div>
                     </div>
                 </div>
             )}

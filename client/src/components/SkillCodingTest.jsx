@@ -25,10 +25,44 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
     const [running, setRunning] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [finishing, setFinishing] = useState(false);
+    const [showFinishConfirm, setShowFinishConfirm] = useState(false);
     const [submissions, setSubmissions] = useState({});
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(true);
+
     const [error, setError] = useState('');
+    const [timeLeft, setTimeLeft] = useState(null);
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+        if (timeLeft === null) return;
+        if (timeLeft <= 0) {
+            handleTimeUp();
+            return;
+        }
+        timerRef.current = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(timerRef.current);
+                    handleTimeUp();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+    }, [timeLeft]);
+
+    const handleTimeUp = () => {
+        alert('Time is up! Submitting your test automatically.');
+        finishCoding(true);
+    };
+
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
 
     useEffect(() => { startCoding(); }, []);
 
@@ -57,6 +91,7 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
             });
             setCode(initCode);
             setLanguage(initLang);
+            if (data.duration_minutes) setTimeLeft(data.duration_minutes * 60);
             setLoading(false);
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -119,7 +154,7 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
     };
 
     const finishCoding = async () => {
-        if (!window.confirm('Submit your coding solutions? This will move to the SQL section.')) return;
+        setShowFinishConfirm(false);
         setFinishing(true);
         try {
             const { data } = await axios.post(`${API}/api/skill-tests/coding/finish/${attemptId}`);
@@ -135,7 +170,45 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
         }
     };
 
-    if (loading) return <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading coding problems...</div>;
+    const [regenerating, setRegenerating] = useState(false);
+
+    const retryLoadProblems = async () => {
+        setRegenerating(true);
+        setError('');
+        try {
+            // First try to force regenerate
+            await axios.post(`${API}/api/skill-tests/coding/regenerate/${attemptId}`);
+            // Then reload
+            await startCoding();
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to regenerate. Please try again.');
+            setRegenerating(false);
+        }
+    };
+
+    if (loading) return <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}><Loader2 size={24} style={{ animation: 'spin 1s linear infinite', marginBottom: '8px' }} /> Loading coding problems...</div>;
+
+    if (!loading && problems.length === 0 && !result) {
+        return (
+            <div style={{ textAlign: 'center', padding: '60px' }}>
+                <Code2 size={48} color="#64748b" style={{ marginBottom: '16px' }} />
+                <h3 style={{ color: '#f1f5f9', margin: '0 0 8px' }}>No Coding Problems Available</h3>
+                <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px' }}>
+                    Problems couldn't be generated. Click below to regenerate them.
+                </p>
+                {error && <p style={{ color: '#fca5a5', fontSize: '13px', marginBottom: '16px' }}>{error}</p>}
+                <button onClick={retryLoadProblems} disabled={regenerating} style={{
+                    padding: '10px 24px', background: regenerating ? '#6d28d9' : '#8b5cf6', color: 'white', border: 'none',
+                    borderRadius: '8px', cursor: regenerating ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '14px',
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    opacity: regenerating ? 0.7 : 1
+                }}>
+                    {regenerating ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generating Problems...</> : '🔄 Regenerate Problems'}
+                </button>
+                <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+            </div>
+        );
+    }
 
     if (result) {
         return (
@@ -177,8 +250,17 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
                     <span style={{ fontSize: '13px', color: '#94a3b8' }}>
                         {solvedCount}/{problems.length} solved
                     </span>
+                    {timeLeft !== null && (
+                        <span style={{
+                            padding: '4px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
+                            background: timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.15)',
+                            color: timeLeft < 300 ? '#fca5a5' : '#60a5fa', border: '1px solid ' + (timeLeft < 300 ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.3)')
+                        }}>
+                            Time Left: {formatTime(timeLeft)}
+                        </span>
+                    )}
                 </div>
-                <button onClick={finishCoding} disabled={finishing} style={{
+                <button onClick={() => setShowFinishConfirm(true)} disabled={finishing} style={{
                     padding: '8px 20px', background: '#8b5cf6', color: 'white', border: 'none',
                     borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px',
                     opacity: finishing ? 0.6 : 1
@@ -375,6 +457,35 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
                             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordWrap: 'break-word', color: output ? '#10b981' : '#64748b' }}>
                                 {output || '(Run your code to see output here...)'}
                             </pre>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Confirm Modal */}
+            {showFinishConfirm && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div style={{
+                        background: '#1e293b', borderRadius: '16px', padding: '28px', maxWidth: '400px',
+                        width: '90%', border: '1px solid #334155', textAlign: 'center'
+                    }}>
+                        <Send size={36} color="#8b5cf6" style={{ marginBottom: '12px' }} />
+                        <h3 style={{ margin: '0 0 8px', color: '#f1f5f9', fontSize: '18px' }}>Submit Coding?</h3>
+                        <p style={{ color: '#94a3b8', fontSize: '14px', margin: '0 0 20px' }}>
+                            Submit your coding solutions? This will move to the SQL section.
+                        </p>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setShowFinishConfirm(false)} style={{
+                                flex: 1, padding: '10px', background: '#334155', color: '#94a3b8',
+                                border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            }}>Cancel</button>
+                            <button onClick={finishCoding} style={{
+                                flex: 1, padding: '10px', background: '#8b5cf6', color: 'white',
+                                border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            }}>Submit</button>
                         </div>
                     </div>
                 </div>

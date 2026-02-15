@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Editor from '@monaco-editor/react';
-import { Play, Send, CheckCircle, XCircle, Database, Table, Loader2 } from 'lucide-react';
+import { Play, Send, CheckCircle, XCircle, Database, Table, Loader2, ArrowRight, Target } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -17,8 +17,42 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
     const [finishing, setFinishing] = useState(false);
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [showSchema, setShowSchema] = useState(false);
+    const [activeTab, setActiveTab] = useState(null); // 'schema', 'expected', null
     const [error, setError] = useState('');
+    const [showContinue, setShowContinue] = useState(false);
+    const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(null);
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+        if (timeLeft === null) return;
+        if (timeLeft <= 0) {
+            handleTimeUp();
+            return;
+        }
+        timerRef.current = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(timerRef.current);
+                    handleTimeUp();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+    }, [timeLeft]);
+
+    const handleTimeUp = () => {
+        alert('Time is up! Submitting your test automatically.');
+        finishSQL(true);
+    };
+
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
 
     useEffect(() => { startSQL(); }, []);
 
@@ -30,6 +64,7 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
             const initQueries = {};
             (data.problems || []).forEach(p => { initQueries[p.id] = ''; });
             setQueries(initQueries);
+            if (data.duration_minutes) setTimeLeft(data.duration_minutes * 60);
             setLoading(false);
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -76,19 +111,23 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
     };
 
     const finishSQL = async () => {
-        if (!window.confirm('Submit your SQL solutions? This will move to the Interview section.')) return;
+        setShowFinishConfirm(false);
         setFinishing(true);
         try {
             const { data } = await axios.post(`${API}/api/skill-tests/sql/finish/${attemptId}`);
             setResult(data);
-            if (data.passed) {
-                setTimeout(() => onComplete(data), 2000);
-            } else {
-                setTimeout(() => onFailed(), 3000);
-            }
+            setShowContinue(true);
         } catch (err) {
             setError(err.response?.data?.error || err.message);
             setFinishing(false);
+        }
+    };
+
+    const handleContinue = () => {
+        if (result?.passed) {
+            onComplete(result);
+        } else {
+            onFailed();
         }
     };
 
@@ -110,9 +149,19 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
                 <p style={{ fontSize: '18px', color: '#94a3b8' }}>
                     Solved: {result.solved}/{result.total} ({Math.round(result.score)}%)
                 </p>
-                <p style={{ fontSize: '14px', color: result.passed ? '#22c55e' : '#ef4444', marginTop: '12px' }}>
-                    {result.passed ? 'Proceeding to AI Interview...' : 'Assessment ended. Generating report...'}
-                </p>
+                <div style={{ marginTop: '32px' }}>
+                    <button onClick={handleContinue} style={{
+                        padding: '12px 24px', background: '#8b5cf6', color: 'white', border: 'none',
+                        borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '16px',
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        boxShadow: '0 4px 12px rgba(139,92,246,0.3)'
+                    }}>
+                        {result.passed ? 'Continue to Interview' : 'View Report'} <ArrowRight size={18} />
+                    </button>
+                    <p style={{ fontSize: '14px', color: '#64748b', marginTop: '12px' }}>
+                        Click to proceed to the next stage
+                    </p>
+                </div>
             </div>
         );
     }
@@ -129,6 +178,36 @@ projects (id, name, department_id, start_date, end_date, status)
 orders (id, customer_name, product, quantity, price, order_date)
     `.trim();
 
+    // Helper to render table
+    const renderTable = (data, title, color) => {
+        if (!data || !data.rows || data.rows.length === 0) return null;
+        return (
+            <div style={{ marginTop: '12px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: color, marginBottom: '4px' }}>{title}</div>
+                <div style={{ overflowX: 'auto', border: `1px solid ${color}40`, borderRadius: '6px' }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '11px' }}>
+                        <thead>
+                            <tr>
+                                {data.columns.map(col => (
+                                    <th key={col} style={{ padding: '4px 8px', borderBottom: `1px solid ${color}40`, textAlign: 'left', color: '#cbd5e1', background: `${color}10` }}>{col}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.rows.slice(0, 5).map((row, i) => (
+                                <tr key={i}>
+                                    {data.columns.map(col => (
+                                        <td key={col} style={{ padding: '4px 8px', borderBottom: '1px solid #333', color: '#94a3b8' }}>{row[col] ?? 'NULL'}</td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div>
             {/* Header */}
@@ -141,17 +220,34 @@ orders (id, customer_name, product, quantity, price, order_date)
                     <Database size={20} color="#8b5cf6" />
                     <span style={{ fontWeight: 700, fontSize: '15px', color: '#f1f5f9' }}>SQL Test</span>
                     <span style={{ fontSize: '13px', color: '#94a3b8' }}>{solvedCount}/{problems.length} solved</span>
+                    {timeLeft !== null && (
+                        <span style={{
+                            padding: '4px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
+                            background: timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.15)',
+                            color: timeLeft < 300 ? '#fca5a5' : '#60a5fa', border: '1px solid ' + (timeLeft < 300 ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.3)')
+                        }}>
+                            Time Left: {formatTime(timeLeft)}
+                        </span>
+                    )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => setShowSchema(!showSchema)} style={{
-                        padding: '8px 14px', background: showSchema ? 'rgba(139,92,246,0.15)' : '#334155',
-                        border: '1px solid ' + (showSchema ? '#8b5cf6' : '#475569'),
+                    <button onClick={() => setActiveTab(activeTab === 'schema' ? null : 'schema')} style={{
+                        padding: '8px 14px', background: activeTab === 'schema' ? 'rgba(139,92,246,0.15)' : '#334155',
+                        border: '1px solid ' + (activeTab === 'schema' ? '#8b5cf6' : '#475569'),
                         borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
                         display: 'flex', alignItems: 'center', gap: '4px', color: '#f1f5f9'
                     }}>
                         <Table size={14} /> Schema
                     </button>
-                    <button onClick={finishSQL} disabled={finishing} style={{
+                    <button onClick={() => setActiveTab(activeTab === 'expected' ? null : 'expected')} style={{
+                        padding: '8px 14px', background: activeTab === 'expected' ? 'rgba(16, 185, 129, 0.15)' : '#334155',
+                        border: '1px solid ' + (activeTab === 'expected' ? '#10b981' : '#475569'),
+                        borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+                        display: 'flex', alignItems: 'center', gap: '4px', color: '#f1f5f9'
+                    }}>
+                        <Target size={14} /> Expected Output
+                    </button>
+                    <button onClick={() => setShowFinishConfirm(true)} disabled={finishing} style={{
                         padding: '8px 20px', background: '#8b5cf6', color: 'white', border: 'none',
                         borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px',
                         opacity: finishing ? 0.6 : 1
@@ -165,13 +261,60 @@ orders (id, customer_name, product, quantity, price, order_date)
                 <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px', marginBottom: '12px', color: '#fca5a5', fontSize: '13px' }}>{error}</div>
             )}
 
-            {/* Schema Panel */}
-            {showSchema && (
+            {/* Info Panel (Schema or Expected Output) */}
+            {activeTab && (
                 <div style={{
                     background: '#1e1e1e', color: '#d4d4d4', padding: '16px', borderRadius: '8px',
-                    marginBottom: '16px', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-line'
+                    marginBottom: '16px', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-line',
+                    border: '1px solid #334155', boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
                 }}>
-                    {SCHEMA_INFO}
+                    {activeTab === 'schema' ? (
+                        SCHEMA_INFO
+                    ) : (
+                        <div>
+                            <div style={{ marginBottom: '8px', color: '#10b981', fontWeight: 700, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Target size={16} /> Expected Result Structure
+                            </div>
+
+                            {problems[currentIdx]?.expected_output_description && (
+                                <div style={{ marginBottom: '12px' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '4px' }}>Description:</div>
+                                    <div style={{ color: '#e2e8f0' }}>{problems[currentIdx].expected_output_description}</div>
+                                </div>
+                            )}
+
+                            {problems[currentIdx]?.expected_columns && (
+                                <div style={{ marginBottom: '12px' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '4px' }}>Required Columns:</div>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        {problems[currentIdx].expected_columns.map(col => (
+                                            <span key={col} style={{
+                                                padding: '2px 8px', background: 'rgba(96, 165, 250, 0.1)',
+                                                border: '1px solid rgba(96, 165, 250, 0.2)', borderRadius: '4px',
+                                                color: '#60a5fa'
+                                            }}>{col}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {problems[currentIdx]?.expected_output && (
+                                <div>
+                                    <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '4px' }}>Sample Data:</div>
+                                    <pre style={{
+                                        background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '6px',
+                                        border: '1px solid rgba(255,255,255,0.05)', color: '#a7f3d0'
+                                    }}>
+                                        {problems[currentIdx].expected_output}
+                                    </pre>
+                                </div>
+                            )}
+
+                            {!problems[currentIdx]?.expected_output_description && !problems[currentIdx]?.expected_columns && !problems[currentIdx]?.expected_output && (
+                                <span style={{ color: '#64748b', fontStyle: 'italic' }}>No expected output details available for this problem.</span>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -212,6 +355,12 @@ orders (id, customer_name, product, quantity, price, order_date)
                             </div>
                         )}
 
+                        {p.expected_columns && (
+                            <div style={{ marginTop: '12px', padding: '10px', background: 'rgba(59,130,246,0.1)', borderRadius: '6px', fontSize: '13px', color: '#60a5fa' }}>
+                                <strong>Expected Columns:</strong> {p.expected_columns.join(', ')}
+                            </div>
+                        )}
+
                         {p.hints && (
                             <div style={{ marginTop: '12px', padding: '10px', background: 'rgba(245,158,11,0.1)', borderRadius: '6px', fontSize: '13px', color: '#fbbf24' }}>
                                 <strong>Hint:</strong> {p.hints}
@@ -229,6 +378,8 @@ orders (id, customer_name, product, quantity, price, order_date)
                                     {evalResult.passed ? <CheckCircle size={16} color="#22c55e" /> : <XCircle size={16} color="#ef4444" />}
                                     {evalResult.passed ? 'Query Correct!' : 'Results do not match expected output'}
                                 </div>
+                                {renderTable(evalResult.reference_result, 'Expected Output:', '#22c55e')}
+                                {renderTable(evalResult.student_result, 'Your Output:', '#f87171')}
                             </div>
                         )}
                     </div>
@@ -300,6 +451,35 @@ orders (id, customer_name, product, quantity, price, order_date)
                             ) : (
                                 <span style={{ color: '#22c55e' }}>{runResult.message || 'Query executed (no results)'}</span>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Confirm Modal */}
+            {showFinishConfirm && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div style={{
+                        background: '#1e293b', borderRadius: '16px', padding: '28px', maxWidth: '400px',
+                        width: '90%', border: '1px solid #334155', textAlign: 'center'
+                    }}>
+                        <Database size={36} color="#8b5cf6" style={{ marginBottom: '12px' }} />
+                        <h3 style={{ margin: '0 0 8px', color: '#f1f5f9', fontSize: '18px' }}>Submit SQL?</h3>
+                        <p style={{ color: '#94a3b8', fontSize: '14px', margin: '0 0 20px' }}>
+                            Submit your SQL solutions? This will move to the Interview section.
+                        </p>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setShowFinishConfirm(false)} style={{
+                                flex: 1, padding: '10px', background: '#334155', color: '#94a3b8',
+                                border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            }}>Cancel</button>
+                            <button onClick={finishSQL} style={{
+                                flex: 1, padding: '10px', background: '#8b5cf6', color: 'white',
+                                border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+                            }}>Submit</button>
                         </div>
                     </div>
                 </div>

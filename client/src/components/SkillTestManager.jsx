@@ -90,7 +90,7 @@ export default function SkillTestManager() {
         title: '', description: '', skills: [],
         difficulty_level: 'mixed',
         mcq_count: 10, coding_count: 3, sql_count: 3, interview_count: 5,
-        attempt_limit: 1, mcq_duration_minutes: 30,
+        attempt_limit: 1, mcq_duration_minutes: 30, coding_duration_minutes: 45, sql_duration_minutes: 45, interview_duration_minutes: 30,
         mcq_passing_score: 60, coding_passing_score: 50, sql_passing_score: 50, interview_passing_score: 6,
         proctoring_enabled: true,
         proctoring_config: {
@@ -125,7 +125,7 @@ export default function SkillTestManager() {
         try {
             await axios.post(`${API}/api/skill-tests/create`, form);
             setShowCreate(false);
-            setForm({ title: '', description: '', skills: [], difficulty_level: 'mixed', mcq_count: 10, coding_count: 3, sql_count: 3, interview_count: 5, attempt_limit: 1, mcq_duration_minutes: 30, mcq_passing_score: 60, coding_passing_score: 50, sql_passing_score: 50, interview_passing_score: 6, proctoring_enabled: true, proctoring_config: { camera: true, mic: true, fullscreen: true, paste_disabled: true, face_detection: true, camera_block_detect: true, phone_detect: true } });
+            setForm({ title: '', description: '', skills: [], difficulty_level: 'mixed', mcq_count: 10, coding_count: 3, sql_count: 3, interview_count: 5, attempt_limit: 1, mcq_duration_minutes: 30, coding_duration_minutes: 45, sql_duration_minutes: 45, interview_duration_minutes: 30, mcq_passing_score: 60, coding_passing_score: 50, sql_passing_score: 50, interview_passing_score: 6, proctoring_enabled: true, proctoring_config: { camera: true, mic: true, fullscreen: true, paste_disabled: true, face_detection: true, camera_block_detect: true, phone_detect: true } });
             loadTests();
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -501,7 +501,7 @@ export default function SkillTestManager() {
                     {/* Step 4: Passing Criteria & Settings */}
                     <SectionCard icon={<Target size={16} />} title="Passing Criteria & Settings"
                         subtitle="Configure passing scores and limits" color="#ef4444">
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '14px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '14px' }}>
                             <NumberInput label="MCQ Pass %" value={form.mcq_passing_score}
                                 onChange={v => setForm({ ...form, mcq_passing_score: v })}
                                 min={30} max={100} icon={<BarChart2 size={12} />} color="#8b5cf6" suffix="min 30%" />
@@ -511,17 +511,28 @@ export default function SkillTestManager() {
                             <NumberInput label="SQL Pass %" value={form.sql_passing_score}
                                 onChange={v => setForm({ ...form, sql_passing_score: v })}
                                 min={30} max={100} icon={<BarChart2 size={12} />} color="#10b981" suffix="min 30%" />
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                             <NumberInput label="Interview Pass (/10)" value={form.interview_passing_score}
                                 onChange={v => setForm({ ...form, interview_passing_score: v })}
                                 min={3} max={10} icon={<BarChart2 size={12} />} color="#f59e0b" suffix="out of 10" />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '14px' }}>
+                            <NumberInput label="MCQ Time (m)" value={form.mcq_duration_minutes}
+                                onChange={v => setForm({ ...form, mcq_duration_minutes: v })}
+                                min={5} max={120} icon={<Clock size={12} />} color="#8b5cf6" suffix="minutes" />
+                            <NumberInput label="Coding Time (m)" value={form.coding_duration_minutes}
+                                onChange={v => setForm({ ...form, coding_duration_minutes: v })}
+                                min={5} max={120} icon={<Clock size={12} />} color="#3b82f6" suffix="minutes" />
+                            <NumberInput label="SQL Time (m)" value={form.sql_duration_minutes}
+                                onChange={v => setForm({ ...form, sql_duration_minutes: v })}
+                                min={5} max={120} icon={<Clock size={12} />} color="#10b981" suffix="minutes" />
+                            <NumberInput label="Interview Time (m)" value={form.interview_duration_minutes}
+                                onChange={v => setForm({ ...form, interview_duration_minutes: v })}
+                                min={5} max={120} icon={<Clock size={12} />} color="#f59e0b" suffix="minutes" />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                             <NumberInput label="Max Attempts" value={form.attempt_limit}
                                 onChange={v => setForm({ ...form, attempt_limit: v })}
                                 min={1} max={5} icon={<Shield size={12} />} color="#6366f1" suffix="per student" />
-                            <NumberInput label="MCQ Duration (min)" value={form.mcq_duration_minutes}
-                                onChange={v => setForm({ ...form, mcq_duration_minutes: v })}
-                                min={10} max={120} icon={<Clock size={12} />} color="#06b6d4" suffix="minutes" />
                         </div>
                     </SectionCard>
 
@@ -538,7 +549,8 @@ export default function SkillTestManager() {
                             <span><Code size={13} style={{ verticalAlign: 'middle' }} /> {form.coding_count} Coding</span>
                             <span><Database size={13} style={{ verticalAlign: 'middle' }} /> {form.sql_count} SQL</span>
                             <span><MessageSquare size={13} style={{ verticalAlign: 'middle' }} /> {form.interview_count} Interview</span>
-                            <span><Clock size={13} style={{ verticalAlign: 'middle' }} /> {form.mcq_duration_minutes}m</span>
+                            <span><MessageSquare size={13} style={{ verticalAlign: 'middle' }} /> {form.interview_count} Interview</span>
+                            <span><Clock size={13} style={{ verticalAlign: 'middle' }} /> {form.mcq_duration_minutes}m+{form.coding_duration_minutes}m+{form.sql_duration_minutes}m+{form.interview_duration_minutes}m</span>
                             <span style={{ color: { easy: '#22c55e', medium: '#f59e0b', hard: '#ef4444', mixed: '#8b5cf6' }[form.difficulty_level] }}>
                                 <Target size={13} style={{ verticalAlign: 'middle' }} /> {form.difficulty_level}
                             </span>

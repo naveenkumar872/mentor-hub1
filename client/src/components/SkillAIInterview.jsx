@@ -22,8 +22,40 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
     const [loading, setLoading] = useState(true);
     const [history, setHistory] = useState([]);
     const [error, setError] = useState('');
+    const [timeLeft, setTimeLeft] = useState(null);
     const recognitionRef = useRef(null);
     const synthRef = useRef(null);
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+        if (timeLeft === null) return;
+        if (timeLeft <= 0) {
+            handleTimeUp();
+            return;
+        }
+        timerRef.current = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(timerRef.current);
+                    handleTimeUp();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timerRef.current);
+    }, [timeLeft]);
+
+    const handleTimeUp = () => {
+        alert('Time is up! Submitting your test automatically.');
+        onFailed(); // Force fail if time runs out
+    };
+
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
 
     useEffect(() => {
         synthRef.current = window.speechSynthesis;
@@ -42,6 +74,7 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
             setDifficulty(data.difficulty || 'medium');
             setQuestionNumber(data.question_number);
             setTotalQuestions(data.total_questions);
+            if (data.duration_minutes) setTimeLeft(data.duration_minutes * 60);
             setLoading(false);
             // Speak the question
             if (ttsEnabled) speakText(data.question);
@@ -206,6 +239,18 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
             {/* Left: Avatar + Controls */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
                 <AvatarInterviewer state={avatarState} size={220} />
+
+                {timeLeft !== null && (
+                    <div style={{
+                        padding: '6px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 600,
+                        background: timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(139,92,246,0.15)',
+                        color: timeLeft < 300 ? '#fca5a5' : '#a78bfa',
+                        border: '1px solid ' + (timeLeft < 300 ? 'rgba(239,68,68,0.4)' : 'rgba(139,92,246,0.3)'),
+                        marginBottom: '8px'
+                    }}>
+                        Time Left: {formatTime(timeLeft)}
+                    </div>
+                )}
 
                 {/* Question Meta */}
                 <div style={{ textAlign: 'center' }}>
