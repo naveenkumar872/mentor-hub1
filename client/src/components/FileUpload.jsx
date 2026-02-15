@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Upload, FileText, Image, File, Trash2, Download, X, Paperclip, AlertCircle, CheckCircle } from 'lucide-react'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
 const fileIcons = {
     pdf: { icon: FileText, color: '#ef4444' },
@@ -156,7 +156,7 @@ export default function FileUpload({ entityType, entityId, uploadedBy, readOnly 
                                     {!compact && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{formatSize(file.file_size)} • {new Date(file.uploaded_at).toLocaleDateString()}</div>}
                                 </div>
                                 <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
-                                    <a href={`http://localhost:3000${file.file_url}`} target="_blank" rel="noreferrer" download
+                                    <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${file.file_url}`} target="_blank" rel="noreferrer" download
                                         style={{ padding: '0.3rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: '#3b82f6', cursor: 'pointer', display: 'flex', textDecoration: 'none' }}>
                                         <Download size={compact ? 12 : 14} />
                                     </a>

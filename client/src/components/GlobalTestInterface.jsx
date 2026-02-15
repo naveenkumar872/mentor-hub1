@@ -10,7 +10,7 @@ import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
 import socketService from '@/services/socketService'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
 
 

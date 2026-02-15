@@ -7,7 +7,7 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd'
 import * as blazeface from '@tensorflow-models/blazeface'
 import socketService from '../services/socketService'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
 // Language configurations
 const LANGUAGE_CONFIG = {
@@ -52,14 +52,14 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const [phoneDetected, setPhoneDetected] = useState(false)
     const [phoneDetectionCount, setPhoneDetectionCount] = useState(0)
     const [modelLoaded, setModelLoaded] = useState(false)
-    
+
     // Face Detection state (NEW - BlazeFace)
     const [faceDetected, setFaceDetected] = useState(true)
     const [multipleFaces, setMultipleFaces] = useState(false)
     const [faceLookawayCount, setFaceLookawayCount] = useState(0)
     const [faceNotDetectedCount, setFaceNotDetectedCount] = useState(0)
     const [multipleFacesDetectionCount, setMultipleFacesDetectionCount] = useState(0)
-    
+
     const videoRef = useRef(null)
     const canvasRef = useRef(null)
     const cameraCheckIntervalRef = useRef(null)
@@ -67,7 +67,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const phoneDetectedRef = useRef(false)
     const objectDetectorRef = useRef(null)
     const phoneCheckIntervalRef = useRef(null)
-    
+
     // Face Detection refs (NEW - BlazeFace)
     const faceDetectorRef = useRef(null)
     const faceCheckIntervalRef = useRef(null)
@@ -269,7 +269,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             setCameraBlocked(true)
             setCameraBlockedCount(prev => {
                 const newCount = prev + 1
-                
+
                 // 📊 EMIT: Camera blocked violation
                 socketService.emitProctoringViolation(
                     user.id,
@@ -278,7 +278,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                     'critical',
                     problem.mentorId
                 )
-                
+
                 setWarningMessage(`🚫 Camera obstruction detected! (${newCount} times) Please uncover your camera.`)
                 setShowWarning(true)
                 return newCount
@@ -354,7 +354,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 setPhoneDetected(true)
                 setPhoneDetectionCount(prev => {
                     const newCount = prev + 1
-                    
+
                     // 📊 EMIT: Phone detected violation
                     socketService.emitProctoringViolation(
                         user.id,
@@ -363,7 +363,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                         newCount > 2 ? 'critical' : 'warning',
                         problem.mentorId
                     )
-                    
+
                     setWarningMessage(`📱 Mobile phone detected! (${newCount} times) Remove all electronic devices from view.`)
                     setShowWarning(true)
                     return newCount
@@ -621,7 +621,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             })
             setOutput(res.data.output || res.data.error || 'No output')
             setActiveOutputTab('output')  // Switch to output tab to show results
-            
+
             // Emit test execution event to socket
             if (res.data.error || res.data.output?.includes('FAILED') || res.data.output?.includes('Error')) {
                 // Test failed
@@ -637,7 +637,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             const errorMsg = 'Error running code: ' + (err.response?.data?.error || err.message)
             setOutput(errorMsg)
             setActiveOutputTab('output')  // Switch to output tab to show error
-            
+
             // Emit test failed event
             socketService.emitTestFailed(
                 user.id,
@@ -675,10 +675,10 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
 
         setRunningTests(true)
         setTestResults([])
-        
+
         try {
             const results = []
-            
+
             for (let i = 0; i < testCases.length; i++) {
                 const testCase = testCases[i]
                 try {
@@ -689,11 +689,11 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                         sqlSchema: problem.sqlSchema,
                         stdin: testCase.input || testCase.stdin || ''
                     })
-                    
+
                     const expectedOutput = (testCase.expectedOutput || testCase.expected_output || '').trim()
                     const actualOutput = (res.data.output || '').trim()
                     const passed = actualOutput === expectedOutput && !res.data.error
-                    
+
                     results.push({
                         testNumber: i + 1,
                         input: testCase.input || testCase.stdin || 'N/A',
@@ -713,10 +713,10 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                     })
                 }
             }
-            
+
             setTestResults(results)
             setActiveOutputTab('tests')
-            
+
             // Check if all passed
             const allPassed = results.every(r => r.passed)
             if (allPassed) {
@@ -802,13 +802,13 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                 'error',
                 0
             )
-            
+
             console.error('Submission error:', {
                 status: err.response?.status,
                 data: err.response?.data,
                 message: err.message
             })
-            
+
             const errorDetails = err.response?.data?.details || err.response?.data?.error || err.message
             const errorMsg = `Submission failed: ${errorDetails}. Please check your code and try again.`
             alert(errorMsg)
@@ -1189,7 +1189,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                             <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                                 {testResults.length === 0 ? (
                                     <>
-                                        <button 
+                                        <button
                                             onClick={handleRunAllTests}
                                             disabled={runningTests || isRunning}
                                             style={{
@@ -1274,7 +1274,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                     </>
                                 ) : (
                                     <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                        <button 
+                                        <button
                                             onClick={handleRunAllTests}
                                             disabled={runningTests || isRunning}
                                             style={{
@@ -1291,35 +1291,35 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
                                         >
                                             {runningTests ? '⏳ Running...' : '🔄 Run Tests Again'}
                                         </button>
-                                        
+
                                         <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#1e293b', borderRadius: '6px' }}>
                                             <strong style={{ color: '#06b6d4' }}>Test Results: </strong>
                                             <span style={{ color: testResults.every(r => r.passed) ? '#10b981' : '#ef4444' }}>
                                                 {testResults.filter(r => r.passed).length}/{testResults.length} passed
                                             </span>
                                         </div>
-                                        
+
                                         {testResults.map((result, idx) => (
                                             <div key={idx} style={{ marginBottom: '1rem', padding: '0.75rem', background: result.passed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${result.passed ? '#10b981' : '#ef4444'}`, borderRadius: '6px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                                                     <span style={{ fontSize: '1.2rem' }}>{result.passed ? '✅' : '❌'}</span>
                                                     <strong style={{ color: result.passed ? '#10b981' : '#ef4444' }}>Test {result.testNumber}</strong>
                                                 </div>
-                                                
+
                                                 <div style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
                                                     <strong style={{ color: '#94a3b8' }}>Input:</strong>
                                                     <code style={{ color: '#cbd5e1', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
                                                         {result.input}
                                                     </code>
                                                 </div>
-                                                
+
                                                 <div style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
                                                     <strong style={{ color: '#10b981' }}>Expected:</strong>
                                                     <code style={{ color: '#4ade80', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
                                                         {result.expected}
                                                     </code>
                                                 </div>
-                                                
+
                                                 <div style={{ fontSize: '0.75rem' }}>
                                                     <strong style={{ color: result.passed ? '#10b981' : '#ef4444' }}>Actual:</strong>
                                                     <code style={{ color: result.passed ? '#4ade80' : '#ef4444', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>

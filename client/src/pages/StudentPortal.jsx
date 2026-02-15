@@ -20,7 +20,7 @@ import GlobalReportModal from '@/components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'http://localhost:3000/api'
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -795,10 +795,10 @@ function TaskSubmitModal({ task, user, onClose }) {
 
                             <div className="form-actions">
                                 <button type="button" className="btn-reset" onClick={onClose}>Cancel</button>
-                                <button 
-                                    type="button" 
-                                    className="btn-create-new" 
-                                    onClick={handleSubmit} 
+                                <button
+                                    type="button"
+                                    className="btn-create-new"
+                                    onClick={handleSubmit}
                                     disabled={(submissionType === 'file' && !file) || (submissionType === 'github' && (!githubUrl || !isValidGithubUrl(githubUrl))) || submitting}
                                 >
                                     {submitting ? (
@@ -827,16 +827,16 @@ function TaskSubmitModal({ task, user, onClose }) {
                             <h3 style={{ marginBottom: '0.5rem', color: result.status === 'accepted' || result.score >= 60 ? 'var(--success)' : result.status === 'error' ? 'var(--danger)' : 'var(--warning)' }}>
                                 {result.status === 'error' ? 'Submission Error' : result.score >= 80 ? 'Excellent Work!' : result.score >= 60 ? 'Good Job!' : 'Needs Improvement'}
                             </h3>
-                            
+
                             {result.score !== undefined && (
                                 <div style={{ margin: '1.5rem 0' }}>
                                     <div style={{ fontSize: '3rem', fontWeight: 800, background: 'linear-gradient(135deg, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                                         {result.score}/100
                                     </div>
                                     <div style={{ width: '200px', height: '8px', background: 'var(--bg-dark)', borderRadius: '4px', margin: '1rem auto', overflow: 'hidden' }}>
-                                        <div style={{ 
-                                            width: `${result.score}%`, 
-                                            height: '100%', 
+                                        <div style={{
+                                            width: `${result.score}%`,
+                                            height: '100%',
                                             background: result.score >= 80 ? 'var(--success)' : result.score >= 60 ? 'var(--warning)' : 'var(--danger)',
                                             borderRadius: '4px',
                                             transition: 'width 0.5s ease'

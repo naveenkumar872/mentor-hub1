@@ -9,8 +9,7 @@ class SocketService {
     connect() {
         if (this.socket) return this.socket;
 
-        //const isDev = import.meta.env.MODE === 'development';
-        const socketURL = 'http://localhost:3000';
+        const socketURL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
         this.socket = io(socketURL, {
             reconnection: true,

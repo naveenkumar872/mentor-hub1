@@ -11,7 +11,7 @@ export default defineConfig({
     },
     server: {
         proxy: {
-            '/api': 'http://localhost:3000'
+            '/api': process.env.VITE_API_URL || 'http://localhost:3000'
         },
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',
