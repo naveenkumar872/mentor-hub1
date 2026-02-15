@@ -10,6 +10,9 @@ export default defineConfig({
         }
     },
     server: {
+        proxy: {
+            '/api': 'http://localhost:3000'
+        },
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',
             'Cross-Origin-Embedder-Policy': 'require-corp'

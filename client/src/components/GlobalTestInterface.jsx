@@ -10,7 +10,7 @@ import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
 import socketService from '@/services/socketService'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 
 

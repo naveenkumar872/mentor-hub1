@@ -1,0 +1,821 @@
+/**
+ * AI Service Module - Cerebras-powered question generation & evaluation
+ * Used for Skill Test system (MCQ, Coding, SQL, Interview, Reports)
+ */
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+
+const CEREBRAS_API_URL = 'https://api.cerebras.ai/v1/chat/completions';
+
+// Get all available API keys
+function getCerebrasKeys() {
+    const keys = [];
+    if (process.env.CEREBRAS_API_KEY) keys.push(process.env.CEREBRAS_API_KEY);
+    if (process.env.cereberas_api_key) keys.push(process.env.cereberas_api_key);
+    for (let i = 1; i <= 4; i++) {
+        const k = process.env[`CEREBRAS_API_KEY_${i}`];
+        if (k) keys.push(k);
+    }
+    return [...new Set(keys)].filter(k => k && k.trim().length > 0);
+}
+
+// Call Cerebras API with key rotation
+async function callCerebras(messages, options = {}) {
+    const keys = getCerebrasKeys();
+    if (keys.length === 0) throw new Error('No Cerebras API keys configured');
+
+    let lastError = null;
+    for (const apiKey of keys) {
+        try {
+            const response = await fetch(CEREBRAS_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: options.model || 'llama-3.3-70b',
+                    messages,
+                    temperature: options.temperature || 0.7,
+                    max_tokens: options.max_tokens || 4096
+                })
+            });
+
+            if (!response.ok) {
+                lastError = new Error(`API Error ${response.status}`);
+                continue;
+            }
+
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || '';
+        } catch (err) {
+            lastError = err;
+            continue;
+        }
+    }
+    throw lastError || new Error('All Cerebras API keys failed');
+}
+
+// Parse JSON from AI response (handles markdown code blocks)
+function parseJSON(text) {
+    if (!text) return null;
+    try {
+        // Try direct parse
+        return JSON.parse(text);
+    } catch {
+        // Try extracting from code blocks
+        const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (codeBlock) {
+            try { return JSON.parse(codeBlock[1].trim()); } catch { }
+        }
+        // Try finding JSON array or object
+        const jsonMatch = text.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+        if (jsonMatch) {
+            try { return JSON.parse(jsonMatch[1]); } catch { }
+        }
+        return null;
+    }
+}
+
+// ═══════════════════════════════════════════
+//  MCQ GENERATION
+// ═══════════════════════════════════════════
+
+async function generateMCQQuestions(skills, count = 10) {
+    const skillsStr = skills.slice(0, 15).join(', ');
+
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert technical interviewer. Generate multiple choice questions for a technical assessment.
+Each question must be relevant to the candidate's skills and test practical knowledge.
+Return ONLY a valid JSON array, no other text.
+Each question object must have these exact fields:
+- "id": number (1, 2, 3...)
+- "question": string (the question text)
+- "skill": string (which skill this tests)
+- "difficulty": string ("easy", "medium", or "hard")
+- "options": array of exactly 4 strings
+- "correct_answer": number (0-3 index of correct option)
+- "explanation": string (brief explanation of correct answer)`
+        },
+        {
+            role: 'user',
+            content: `Generate ${count} technical MCQ questions based on these skills: ${skillsStr}
+
+Distribution:
+- 30% Easy questions (fundamentals)
+- 50% Medium questions (practical application)
+- 20% Hard questions (advanced concepts)
+
+Make questions practical and real-world oriented. Cover different skills proportionally.
+Return ONLY a valid JSON array.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.7, max_tokens: 8000 });
+        const questions = parseJSON(response);
+
+        if (!questions || !Array.isArray(questions)) {
+            return generateFallbackMCQ(skills, count);
+        }
+
+        // Validate and clean
+        const valid = [];
+        questions.forEach((q, i) => {
+            if (q && q.question && q.options && typeof q.correct_answer === 'number') {
+                q.id = i + 1;
+                if (Array.isArray(q.options) && q.options.length >= 4) {
+                    q.options = q.options.slice(0, 4);
+                    valid.push(q);
+                }
+            }
+        });
+
+        return valid.length > 0 ? valid : generateFallbackMCQ(skills, count);
+    } catch (err) {
+        console.error('MCQ generation failed:', err.message);
+        return generateFallbackMCQ(skills, count);
+    }
+}
+
+function generateFallbackMCQ(skills, count) {
+    const questions = [];
+    for (let i = 0; i < Math.min(count, skills.length * 3); i++) {
+        const skill = skills[i % skills.length];
+        questions.push({
+            id: i + 1,
+            question: `Which of the following best describes a core concept of ${skill}?`,
+            skill,
+            difficulty: i % 3 === 0 ? 'easy' : i % 3 === 1 ? 'medium' : 'hard',
+            options: [
+                `A fundamental principle of ${skill}`,
+                `A framework commonly used with ${skill}`,
+                `A design pattern in ${skill}`,
+                `A tool used alongside ${skill}`
+            ],
+            correct_answer: 0,
+            explanation: `This is a fundamental concept in ${skill}.`
+        });
+    }
+    return questions;
+}
+
+// ═══════════════════════════════════════════
+//  CODING PROBLEM GENERATION
+// ═══════════════════════════════════════════
+
+async function generateCodingProblems(skills, count = 3, difficultyLevel = 'mixed') {
+    const progSkills = skills.filter(s =>
+        ['python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'go', 'rust', 'c',
+            'dsa', 'data structures', 'algorithms', 'react', 'node', 'express'].includes(s.toLowerCase())
+    );
+    const relevantSkills = progSkills.length > 0 ? progSkills : skills.slice(0, 3);
+    const skillsStr = relevantSkills.slice(0, 5).join(', ');
+
+    // Build difficulty instruction based on admin setting
+    let difficultyInstruction = '';
+    if (difficultyLevel === 'easy') {
+        difficultyInstruction = `All ${count} problems should be "easy" difficulty (basic logic/implementation).`;
+    } else if (difficultyLevel === 'medium') {
+        difficultyInstruction = `All ${count} problems should be "medium" difficulty (data structures/algorithms).`;
+    } else if (difficultyLevel === 'hard') {
+        difficultyInstruction = `All ${count} problems should be "hard" difficulty (complex problem solving).`;
+    } else {
+        // mixed
+        if (count === 1) difficultyInstruction = 'Generate 1 easy problem.';
+        else if (count === 2) difficultyInstruction = 'Generate 1 easy and 1 medium problem.';
+        else difficultyInstruction = `Distribute difficulty across easy, medium, and hard.`;
+    }
+
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert coding challenge designer. Generate coding problems for a technical assessment.
+Return ONLY a valid JSON array with EXACTLY ${count} problems. Each problem object must have:
+- "id": number
+- "title": string
+- "description": string (clear problem statement with examples)
+- "difficulty": "easy" | "medium" | "hard"
+- "skills_tested": array of strings
+- "input_format": string
+- "output_format": string
+- "sample_input": string
+- "sample_output": string
+- "test_cases": array of objects with "input" and "expected_output" strings
+- "starter_code": object with keys "python", "javascript", "java", "cpp". 
+  This code must include:
+  1. The solution function definition (empty or pass).
+  2. Driver code that reads from STDIN, parses the input according to "input_format", calls the solution function, and prints the result to STDOUT.
+  3. Comments indicating where the user should write their code.
+- "time_limit_seconds": number
+- "hints": array of strings (2-3 hints)`
+        },
+        {
+            role: 'user',
+            content: `Generate EXACTLY ${count} coding problem(s) that test these skills: ${skillsStr}
+
+${difficultyInstruction}
+
+Each problem should have at least 3 test cases.
+Make sure the "starter_code" for each language is correct and runnable. It must handle the input parsing exactly as described in "input_format".
+For example, if input is "space separated integers", the python driver code should use 'input().split()'.
+Return ONLY a valid JSON array with exactly ${count} problem(s).`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.7, max_tokens: 8000 });
+        let problems = parseJSON(response);
+        if (problems && Array.isArray(problems) && problems.length > 0) {
+            // Transform sample_input/output to examples format and trim to exact count
+            problems = problems.slice(0, count).map((p, idx) => ({
+                ...p,
+                id: p.id || idx + 1,
+                examples: p.sample_input && p.sample_output ? [{
+                    input: p.sample_input,
+                    output: p.sample_output,
+                    explanation: p.sample_explanation || ''
+                }] : (p.examples || [])
+            }));
+            return problems;
+        }
+        return generateFallbackCoding(skills, count, difficultyLevel);
+    } catch (err) {
+        console.error('Coding generation failed:', err.message);
+        return generateFallbackCoding(skills, count, difficultyLevel);
+    }
+}
+
+function generateFallbackCoding(skills, count = 3, difficultyLevel = 'mixed') {
+    const allProblems = [
+        {
+            id: 1, title: 'Two Sum', difficulty: 'easy',
+            description: 'Given an array of integers nums and an integer target, return indices of the two numbers that add up to target.',
+            skills_tested: ['arrays', 'hash-maps'],
+            input_format: 'First line: space-separated integers\nSecond line: target integer',
+            output_format: 'Space-separated indices',
+            sample_input: '2 7 11 15\n9', sample_output: '0 1',
+            starter_code: {
+                python: `import sys
+
+def two_sum(nums, target):
+    # Write your code here
+    # Return a list of two indices [i, j]
+    pass
+
+# !!! DO NOT EDIT BELOW THIS LINE !!!
+if __name__ == '__main__':
+    try:
+        input_line = sys.stdin.readline()
+        if not input_line:
+            exit(0)
+        nums = list(map(int, input_line.split()))
+        target = int(sys.stdin.readline())
+        
+        result = two_sum(nums, target)
+        if result:
+            print(f"{result[0]} {result[1]}")
+    except Exception as e:
+        pass`,
+                javascript: `
+const fs = require('fs');
+
+function twoSum(nums, target) {
+    // Write your code here
+    // Return an array [i, j]
+    return [];
+}
+
+// !!! DO NOT EDIT BELOW THIS LINE !!!
+try {
+    const input = fs.readFileSync(0, 'utf-8').trim().split('\\n');
+    if (input.length >= 2) {
+        const nums = input[0].trim().split(/\\s+/).map(Number);
+        const target = Number(input[1].trim());
+        const result = twoSum(nums, target);
+        if (result && result.length === 2) {
+            console.log(result.join(' '));
+        }
+    }
+} catch (e) {}`,
+                java: `import java.util.*;
+
+public class Main {
+    public static int[] twoSum(int[] nums, int target) {
+        // Write your code here
+        return new int[]{};
+    }
+
+    // !!! DO NOT EDIT BELOW THIS LINE !!!
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        if (scanner.hasNextLine()) {
+            String[] parts = scanner.nextLine().trim().split("\\\\s+");
+            int[] nums = new int[parts.length];
+            for (int i = 0; i < parts.length; i++) {
+                nums[i] = Integer.parseInt(parts[i]);
+            }
+            if (scanner.hasNextInt()) {
+                int target = scanner.nextInt();
+                int[] result = twoSum(nums, target);
+                if (result.length == 2) {
+                    System.out.println(result[0] + " " + result[1]);
+                }
+            }
+        }
+    }
+}`,
+                cpp: `#include <iostream>
+#include <vector>
+#include <sstream>
+#include <unordered_map>
+
+using namespace std;
+
+vector<int> twoSum(vector<int>& nums, int target) {
+    // Write your code here
+    return {};
+}
+
+// !!! DO NOT EDIT BELOW THIS LINE !!!
+int main() {
+    string line;
+    if (getline(cin, line)) {
+        stringstream ss(line);
+        int num;
+        vector<int> nums;
+        while (ss >> num) {
+            nums.push_back(num);
+        }
+        int target;
+        if (cin >> target) {
+            vector<int> result = twoSum(nums, target);
+            if (result.size() == 2) {
+                cout << result[0] << " " << result[1] << endl;
+            }
+        }
+    }
+    return 0;
+}`
+            },
+            examples: [{
+                input: '2 7 11 15\n9',
+                output: '0 1',
+                explanation: 'nums[0] + nums[1] = 2 + 7 = 9'
+            }],
+            test_cases: [
+                { input: '2 7 11 15\n9', expected_output: '0 1' },
+                { input: '3 2 4\n6', expected_output: '1 2' },
+                { input: '3 3\n6', expected_output: '0 1' }
+            ],
+            time_limit_seconds: 5, hints: ['Try using a hash map', 'Store complement values']
+        },
+        {
+            id: 2, title: 'Valid Parentheses', difficulty: 'medium',
+            description: 'Given a string containing just the characters \'(\', \')\', \'{\', \'}\', \'[\' and \']\', determine if the input string is valid.',
+            skills_tested: ['stacks', 'string-processing'],
+            input_format: 'A string of brackets', output_format: 'true or false',
+            sample_input: '()[]{}', sample_output: 'true',
+            starter_code: {
+                python: `import sys
+
+def isValid(s):
+    # Write your code here
+    return False
+
+# !!! DO NOT EDIT BELOW THIS LINE !!!
+if __name__ == '__main__':
+    s = sys.stdin.read().strip()
+    if s:
+        print("true" if isValid(s) else "false")`,
+                javascript: `
+const fs = require('fs');
+
+function isValid(s) {
+    // Write your code here
+    return false;
+}
+
+// !!! DO NOT EDIT BELOW THIS LINE !!!
+try {
+    const s = fs.readFileSync(0, 'utf-8').trim();
+    if (s) {
+        console.log(isValid(s) ? 'true' : 'false');
+    }
+} catch (e) {}`,
+                java: `import java.util.*;
+
+public class Main {
+    public static boolean isValid(String s) {
+        // Write your code here
+        return false;
+    }
+
+    // !!! DO NOT EDIT BELOW THIS LINE !!!
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        if (scanner.hasNext()) {
+            String s = scanner.next();
+            System.out.println(isValid(s) ? "true" : "false");
+        }
+    }
+}`,
+                cpp: `#include <iostream>
+#include <string>
+#include <stack>
+
+using namespace std;
+
+bool isValid(string s) {
+    // Write your code here
+    return false;
+}
+
+// !!! DO NOT EDIT BELOW THIS LINE !!!
+int main() {
+    string s;
+    if (cin >> s) {
+        cout << (isValid(s) ? "true" : "false") << endl;
+    }
+    return 0;
+}`
+            },
+            examples: [{
+                input: '()[]{}',
+                output: 'true',
+                explanation: 'All brackets are properly matched and nested'
+            }],
+            test_cases: [
+                { input: '()', expected_output: 'true' },
+                { input: '()[]{}', expected_output: 'true' },
+                { input: '(]', expected_output: 'false' }
+            ],
+            time_limit_seconds: 5, hints: ['Use a stack', 'Push opening brackets, pop for closing']
+        },
+        {
+            id: 3, title: 'Longest Substring Without Repeating Characters', difficulty: 'hard',
+            description: 'Given a string s, find the length of the longest substring without repeating characters.',
+            skills_tested: ['sliding-window', 'hash-maps'],
+            input_format: 'A string', output_format: 'An integer',
+            sample_input: 'abcabcbb', sample_output: '3',
+            starter_code: {
+                python: `import sys
+
+def lengthOfLongestSubstring(s):
+    # Write your code here
+    return 0
+
+# !!! DO NOT EDIT BELOW THIS LINE !!!
+if __name__ == '__main__':
+    s = sys.stdin.read().strip()
+    if s:
+        print(lengthOfLongestSubstring(s))`,
+                javascript: `
+const fs = require('fs');
+
+function lengthOfLongestSubstring(s) {
+    // Write your code here
+    return 0;
+}
+
+// !!! DO NOT EDIT BELOW THIS LINE !!!
+try {
+    const s = fs.readFileSync(0, 'utf-8').trim();
+    if (s) {
+        console.log(lengthOfLongestSubstring(s));
+    }
+} catch (e) {}`,
+                java: `import java.util.*;
+
+public class Main {
+    public static int lengthOfLongestSubstring(String s) {
+        // Write your code here
+        return 0;
+    }
+
+    // !!! DO NOT EDIT BELOW THIS LINE !!!
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        if (scanner.hasNext()) {
+            String s = scanner.next();
+            System.out.println(lengthOfLongestSubstring(s));
+        }
+    }
+}`,
+                cpp: `#include <iostream>
+#include <string>
+#include <unordered_set>
+#include <algorithm>
+
+using namespace std;
+
+int lengthOfLongestSubstring(string s) {
+    // Write your code here
+    return 0;
+}
+
+// !!! DO NOT EDIT BELOW THIS LINE !!!
+int main() {
+    string s;
+    if (cin >> s) {
+        cout << lengthOfLongestSubstring(s) << endl;
+    }
+    return 0;
+}`
+            },
+            examples: [{
+                input: 'abcabcbb',
+                output: '3',
+                explanation: 'The answer is "abc", the longest substring without repeating characters'
+            }],
+            test_cases: [
+                { input: 'abcabcbb', expected_output: '3' },
+                { input: 'bbbbb', expected_output: '1' },
+                { input: 'pwwkew', expected_output: '3' }
+            ],
+            time_limit_seconds: 5, hints: ['Sliding window technique', 'Use a set to track characters']
+        }
+    ];
+
+    // Filter by difficulty if specified
+    let filtered = allProblems;
+    if (difficultyLevel && difficultyLevel !== 'mixed') {
+        filtered = allProblems.filter(p => p.difficulty === difficultyLevel);
+        if (filtered.length === 0) filtered = allProblems; // fallback
+    }
+    // Return only requested number of problems
+
+
+}
+
+// ═══════════════════════════════════════════
+//  SQL PROBLEM GENERATION
+// ═══════════════════════════════════════════
+
+async function generateSQLProblems(skills, count = 3) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert SQL instructor. Generate SQL problems that can be tested against a sandbox database.
+
+The sandbox database has these tables:
+- employees (id INT, name TEXT, department TEXT, salary DECIMAL, hire_date DATE, manager_id INT)
+- departments (id INT, name TEXT, budget DECIMAL, location TEXT)
+- projects (id INT, name TEXT, department_id INT, start_date DATE, end_date DATE, status TEXT)
+- orders (id INT, customer_name TEXT, product TEXT, quantity INT, price DECIMAL, order_date DATE)
+
+Return ONLY a valid JSON array. Each problem must have:
+- "id": number
+- "title": string
+- "description": string (clear problem statement)
+- "difficulty": "easy" | "medium" | "hard"
+- "hint": string
+- "expected_columns": array of strings (column names in result)
+- "reference_query": string (the correct SQL query)`
+        },
+        {
+            role: 'user',
+            content: `Generate ${count} SQL problems with increasing difficulty.
+Return ONLY a valid JSON array.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.7, max_tokens: 4000 });
+        const problems = parseJSON(response);
+        if (problems && Array.isArray(problems) && problems.length > 0) {
+            return problems.slice(0, count);
+        }
+        return getDefaultSQLProblems(count);
+    } catch (err) {
+        console.error('SQL generation failed:', err.message);
+        return getDefaultSQLProblems(count);
+    }
+}
+
+function getDefaultSQLProblems(count = 3) {
+    const allProblems = [
+        {
+            id: 1, title: 'Employee Salary Report', difficulty: 'easy',
+            description: 'Find all employees who earn more than the average salary. Display their name, department, and salary. Order by salary descending.',
+            hint: 'Use a subquery with AVG() to calculate the average salary.',
+            expected_columns: ['name', 'department', 'salary'],
+            reference_query: 'SELECT name, department, salary FROM employees WHERE salary > (SELECT AVG(salary) FROM employees) ORDER BY salary DESC'
+        },
+        {
+            id: 2, title: 'Department Statistics', difficulty: 'medium',
+            description: 'Show each department with the count of employees and average salary. Only include departments with more than 1 employee. Order by average salary descending.',
+            hint: 'Use GROUP BY with HAVING clause.',
+            expected_columns: ['department', 'employee_count', 'avg_salary'],
+            reference_query: 'SELECT department, COUNT(*) as employee_count, ROUND(AVG(salary), 2) as avg_salary FROM employees GROUP BY department HAVING COUNT(*) > 1 ORDER BY avg_salary DESC'
+        },
+        {
+            id: 3, title: 'Top Revenue Products', difficulty: 'hard',
+            description: 'Find the top 3 products by total revenue (quantity * price). Show product name, total quantity sold, and total revenue.',
+            hint: 'Use GROUP BY with aggregate functions and LIMIT.',
+            expected_columns: ['product', 'total_quantity', 'total_revenue'],
+            reference_query: 'SELECT product, SUM(quantity) as total_quantity, SUM(quantity * price) as total_revenue FROM orders GROUP BY product ORDER BY total_revenue DESC LIMIT 3'
+        }
+    ];
+    return allProblems.slice(0, Math.min(count, allProblems.length));
+}
+
+// ═══════════════════════════════════════════
+//  AI INTERVIEW QUESTION GENERATION
+// ═══════════════════════════════════════════
+
+async function generateInterviewQuestion(skills, previousQA, questionNumber, totalQuestions) {
+    let prevContext = '';
+    if (previousQA && previousQA.length > 0) {
+        prevContext = previousQA.slice(-3).map((qa, i) =>
+            `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer || 'No answer'}\nScore: ${qa.score || 'N/A'}/10`
+        ).join('\n');
+    }
+
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a senior technical interviewer conducting an AI-powered interview.
+Ask one focused, insightful question at a time. Your questions should:
+1. Start with fundamental concepts and progressively get harder
+2. Be based on the candidate's actual skills
+3. Include follow-up based on previous answers
+4. Test both theoretical knowledge and practical experience
+
+Return a JSON object with:
+- "question": string (the interview question)
+- "category": string (skill category being tested)
+- "difficulty": "easy" | "medium" | "hard"
+- "expected_key_points": array of strings (key points a good answer should cover)
+- "follow_up_context": string (why this question was chosen)`
+        },
+        {
+            role: 'user',
+            content: `Skills to test: ${skills.join(', ')}
+
+Question ${questionNumber} of ${totalQuestions}.
+
+Previous Q&A Context:
+${prevContext || 'This is the first question.'}
+
+Generate the next interview question. Make it progressively more challenging.
+For early questions (1-3), ask foundational questions.
+For middle questions (4-7), ask practical and project-based questions.
+For later questions (8+), ask complex scenario-based questions.
+
+Return ONLY valid JSON.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.8, max_tokens: 2000 });
+        const data = parseJSON(response);
+        if (data && data.question) return data;
+        return getFallbackQuestion(skills, questionNumber);
+    } catch (err) {
+        console.error('Interview question generation failed:', err.message);
+        return getFallbackQuestion(skills, questionNumber);
+    }
+}
+
+function getFallbackQuestion(skills, questionNumber) {
+    const skill = skills[questionNumber % skills.length] || 'programming';
+    return {
+        question: `Can you explain your understanding of ${skill} and describe how you would use it in a real project?`,
+        category: skill,
+        difficulty: questionNumber <= 3 ? 'easy' : questionNumber <= 7 ? 'medium' : 'hard',
+        expected_key_points: ['Technical depth', 'Practical experience', 'Problem-solving approach'],
+        follow_up_context: 'Fallback question'
+    };
+}
+
+// ═══════════════════════════════════════════
+//  INTERVIEW ANSWER EVALUATION
+// ═══════════════════════════════════════════
+
+async function evaluateInterviewAnswer(question, answer, expectedKeyPoints, skillCategory) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a technical interview evaluator. Evaluate the candidate's answer objectively.
+Return a JSON object with:
+- "score": number (0-10)
+- "feedback": string (constructive feedback)
+- "strengths": array of strings
+- "weaknesses": array of strings
+- "key_points_covered": array of strings (which expected points were addressed)
+- "suggestion": string (what could be improved)`
+        },
+        {
+            role: 'user',
+            content: `Question: ${question}
+Skill Category: ${skillCategory}
+
+Expected Key Points: ${JSON.stringify(expectedKeyPoints)}
+
+Candidate's Answer: ${answer}
+
+Evaluate this answer. Be fair but thorough.
+If the answer is empty or clearly irrelevant, give a low score.
+Return ONLY valid JSON.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.3, max_tokens: 2000 });
+        const evaluation = parseJSON(response);
+        if (evaluation && typeof evaluation.score === 'number') return evaluation;
+        return { score: 5, feedback: 'Answer received. Unable to perform detailed evaluation.', strengths: [], weaknesses: [], key_points_covered: [], suggestion: 'Try to provide more detailed explanations.' };
+    } catch (err) {
+        console.error('Evaluation failed:', err.message);
+        return { score: 5, feedback: 'Evaluation service temporarily unavailable.', strengths: [], weaknesses: [], key_points_covered: [], suggestion: 'Please try again.' };
+    }
+}
+
+// ═══════════════════════════════════════════
+//  FINAL REPORT GENERATION
+// ═══════════════════════════════════════════
+
+async function generateFinalReport(testTitle, skills, mcqResults, codingResults, sqlResults, interviewResults, proctoringViolations) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are a hiring assessment analyst. Generate a comprehensive candidate evaluation report.
+Return a JSON object with:
+- "overall_rating": string ("Excellent" | "Good" | "Average" | "Below Average" | "Not Recommended")
+- "summary": string (2-3 paragraph executive summary)
+- "strengths": array of strings (top strengths)
+- "areas_for_improvement": array of strings
+- "skill_assessment": object with skill names as keys and ratings (1-10) as values
+- "recommendation": string (detailed recommendation)
+- "section_feedback": object with keys "mcq", "coding", "sql", "interview" each containing a brief summary string
+- "concerns": array of strings (any red flags)
+- "suggested_focus_areas": array of strings (what to study next)`
+        },
+        {
+            role: 'user',
+            content: `Test: ${testTitle}
+Skills Tested: ${JSON.stringify(skills)}
+
+MCQ Results:
+- Score: ${mcqResults.score}%
+- Correct: ${mcqResults.correct}/${mcqResults.total}
+- Passed: ${mcqResults.passed}
+
+Coding Results:
+- Score: ${codingResults.score}%
+- Problems Solved: ${codingResults.solved}/${codingResults.total}
+- Passed: ${codingResults.passed}
+
+SQL Results:
+- Score: ${sqlResults.score}%
+- Problems Solved: ${sqlResults.solved}/${sqlResults.total}
+- Passed: ${sqlResults.passed}
+
+AI Interview Results:
+- Average Score: ${interviewResults.avgScore}/10
+- Questions Answered: ${interviewResults.answered}/${interviewResults.total}
+- Passed: ${interviewResults.passed}
+- Key Q&A: ${JSON.stringify(interviewResults.highlights || [])}
+
+Proctoring:
+- Total Violations: ${proctoringViolations}
+
+Generate a comprehensive report. Return ONLY valid JSON.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.5, max_tokens: 4000 });
+        const report = parseJSON(response);
+        if (report && report.overall_rating) return report;
+        return getDefaultReport();
+    } catch (err) {
+        console.error('Report generation failed:', err.message);
+        return getDefaultReport();
+    }
+}
+
+function getDefaultReport() {
+    return {
+        overall_rating: 'Average',
+        summary: 'Report generation encountered an issue. Please review individual test results for detailed information.',
+        strengths: [],
+        areas_for_improvement: [],
+        skill_assessment: {},
+        recommendation: 'Manual review recommended.',
+        section_feedback: { mcq: 'N/A', coding: 'N/A', sql: 'N/A', interview: 'N/A' },
+        concerns: [],
+        suggested_focus_areas: []
+    };
+}
+
+module.exports = {
+    generateMCQQuestions,
+    generateCodingProblems,
+    generateSQLProblems,
+    generateInterviewQuestion,
+    evaluateInterviewAnswer,
+    generateFinalReport
+};

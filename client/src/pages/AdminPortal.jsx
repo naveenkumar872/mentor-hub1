@@ -13,13 +13,15 @@ import AdminOperations from '../components/AdminOperations'
 import UserManagement from '../components/UserManagement'
 import DirectMessaging from '../components/DirectMessaging'
 import FileUpload from '../components/FileUpload'
+import SkillTestManager from '../components/SkillTestManager'
+import SkillSubmissions from '../components/SkillSubmissions'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']
 const ADMIN_ID = 'admin-001'
@@ -102,6 +104,14 @@ function AdminPortal() {
                 setTitle(t('analytics'))
                 setSubtitle(t('advanced_analytics_subtitle'))
                 break
+            case 'skill-tests':
+                setTitle('Skill Tests')
+                setSubtitle('Create and manage AI skill assessments')
+                break
+            case 'skill-submissions':
+                setTitle('Skill Test Submissions')
+                setSubtitle('View all student skill test results')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('system_administration'))
@@ -118,7 +128,8 @@ function AdminPortal() {
                 { path: '/admin/global-tasks', label: t('global_tasks'), icon: <Globe size={20} /> },
                 { path: '/admin/global-problems', label: t('global_problems'), icon: <FileCode size={20} /> },
                 { path: '/admin/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
-                { path: '/admin/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> }
+                { path: '/admin/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
+                { path: '/admin/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> }
             ]
         },
         {
@@ -144,6 +155,7 @@ function AdminPortal() {
             defaultExpanded: false,
             children: [
                 { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
+                { path: '/admin/skill-submissions', label: 'Skill Submissions', icon: <Brain size={20} /> },
                 { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
                 { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> }
             ]
@@ -168,6 +180,8 @@ function AdminPortal() {
                 <Route path="/global-problems" element={<GlobalProblems />} />
                 <Route path="/aptitude-tests" element={<AptitudeTestsAdmin />} />
                 <Route path="/global-tests" element={<GlobalTestsAdmin />} />
+                <Route path="/skill-tests" element={<SkillTestManager />} />
+                <Route path="/skill-submissions" element={<SkillSubmissions user={user} isAdmin={true} />} />
                 <Route path="/allocations" element={<Allocations />} />
                 <Route path="/student-leaderboard" element={<StudentLeaderboard />} />
                 <Route path="/mentor-leaderboard" element={<MentorLeaderboard />} />

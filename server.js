@@ -21,6 +21,8 @@ const { cacheManager } = require('./utils/cache');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ...existing code...
+
 // Create HTTP server and initialize Socket.io
 const httpServer = http.createServer(app);
 const io = socketIO(httpServer, {
@@ -141,13 +143,14 @@ const pool = mysql.createPool({
     password: dbUrl.password,
     database: dbUrl.pathname.slice(1), // Remove leading slash
     port: Number(dbUrl.port) || 4000,
-    ssl: {},
+    ssl: { rejectUnauthorized: true },
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
     enableKeepAlive: true,
     timezone: '+00:00'
 });
+
 
 // Test DB Connection
 pool.getConnection()
@@ -190,6 +193,12 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Import and mount skill test routes AFTER middleware
+const skillTestRoutes = require('./skill_test_routes');
+skillTestRoutes(app, pool);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================== AUTH ROUTES ====================
@@ -1151,248 +1160,6 @@ Scoring Guide:
     }
 });
 
-// ML Task Submission with File or GitHub URL
-app.post('/api/submissions/ml-task', async (req, res) => {
-    try {
-        const { 
-            studentId, 
-            taskId, 
-            submissionType, // 'file' or 'github'
-            code, // file content if type is file
-            fileName,
-            githubUrl, // GitHub URL if type is github
-            taskTitle,
-            taskDescription,
-            taskRequirements
-        } = req.body;
-
-        if (!studentId || !taskId) {
-            return res.status(400).json({ error: 'studentId and taskId are required' });
-        }
-
-        const submissionId = uuidv4();
-        const submittedAt = new Date();
-        let codeContent = '';
-        let githubRepoInfo = null;
-
-        // Handle GitHub URL submission - fetch repo details
-        if (submissionType === 'github' && githubUrl) {
-            try {
-                // Parse GitHub URL to get owner and repo
-                const urlMatch = githubUrl.match(/github\.com\/([^\/]+)\/([^\/\?#]+)/);
-                if (!urlMatch) {
-                    return res.status(400).json({ error: 'Invalid GitHub URL format' });
-                }
-                const [, owner, repo] = urlMatch;
-                const repoName = repo.replace(/\.git$/, '');
-
-                // Fetch repository info from GitHub API
-                const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
-                    headers: { 'Accept': 'application/vnd.github.v3+json' }
-                });
-                
-                if (!repoResponse.ok) {
-                    return res.status(400).json({ error: 'Could not access GitHub repository. Make sure it is public.' });
-                }
-                
-                githubRepoInfo = await repoResponse.json();
-
-                // Try to fetch README
-                let readmeContent = '';
-                try {
-                    const readmeResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}/readme`, {
-                        headers: { 'Accept': 'application/vnd.github.v3+json' }
-                    });
-                    if (readmeResponse.ok) {
-                        const readmeData = await readmeResponse.json();
-                        readmeContent = Buffer.from(readmeData.content, 'base64').toString('utf-8');
-                    }
-                } catch (e) { /* No README */ }
-
-                // Fetch main Python/Notebook files
-                let mainFiles = [];
-                try {
-                    const contentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repoName}/contents`, {
-                        headers: { 'Accept': 'application/vnd.github.v3+json' }
-                    });
-                    if (contentsResponse.ok) {
-                        const contents = await contentsResponse.json();
-                        const codeFiles = contents.filter(f => 
-                            f.type === 'file' && 
-                            (f.name.endsWith('.py') || f.name.endsWith('.ipynb'))
-                        ).slice(0, 3); // Limit to first 3 files
-
-                        for (const file of codeFiles) {
-                            try {
-                                const fileResponse = await fetch(file.download_url);
-                                if (fileResponse.ok) {
-                                    const content = await fileResponse.text();
-                                    mainFiles.push({ name: file.name, content: content.substring(0, 5000) }); // Limit content
-                                }
-                            } catch (e) { /* Skip file */ }
-                        }
-                    }
-                } catch (e) { /* No contents */ }
-
-                // Build code content for evaluation
-                codeContent = `=== GitHub Repository: ${githubUrl} ===
-Repository: ${githubRepoInfo.full_name}
-Description: ${githubRepoInfo.description || 'No description'}
-Stars: ${githubRepoInfo.stargazers_count}
-Language: ${githubRepoInfo.language || 'Unknown'}
-Last Updated: ${githubRepoInfo.updated_at}
-
-=== README ===
-${readmeContent.substring(0, 2000) || 'No README found'}
-
-=== Code Files ===
-${mainFiles.map(f => `--- ${f.name} ---\n${f.content}`).join('\n\n') || 'No Python/Notebook files found at root level'}
-`;
-            } catch (githubError) {
-                console.error('GitHub fetch error:', githubError);
-                return res.status(400).json({ error: 'Failed to fetch GitHub repository information' });
-            }
-        } else if (submissionType === 'file' && code) {
-            codeContent = code;
-        } else {
-            return res.status(400).json({ error: 'Please provide either a file or GitHub URL' });
-        }
-
-        // Build evaluation prompt for ML task
-        const evaluationPrompt = `You are an expert ML/AI project evaluator for an educational platform.
-
-=== TASK DETAILS ===
-Title: ${taskTitle || 'ML Task'}
-Description: ${taskDescription || 'No description provided'}
-Requirements:
-${taskRequirements || 'No specific requirements'}
-
-=== SUBMISSION ===
-Submission Type: ${submissionType === 'github' ? 'GitHub Repository' : 'File Upload'}
-${submissionType === 'github' ? `GitHub URL: ${githubUrl}` : `File Name: ${fileName || 'unknown'}`}
-
-=== SUBMITTED CONTENT ===
-${codeContent.substring(0, 8000)}
-
-=== EVALUATION CRITERIA ===
-Evaluate this ML task submission based on:
-1. **Completeness (25 pts)**: Does it address all requirements? Is it a complete solution?
-2. **Code Quality (25 pts)**: Is the code well-structured, readable, and follows Python/ML best practices?
-3. **ML Approach (25 pts)**: Is the ML approach appropriate? Are proper techniques used (data preprocessing, model selection, evaluation metrics)?
-4. **Documentation (15 pts)**: Is the code documented? README present? Comments explaining logic?
-5. **Innovation (10 pts)**: Any creative approaches or improvements beyond basic requirements?
-
-Respond with JSON:
-{
-    "score": 0-100,
-    "status": "accepted" | "partial" | "rejected",
-    "feedback": "Detailed, encouraging feedback for the student (3-5 sentences). Be constructive.",
-    "breakdown": {
-        "completeness": "X/25",
-        "code_quality": "X/25", 
-        "ml_approach": "X/25",
-        "documentation": "X/15",
-        "innovation": "X/10"
-    },
-    "strengths": ["strength1", "strength2"],
-    "improvements": ["area1", "area2"]
-}
-
-Be fair but thorough. Consider students are learning. Provide actionable feedback.`;
-
-        let evaluationResult = {
-            score: 0,
-            status: 'rejected',
-            feedback: 'Evaluation in progress...',
-            breakdown: {
-                completeness: '0/25',
-                code_quality: '0/25',
-                ml_approach: '0/25',
-                documentation: '0/15',
-                innovation: '0/10'
-            }
-        };
-
-        try {
-            const evaluation = await cerebrasChat([
-                { role: 'system', content: 'You are an expert ML/AI evaluator for student projects. Be fair, encouraging, and provide constructive feedback.' },
-                { role: 'user', content: evaluationPrompt }
-            ], {
-                model: 'llama-3.3-70b',
-                temperature: 0.3,
-                max_tokens: 1000,
-                response_format: { type: 'json_object' }
-            });
-
-            const result = JSON.parse(evaluation.choices[0]?.message?.content || '{}');
-            evaluationResult = {
-                score: result.score || 0,
-                status: result.score >= 60 ? 'accepted' : result.score >= 40 ? 'partial' : 'rejected',
-                feedback: result.feedback || 'Evaluation complete.',
-                breakdown: result.breakdown || evaluationResult.breakdown,
-                strengths: result.strengths || [],
-                improvements: result.improvements || []
-            };
-        } catch (aiError) {
-            console.error('AI Evaluation error for ML task:', aiError);
-            evaluationResult.feedback = 'Your submission was received but automatic evaluation encountered an error. A mentor will review it manually.';
-            evaluationResult.score = 50; // Default pending score
-            evaluationResult.status = 'partial';
-        }
-
-        // Save to database
-        await pool.query(
-            `INSERT INTO submissions (
-                id, student_id, task_id, code, submission_type, file_name, language,
-                score, status, feedback, ai_explanation, submitted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                submissionId,
-                studentId,
-                taskId,
-                submissionType === 'github' ? githubUrl : code.substring(0, 50000),
-                submissionType,
-                submissionType === 'github' ? githubUrl : fileName,
-                'Python',
-                evaluationResult.score,
-                evaluationResult.status,
-                evaluationResult.feedback,
-                JSON.stringify({ breakdown: evaluationResult.breakdown, strengths: evaluationResult.strengths, improvements: evaluationResult.improvements }),
-                submittedAt
-            ]
-        );
-
-        // Mark task as completed if score >= 60
-        if (evaluationResult.score >= 60) {
-            try {
-                await pool.query(
-                    'INSERT IGNORE INTO task_completions (task_id, student_id, completed_at, score) VALUES (?, ?, ?, ?)',
-                    [taskId, studentId, submittedAt, evaluationResult.score]
-                );
-                await updateUserStreak(studentId, { tasksCompleted: 1, submissionsCount: 1 });
-            } catch (e) { /* Ignore */ }
-        } else {
-            try { await updateUserStreak(studentId, { submissionsCount: 1 }); } catch (e) { /* Ignore */ }
-        }
-
-        // Return result
-        res.json({
-            id: submissionId,
-            score: evaluationResult.score,
-            status: evaluationResult.status,
-            feedback: evaluationResult.feedback,
-            breakdown: evaluationResult.breakdown,
-            strengths: evaluationResult.strengths,
-            improvements: evaluationResult.improvements,
-            submittedAt
-        });
-
-    } catch (error) {
-        console.error('ML Task Submission Error:', error);
-        res.status(500).json({ error: 'Failed to process ML task submission', details: error.message });
-    }
-});
-
 // Proctored submission with video upload
 // Middleware for handling optional file uploads (support both JSON and FormData)
 const optionalFileUpload = (req, res, next) => {
@@ -1921,13 +1688,21 @@ app.post('/api/run', async (req, res) => {
     try {
         const { code, language, problemId, sqlSchema, stdin } = req.body;
 
-        // Use the global getLanguageRuntime helper for consistent language handling
-        const runtime = getLanguageRuntime(language);
-        const langKey = (language || 'python').toLowerCase();
+        // Map languages to Piston runtimes
+        const languageMap = {
+            'Python': { language: 'python', version: '3.10.0' },
+            'JavaScript': { language: 'javascript', version: '18.15.0' },
+            'Java': { language: 'java', version: '15.0.2' },
+            'C': { language: 'c', version: '10.2.0' },
+            'C++': { language: 'cpp', version: '10.2.0' },
+            'SQL': { language: 'sqlite3', version: '3.36.0' }
+        };
+
+        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
 
         // For SQL, prepend the schema to create tables before running the query
         let codeToExecute = code;
-        if (langKey === 'sql' || langKey === 'sqlite') {
+        if (language === 'SQL') {
             let schemaToUse = sqlSchema;
 
             // If no schema passed, try to get from database
@@ -1944,22 +1719,27 @@ app.post('/api/run', async (req, res) => {
             }
         }
 
-        // Normalize input line endings for consistent handling
-        let normalizedStdin = (stdin || '').toString();
-        normalizedStdin = normalizedStdin.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-        // Use retry logic for reliability
-        const data = await executeWithRetry({
-            language: runtime.language,
-            version: runtime.version,
-            files: [{ content: codeToExecute }],
-            stdin: normalizedStdin
+        // Piston Execution API
+        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                language: runtime.language,
+                version: runtime.version,
+                files: [
+                    {
+                        content: codeToExecute
+                    }
+                ],
+                stdin: stdin || ''
+            })
         });
+
+        const data = await response.json();
 
         if (data.run) {
             res.json({
                 output: data.run.output || 'No output detected',
-                stderr: data.run.stderr || '',
                 status: data.run.code === 0 ? 'success' : 'error'
             });
         } else {
@@ -2275,10 +2055,10 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
         let correctCount = 0;
         const questionResults = questions.map(q => {
             const userAnswer = answers[q.question_id];
-            // Keep all options for correct index lookup (don't use filtered array as it shifts indices)
-            const allOptions = [q.option_1, q.option_2, q.option_3, q.option_4];
-            // Get the correct option text using the index from unfiltered array
-            const correctOptionText = allOptions[q.correct_answer] || '';
+            // Get all options for this question
+            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
+            // Get the correct option text using the index
+            const correctOptionText = options[q.correct_answer];
             // Compare user's answer (option text) with correct option text
             const isCorrect = userAnswer === correctOptionText;
             if (isCorrect) correctCount++;
@@ -2891,7 +2671,7 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
     try {
         await connection.beginTransaction();
         const testId = req.params.id;
-        const { studentId, answers, selectedLanguages, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
+        const { studentId, answers, sectionScores, timeSpent, tabSwitches = 0 } = req.body;
         if (!studentId) return res.status(400).json({ error: 'studentId required' });
 
         const [tests] = await connection.query('SELECT * FROM global_tests WHERE id = ?', [testId]);
@@ -2915,18 +2695,14 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
         const questionResults = [];
         for (const q of questions) {
             const userAns = answers && answers[q.question_id] !== undefined ? String(answers[q.question_id]).trim() : '';
-            // Keep all options including empty ones for correct index lookup
-            const allOptions = [q.option_1, q.option_2, q.option_3, q.option_4];
-            const options = allOptions.filter(Boolean);
+            const options = [q.option_1, q.option_2, q.option_3, q.option_4].filter(Boolean);
             let isCorrect = false;
             let pointsEarned = 0;
             let correctAnswerText = '';
 
             if (q.question_type === 'coding') {
                 const testCasesRaw = q.test_cases ? (typeof q.test_cases === 'string' ? JSON.parse(q.test_cases) : q.test_cases) : null;
-                // Use submitted language if available, otherwise fall back to test case language, then Python
-                const storedLanguage = (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
-                const language = (selectedLanguages && selectedLanguages[q.question_id]) ? selectedLanguages[q.question_id] : storedLanguage;
+                const language = (testCasesRaw && testCasesRaw.language) ? testCasesRaw.language : 'Python';
                 const cases = Array.isArray(testCasesRaw) ? testCasesRaw : (testCasesRaw && testCasesRaw.cases) ? testCasesRaw.cases : [];
                 const result = await runInlineCodingTests(userAns, language, cases);
                 isCorrect = result.isCorrect;
@@ -2945,12 +2721,9 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
                     : `Expected: ${expectedOutput.substring(0, 200)}${expectedOutput.length > 200 ? '...' : ''} | User Output: ${(result.output || 'Error/No output').substring(0, 150)}`;
             } else {
                 const correctText = q.correct_answer;
-                // Use allOptions for correct index lookup (don't use filtered options array as it shifts indices)
-                const correctIndex = Number(correctText);
-                const correctOptionByIndex = allOptions[correctIndex];
-                isCorrect = options.length ? (userAns === correctText || (correctOptionByIndex !== undefined && correctOptionByIndex !== '' && userAns === correctOptionByIndex)) : (userAns === correctText);
+                isCorrect = options.length ? (userAns === correctText || (options[Number(correctText)] !== undefined && userAns === options[Number(correctText)])) : (userAns === correctText);
                 pointsEarned = isCorrect ? (q.points ?? 1) : 0;
-                correctAnswerText = (correctOptionByIndex !== undefined && correctOptionByIndex !== '') ? correctOptionByIndex : correctText;
+                correctAnswerText = options.length ? (options[Number(correctText)] !== undefined ? options[Number(correctText)] : correctText) : correctText;
             }
 
             if (isCorrect) sectionCorrect[q.section]++;
@@ -3905,191 +3678,43 @@ app.delete('/api/test-cases/:testCaseId', async (req, res) => {
 });
 
 // Run code against inline test cases (for global test coding questions)
-// Language mapping - supports both capitalized and lowercase keys
 const languageMap = {
     'Python': { language: 'python', version: '3.10.0' },
-    'python': { language: 'python', version: '3.10.0' },
     'JavaScript': { language: 'javascript', version: '18.15.0' },
-    'javascript': { language: 'javascript', version: '18.15.0' },
     'Java': { language: 'java', version: '15.0.2' },
-    'java': { language: 'java', version: '15.0.2' },
     'C': { language: 'c', version: '10.2.0' },
-    'c': { language: 'c', version: '10.2.0' },
     'C++': { language: 'cpp', version: '10.2.0' },
-    'c++': { language: 'cpp', version: '10.2.0' },
-    'cpp': { language: 'cpp', version: '10.2.0' },
-    'Cpp': { language: 'cpp', version: '10.2.0' },
-    'SQL': { language: 'sqlite3', version: '3.36.0' },
-    'sql': { language: 'sqlite3', version: '3.36.0' },
-    'sqlite': { language: 'sqlite3', version: '3.36.0' },
-    'SQLite': { language: 'sqlite3', version: '3.36.0' }
+    'SQL': { language: 'sqlite3', version: '3.36.0' }
 };
 
-// Helper to get runtime for a language (case-insensitive)
-function getLanguageRuntime(lang) {
-    if (!lang) return { language: 'python', version: '3.10.0' };
-    return languageMap[lang] || languageMap[lang.toLowerCase()] || { language: lang.toLowerCase(), version: '*' };
-}
-
-// Normalize output for comparison - handles line endings, trailing spaces, and whitespace differences
-function normalizeOutput(str) {
-    if (str === null || str === undefined) return '';
-    // Ensure we have a string
-    const s = typeof str === 'string' ? str : String(str);
-    return s
-        .replace(/\r\n/g, '\n')     // Normalize Windows line endings
-        .replace(/\r/g, '\n')        // Normalize old Mac line endings
-        .split('\n')                 // Split into lines
-        .map(line => line.trim())    // Trim each line
-        .join('\n')                  // Rejoin
-        .trim();                     // Final trim
-}
-
-// Convert test case input to proper stdin format
-// Handles JSON arrays like [5, 7] -> "5\n7", objects, etc.
-function formatTestInput(input) {
-    if (input === null || input === undefined) return '';
-    
-    // If already a string, check if it looks like JSON
-    if (typeof input === 'string') {
-        const trimmed = input.trim();
-        // Try to parse JSON array/object format
-        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || 
-            (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-            try {
-                const parsed = JSON.parse(trimmed);
-                if (Array.isArray(parsed)) {
-                    // Convert array elements to newline-separated values
-                    return parsed.map(item => 
-                        typeof item === 'object' ? JSON.stringify(item) : String(item)
-                    ).join('\n');
-                } else if (typeof parsed === 'object') {
-                    // For objects, convert values to newline-separated
-                    return Object.values(parsed).map(v => 
-                        typeof v === 'object' ? JSON.stringify(v) : String(v)
-                    ).join('\n');
-                }
-            } catch (e) {
-                // Not valid JSON, return as-is
-            }
-        }
-        return trimmed;
+async function runInlineCodingTests(code, language, testCases) {
+    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
+        return { passedCount: 0, total: 0, percentage: 0, isCorrect: false };
     }
-    
-    // Handle arrays directly
-    if (Array.isArray(input)) {
-        return input.map(item => 
-            typeof item === 'object' ? JSON.stringify(item) : String(item)
-        ).join('\n');
-    }
-    
-    // Handle objects
-    if (typeof input === 'object') {
-        return Object.values(input).map(v => 
-            typeof v === 'object' ? JSON.stringify(v) : String(v)
-        ).join('\n');
-    }
-    
-    return String(input);
-}
-
-// Compare outputs with multiple strategies for flexibility
-function compareOutputs(actual, expected) {
-    const normActual = normalizeOutput(actual);
-    const normExpected = normalizeOutput(expected);
-    
-    // Exact match after normalization
-    if (normActual === normExpected) return true;
-    
-    // Case-insensitive match for string outputs
-    if (normActual.toLowerCase() === normExpected.toLowerCase()) return true;
-    
-    // Numeric comparison - if both are numbers, compare values
-    const numActual = parseFloat(normActual);
-    const numExpected = parseFloat(normExpected);
-    if (!isNaN(numActual) && !isNaN(numExpected) && Math.abs(numActual - numExpected) < 0.0001) return true;
-    
-    // Whitespace-agnostic comparison (all whitespace collapsed to single space)
-    const collapseWs = s => s.replace(/\s+/g, ' ').trim();
-    if (collapseWs(normActual) === collapseWs(normExpected)) return true;
-    
-    return false;
-}
-
-// Execute code with retry logic
-async function executeWithRetry(payload, maxRetries = 2) {
-    let lastError = null;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const runtime = languageMap[language] || { language: 'python', version: '3.10.0' };
+    let passedCount = 0;
+    for (const tc of testCases) {
+        const input = (tc.input != null ? tc.input : '').toString();
+        const expected = (tc.expected_output != null ? tc.expected_output : tc.expectedOutput || '').toString().trim();
         try {
             const response = await fetch('https://emkc.org/api/v2/piston/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    language: runtime.language,
+                    version: runtime.version,
+                    files: [{ content: code }],
+                    stdin: input
+                })
             });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            return await response.json();
-        } catch (err) {
-            lastError = err;
-            if (attempt < maxRetries) {
-                // Wait before retry (exponential backoff)
-                await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
-            }
-        }
-    }
-    throw lastError || new Error('Execution failed after retries');
-}
-
-async function runInlineCodingTests(code, language, testCases) {
-    if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
-        return { passedCount: 0, total: 0, percentage: 0, isCorrect: false, details: [] };
-    }
-    const runtime = getLanguageRuntime(language);
-    let passedCount = 0;
-    const details = [];
-    
-    for (const tc of testCases) {
-        // Format input properly - handles JSON arrays like [5, 7] -> "5\n7"
-        let input = formatTestInput(tc.input);
-        // Normalize line endings for consistency
-        input = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        
-        const expected = normalizeOutput(tc.expected_output || tc.expectedOutput || '');
-        
-        try {
-            const data = await executeWithRetry({
-                language: runtime.language,
-                version: runtime.version,
-                files: [{ content: code }],
-                stdin: input
-            });
-            
-            const actual = data.run?.output || '';
-            const passed = compareOutputs(actual, expected);
-            
-            if (passed) passedCount++;
-            
-            details.push({
-                input: input.substring(0, 100),
-                expected: expected,
-                actual: normalizeOutput(actual),
-                passed,
-                error: data.run?.stderr || null
-            });
-        } catch (err) {
-            details.push({
-                input: input.substring(0, 100),
-                expected: expected,
-                actual: '',
-                passed: false,
-                error: err.message
-            });
-        }
+            const data = await response.json();
+            const actual = (data.run?.output || '').trim();
+            if (actual === expected) passedCount++;
+        } catch (_) { /* fail this case */ }
     }
     const total = testCases.length;
     const percentage = total ? Math.round((passedCount / total) * 100) : 0;
-    return { passedCount, total, percentage, isCorrect: passedCount === total, details };
+    return { passedCount, total, percentage, isCorrect: passedCount === total };
 }
 
 async function runSqlAndCompare(schema, query, expectedOutput) {
@@ -4226,20 +3851,17 @@ app.post('/api/run-with-tests', async (req, res) => {
             testCases = rows;
         }
 
-        // Language mapping for Piston (case-insensitive)
+        // Language mapping for Piston
         const languageMap = {
-            'python': { language: 'python', version: '3.10.0' },
-            'javascript': { language: 'javascript', version: '18.15.0' },
-            'java': { language: 'java', version: '15.0.2' },
-            'c': { language: 'c', version: '10.2.0' },
-            'c++': { language: 'cpp', version: '10.2.0' },
-            'cpp': { language: 'cpp', version: '10.2.0' },
-            'sql': { language: 'sqlite3', version: '3.36.0' },
-            'sqlite': { language: 'sqlite3', version: '3.36.0' }
+            'Python': { language: 'python', version: '3.10.0' },
+            'JavaScript': { language: 'javascript', version: '18.15.0' },
+            'Java': { language: 'java', version: '15.0.2' },
+            'C': { language: 'c', version: '10.2.0' },
+            'C++': { language: 'cpp', version: '10.2.0' },
+            'SQL': { language: 'sqlite3', version: '3.36.0' }
         };
 
-        const langKey = (language || 'python').toLowerCase();
-        const runtime = languageMap[langKey] || { language: langKey, version: '*' };
+        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
         const results = [];
         let passedCount = 0;
         let totalPoints = 0;
@@ -4248,20 +3870,24 @@ app.post('/api/run-with-tests', async (req, res) => {
         // If no test cases, run code once and return output
         if (testCases.length === 0) {
             let codeToExecute = code;
-            if ((langKey === 'sql' || langKey === 'sqlite') && sqlSchema) {
+            if (language === 'SQL' && sqlSchema) {
                 codeToExecute = `${sqlSchema}\n\n${code}`;
             }
 
-            const data = await executeWithRetry({
-                language: runtime.language,
-                version: runtime.version,
-                files: [{ content: codeToExecute }]
+            const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: runtime.language,
+                    version: runtime.version,
+                    files: [{ content: codeToExecute }]
+                })
             });
 
+            const data = await response.json();
             return res.json({
                 hasTestCases: false,
                 output: data.run?.output || 'No output',
-                stderr: data.run?.stderr || '',
                 status: data.run?.code === 0 ? 'success' : 'error',
                 results: []
             });
@@ -4272,32 +3898,30 @@ app.post('/api/run-with-tests', async (req, res) => {
             totalPoints += tc.points || 10;
 
             let codeWithInput = code;
-            if (langKey === 'sql' || langKey === 'sqlite') {
+            if (language === 'SQL') {
                 codeWithInput = sqlSchema ? `${sqlSchema}\n\n${code}` : code;
             } else {
+                // For other languages, we might need to handle input differently
+                // This is a simplified version - in production you'd want stdin support
                 codeWithInput = code;
             }
 
-            // Format input properly - handles JSON arrays like [5, 7] -> "5\n7"
-            let testInput = formatTestInput(tc.input);
-            // Normalize line endings
-            testInput = testInput.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
             try {
-                const data = await executeWithRetry({
-                    language: runtime.language,
-                    version: runtime.version,
-                    files: [{ content: codeWithInput }],
-                    stdin: testInput
+                const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        language: runtime.language,
+                        version: runtime.version,
+                        files: [{ content: codeWithInput }],
+                        stdin: tc.input || ''
+                    })
                 });
 
-                const actualOutput = data.run?.output || '';
-                const expectedOutput = tc.expected_output || '';
-                const passed = compareOutputs(actualOutput, expectedOutput);
-
-                // Normalize outputs for display (helps with debugging)
-                const normalizedActual = normalizeOutput(actualOutput);
-                const normalizedExpected = normalizeOutput(expectedOutput);
+                const data = await response.json();
+                const actualOutput = (data.run?.output || '').trim();
+                const expectedOutput = (tc.expected_output || '').trim();
+                const passed = actualOutput === expectedOutput;
 
                 if (passed) {
                     passedCount++;
@@ -4308,10 +3932,8 @@ app.post('/api/run-with-tests', async (req, res) => {
                     testCaseId: tc.id,
                     description: tc.description,
                     input: tc.input,
-                    expectedOutput: tc.is_hidden ? '(Hidden)' : normalizedExpected,
-                    actualOutput: tc.is_hidden ? (passed ? 'Correct' : 'Incorrect') : normalizedActual,
-                    rawActual: tc.is_hidden ? null : actualOutput,
-                    stderr: tc.is_hidden ? null : (data.run?.stderr || null),
+                    expectedOutput: tc.is_hidden ? '(Hidden)' : expectedOutput,
+                    actualOutput: tc.is_hidden ? (passed ? 'Correct' : 'Incorrect') : actualOutput,
                     passed,
                     isHidden: tc.is_hidden,
                     points: tc.points || 10,

@@ -11,6 +11,8 @@ import SQLValidator from '@/components/SQLValidator'
 import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
 import DirectMessaging from '@/components/DirectMessaging'
+import SkillTestPortal from '@/components/SkillTestPortal'
+import SkillSubmissions from '@/components/SkillSubmissions'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -18,7 +20,7 @@ import GlobalReportModal from '@/components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
 import './Portal.css'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 // Language configurations for code editor
 const LANGUAGE_CONFIG = {
@@ -98,6 +100,14 @@ function StudentPortal() {
                 setTitle('Messages')
                 setSubtitle('Chat with your mentor')
                 break
+            case 'skill-tests':
+                setTitle('Skill Tests')
+                setSubtitle('AI-powered skill assessments')
+                break
+            case 'skill-submissions':
+                setTitle('Skill Test Submissions')
+                setSubtitle('View your skill test results & reports')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -114,7 +124,8 @@ function StudentPortal() {
                 { path: '/student/tasks', label: t('ml_tasks'), icon: <ClipboardList size={20} /> },
                 { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
                 { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
-                { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> }
+                { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
+                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> }
             ]
         },
         {
@@ -123,6 +134,7 @@ function StudentPortal() {
             defaultExpanded: false,
             children: [
                 { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
+                { path: '/student/skill-submissions', label: 'Skill Submissions', icon: <Target size={20} /> },
                 { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> }
             ]
         },
@@ -137,6 +149,8 @@ function StudentPortal() {
                 <Route path="/assignments" element={<Assignments user={user} />} />
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
+                <Route path="/skill-tests" element={<SkillTestPortal user={user} />} />
+                <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
                 <Route path="/analytics" element={<StudentAnalytics user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />

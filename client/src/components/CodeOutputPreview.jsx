@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Play, CheckCircle, XCircle, Clock, Eye, EyeOff, Trophy, AlertTriangle, Terminal, Code2 } from 'lucide-react'
 
-const API_BASE = 'https://mentor-hub-backend-tkil.onrender.com/api'
+const API_BASE = 'http://localhost:3000/api'
 
 function CodeOutputPreview({
     problemId,
@@ -476,29 +476,6 @@ function TestCaseResult({ result, index }) {
                             {String(result.actualOutput || result.output || '(no output)')}
                         </pre>
                     </div>
-
-                    {/* Show stderr/error if present */}
-                    {(result.stderr || result.error) && (
-                        <div>
-                            <div style={{ fontSize: '0.75rem', color: '#f59e0b', marginBottom: '0.25rem' }}>
-                                Error Output
-                            </div>
-                            <pre style={{
-                                margin: 0,
-                                padding: '0.5rem 0.75rem',
-                                background: 'rgba(245, 158, 11, 0.1)',
-                                borderRadius: '6px',
-                                fontSize: '0.8rem',
-                                color: '#fbbf24',
-                                fontFamily: 'monospace',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                border: '1px solid rgba(245, 158, 11, 0.2)'
-                            }}>
-                                {String(result.stderr || result.error)}
-                            </pre>
-                        </div>
-                    )}
                 </div>
             )}
 
