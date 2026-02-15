@@ -741,17 +741,24 @@ async function generateFinalReport(testTitle, skills, mcqResults, codingResults,
     const messages = [
         {
             role: 'system',
-            content: `You are a hiring assessment analyst. Generate a comprehensive candidate evaluation report.
+            content: `You are an expert career coach and technical interviewer preparing a detailed placement report for a student.
+The goal is to help the student improve for job placements. The report must be highly detailed, constructive, and actionable.
+
 Return a JSON object with:
 - "overall_rating": string ("Excellent" | "Good" | "Average" | "Below Average" | "Not Recommended")
-- "summary": string (2-3 paragraph executive summary)
-- "strengths": array of strings (top strengths)
-- "areas_for_improvement": array of strings
-- "skill_assessment": object with skill names as keys and ratings (1-10) as values
-- "recommendation": string (detailed recommendation)
-- "section_feedback": object with keys "mcq", "coding", "sql", "interview" each containing a brief summary string
-- "concerns": array of strings (any red flags)
-- "suggested_focus_areas": array of strings (what to study next)`
+- "summary": string (detailed executive summary of performance)
+- "strengths": array of strings (detailed strengths with context)
+- "weaknesses": array of strings (specific areas where they struggled)
+- "skill_gap_analysis": array of objects with "skill", "current_level" (Beginner/Intermediate/Advanced), "target_level", and "gap_description"
+- "roadmap": array of objects with "week" (1-4), "focus_area", and "action_items" (array of strings)
+- "behavioral_analysis": string (analysis of communication and confidence if interview data is present)
+- "performance_metrics": object with keys "accuracy", "speed", "completeness", "code_quality" and values 0-100
+- "interview_feedback": array of objects (if interview data exists), each with:
+    - "question_summary": string
+    - "score": number (0-10)
+    - "feedback": string (what they did well vs missed)
+    - "improvement_tip": string (how to answer better next time)
+- "concept_mastery": object with concept names as keys (e.g., "Loops", "Joins", "OOP") and values 0-100 (mastery percentage)`
         },
         {
             role: 'user',

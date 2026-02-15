@@ -211,7 +211,7 @@ function registerSkillTestRoutes(app, pool) {
             const [rows] = await pool.query(
                 `SELECT a.*, t.title, t.skills, t.mcq_count, t.coding_count, t.sql_count, t.interview_count,
                  t.mcq_duration_minutes, t.mcq_passing_score, t.coding_passing_score, t.sql_passing_score,
-                 t.interview_passing_score
+                 t.interview_passing_score, t.proctoring_enabled, t.proctoring_config
                  FROM skill_test_attempts a JOIN skill_tests t ON a.test_id = t.id WHERE a.id = ?`,
                 [req.params.attemptId]
             );
@@ -220,7 +220,7 @@ function registerSkillTestRoutes(app, pool) {
             const attempt = rows[0];
             // Parse JSON fields
             ['skills', 'mcq_questions', 'mcq_answers', 'coding_problems', 'coding_submissions',
-                'sql_problems', 'sql_submissions', 'interview_qa', 'report'].forEach(f => {
+                'sql_problems', 'sql_submissions', 'interview_qa', 'report', 'proctoring_config'].forEach(f => {
                     if (attempt[f] && typeof attempt[f] === 'string') {
                         try { attempt[f] = JSON.parse(attempt[f]); } catch { }
                     }
@@ -978,7 +978,12 @@ function registerSkillTestRoutes(app, pool) {
                     answered: interviewQA.filter(qa => qa.answer).length,
                     total: interviewQA.length,
                     passed: attempt.interview_status === 'passed',
-                    highlights: interviewQA.slice(0, 5).map(qa => ({ q: (qa.question || '').slice(0, 100), score: qa.score || 0 }))
+                    highlights: interviewQA.map(qa => ({
+                        question: qa.question,
+                        answer_summary: (qa.answer || '').substring(0, 300),
+                        score: qa.score,
+                        ai_feedback: qa.evaluation?.feedback || 'No evaluation'
+                    }))
                 },
                 violations[0]?.cnt || 0
             );

@@ -105,7 +105,7 @@ export default function SkillTestPortal({ user }) {
     }, []);
 
     const logProctoring = useCallback(async (eventType, details, severity = 'medium') => {
-        if (!activeAttempt) return;
+        if (!activeAttempt || attemptData?.proctoring_enabled === false) return;
         try {
             await axios.post(`${API}/api/skill-tests/proctoring/log`, {
                 attemptId: activeAttempt,
@@ -131,12 +131,35 @@ export default function SkillTestPortal({ user }) {
             const wm = warningMessages[eventType] || { title: '⚠️ Violation!', msg: details };
             showViolationWarning(wm.title, wm.msg, severity);
         } catch { }
-    }, [activeAttempt, currentView, showViolationWarning]);
+    }, [activeAttempt, currentView, attemptData, showViolationWarning]);
 
     // Keep ref updated for use in intervals/listeners
     useEffect(() => {
         logProctoringRef.current = logProctoring;
     }, [logProctoring]);
+
+    // Block Copy/Paste/Right-click
+    useEffect(() => {
+        if (!activeAttempt || currentView === 'list' || currentView === 'report' || attemptData?.proctoring_enabled === false) return;
+
+        const preventEvent = (e) => {
+            e.preventDefault();
+            // Optional: Log this attempt if strict
+            // logProctoringRef.current?.('paste_attempt', 'Clipboard/Context menu usage blocked', 'low');
+        };
+
+        window.addEventListener('copy', preventEvent);
+        window.addEventListener('paste', preventEvent);
+        window.addEventListener('cut', preventEvent);
+        window.addEventListener('contextmenu', preventEvent);
+
+        return () => {
+            window.removeEventListener('copy', preventEvent);
+            window.removeEventListener('paste', preventEvent);
+            window.removeEventListener('cut', preventEvent);
+            window.removeEventListener('contextmenu', preventEvent);
+        };
+    }, [activeAttempt, currentView, attemptData]);
 
     // Tab switch / visibility change detection
     useEffect(() => {
@@ -214,8 +237,12 @@ export default function SkillTestPortal({ user }) {
                 if (model && monitorVideo.readyState === 4) {
                     const predictions = await model.detect(monitorVideo);
 
+                    /* Debugging AI predictions */
+                    // if (predictions.length) console.log('AI Sees:', predictions);
+
                     const phone = predictions.find(p => p.class === 'cell phone' && p.score > 0.6);
                     if (phone) {
+                        console.warn('VIOLATION DETECTED: Phone', phone);
                         logProctoringRef.current?.('phone_detected', 'Cell phone detected in frame', 'high');
                     }
 
@@ -262,6 +289,11 @@ export default function SkillTestPortal({ user }) {
 
     // Start proctoring setup before test
     const initiateTest = (testId) => {
+        const test = tests.find(t => t.id === testId);
+        if (test && test.proctoring_enabled === false) {
+            startTest(testId);
+            return;
+        }
         setPendingTestId(testId);
         setPendingResumeId(null);
         setShowProctoringSetup(true);
@@ -269,6 +301,21 @@ export default function SkillTestPortal({ user }) {
     };
 
     const initiateResume = (attemptId) => {
+        // Find if proctoring needed
+        let proctoringEnabled = true;
+        for (const t of tests) {
+            const att = t.my_attempts?.find(a => a.id === attemptId);
+            if (att) {
+                if (t.proctoring_enabled === false) proctoringEnabled = false;
+                break;
+            }
+        }
+
+        if (!proctoringEnabled) {
+            resumeTest(attemptId);
+            return;
+        }
+
         setPendingResumeId(attemptId);
         setPendingTestId(null);
         setShowProctoringSetup(true);
@@ -570,6 +617,19 @@ export default function SkillTestPortal({ user }) {
                                 <Shield size={14} color="#8b5cf6" />
                                 <span style={{ color: '#94a3b8' }}>Proctoring:</span>
                             </div>
+
+                            {/* AI Status */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
+                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                                background: model ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                                color: model ? '#34d399' : '#f87171',
+                                border: `1px solid ${model ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`
+                            }}>
+                                <Eye size={12} />
+                                {model ? 'AI Active' : 'Loading AI...'}
+                            </div>
+
                             <div style={{
                                 display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
                                 borderRadius: '12px', fontSize: '11px', fontWeight: 600,

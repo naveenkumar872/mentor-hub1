@@ -22,6 +22,63 @@ const SKILL_CATEGORIES = {
 
 const ALL_SKILLS = Object.values(SKILL_CATEGORIES).flat();
 
+// Section card helper
+const SectionCard = ({ icon, title, subtitle, color, children }) => (
+    <div style={{
+        background: '#1e293b', borderRadius: '14px', border: '1px solid #334155',
+        overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+    }}>
+        <div style={{
+            padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '10px',
+            borderBottom: '1px solid #334155', background: `linear-gradient(135deg, ${color}18, ${color}08)`
+        }}>
+            <div style={{
+                width: '32px', height: '32px', borderRadius: '8px', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', background: `${color}25`, color: color
+            }}>{icon}</div>
+            <div>
+                <div style={{ fontWeight: 700, fontSize: '14px', color: '#f1f5f9' }}>{title}</div>
+                {subtitle && <div style={{ fontSize: '11px', color: '#94a3b8' }}>{subtitle}</div>}
+            </div>
+        </div>
+        <div style={{ padding: '16px 18px' }}>{children}</div>
+    </div>
+);
+
+// Number input with +/- buttons
+const NumberInput = ({ label, value, onChange, min, max, icon, color, suffix }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {icon} {label}
+        </label>
+        <div style={{
+            display: 'flex', alignItems: 'center', borderRadius: '10px',
+            border: '1px solid #475569', overflow: 'hidden', background: '#0f172a'
+        }}>
+            <button onClick={() => onChange(Math.max(min, value - 1))} style={{
+                width: '36px', height: '40px', border: 'none', background: '#1e293b',
+                cursor: 'pointer', fontSize: '18px', color: '#94a3b8', fontWeight: 600,
+                borderRight: '1px solid #475569'
+            }}>−</button>
+            <input type="number" value={value} min={min} max={max}
+                onChange={e => onChange(Math.min(max, Math.max(min, parseInt(e.target.value) || min)))}
+                style={{
+                    flex: 1, textAlign: 'center', border: 'none', outline: 'none',
+                    fontSize: '16px', fontWeight: 700, color: color || '#f1f5f9',
+                    padding: '8px 4px', width: '100%', boxSizing: 'border-box',
+                    background: 'transparent'
+                }}
+            />
+            <button onClick={() => onChange(Math.min(max, value + 1))} style={{
+                width: '36px', height: '40px', border: 'none', background: '#1e293b',
+                cursor: 'pointer', fontSize: '18px', color: '#94a3b8', fontWeight: 600,
+                borderLeft: '1px solid #475569'
+            }}>+</button>
+        </div>
+        {suffix && <span style={{ fontSize: '10px', color: '#64748b', textAlign: 'center' }}>{suffix}</span>}
+    </div>
+);
+
 export default function SkillTestManager() {
     const [tests, setTests] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -130,62 +187,7 @@ export default function SkillTestManager() {
 
     const stageColors = { passed: '#22c55e', failed: '#ef4444', in_progress: '#f59e0b', pending: '#6b7280' };
 
-    // Section card helper
-    const SectionCard = ({ icon, title, subtitle, color, children }) => (
-        <div style={{
-            background: '#1e293b', borderRadius: '14px', border: '1px solid #334155',
-            overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-        }}>
-            <div style={{
-                padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '10px',
-                borderBottom: '1px solid #334155', background: `linear-gradient(135deg, ${color}18, ${color}08)`
-            }}>
-                <div style={{
-                    width: '32px', height: '32px', borderRadius: '8px', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', background: `${color}25`, color: color
-                }}>{icon}</div>
-                <div>
-                    <div style={{ fontWeight: 700, fontSize: '14px', color: '#f1f5f9' }}>{title}</div>
-                    {subtitle && <div style={{ fontSize: '11px', color: '#94a3b8' }}>{subtitle}</div>}
-                </div>
-            </div>
-            <div style={{ padding: '16px 18px' }}>{children}</div>
-        </div>
-    );
 
-    // Number input with +/- buttons
-    const NumberInput = ({ label, value, onChange, min, max, icon, color, suffix }) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {icon} {label}
-            </label>
-            <div style={{
-                display: 'flex', alignItems: 'center', borderRadius: '10px',
-                border: '1px solid #475569', overflow: 'hidden', background: '#0f172a'
-            }}>
-                <button onClick={() => onChange(Math.max(min, value - 1))} style={{
-                    width: '36px', height: '40px', border: 'none', background: '#1e293b',
-                    cursor: 'pointer', fontSize: '18px', color: '#94a3b8', fontWeight: 600,
-                    borderRight: '1px solid #475569'
-                }}>−</button>
-                <input type="number" value={value} min={min} max={max}
-                    onChange={e => onChange(Math.min(max, Math.max(min, parseInt(e.target.value) || min)))}
-                    style={{
-                        flex: 1, textAlign: 'center', border: 'none', outline: 'none',
-                        fontSize: '16px', fontWeight: 700, color: color || '#f1f5f9',
-                        padding: '8px 4px', width: '100%', boxSizing: 'border-box',
-                        background: 'transparent'
-                    }}
-                />
-                <button onClick={() => onChange(Math.min(max, value + 1))} style={{
-                    width: '36px', height: '40px', border: 'none', background: '#1e293b',
-                    cursor: 'pointer', fontSize: '18px', color: '#94a3b8', fontWeight: 600,
-                    borderLeft: '1px solid #475569'
-                }}>+</button>
-            </div>
-            {suffix && <span style={{ fontSize: '10px', color: '#64748b', textAlign: 'center' }}>{suffix}</span>}
-        </div>
-    );
 
     return (
         <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>

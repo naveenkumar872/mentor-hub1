@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
     Brain, CheckCircle, XCircle, Clock, Eye, ChevronDown, ChevronUp, FileText,
     Code, Database, MessageSquare, Shield, Target, AlertTriangle, BarChart2,
-    ArrowLeft, Loader2, Award, TrendingUp, BookOpen
+    ArrowLeft, Loader2, Award, TrendingUp, BookOpen, Activity, Map, Zap, Smartphone, Maximize, ArrowLeftRight, Camera
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -14,6 +14,8 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
     const [error, setError] = useState('');
     const [expandedId, setExpandedId] = useState(null);
     const [filter, setFilter] = useState('all');
+    const [submissionDetails, setSubmissionDetails] = useState({}); // Cache for detailed reports
+    const [loadingDetails, setLoadingDetails] = useState(false);
 
     useEffect(() => { loadSubmissions(); }, []);
 
@@ -22,7 +24,7 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
             setLoading(true);
             const url = isAdmin
                 ? `${API}/api/skill-tests/admin/all-submissions`
-                : `${API}/api/skill-tests/student/submissions?studentId=${encodeURIComponent(user?.userId || user?.email || '')}`;
+                : `${API}/api/skill-tests/student/submissions?studentId=${encodeURIComponent(user?.id || user?.userId || user?.email || '')}`;
             const { data } = await axios.get(url);
             setSubmissions(data);
         } catch (err) {
@@ -32,10 +34,32 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
         }
     };
 
+    const toggleExpand = async (id) => {
+        if (expandedId === id) {
+            setExpandedId(null);
+            return;
+        }
+
+        setExpandedId(id);
+
+        // Fetch details if not already cached
+        if (!submissionDetails[id]) {
+            try {
+                setLoadingDetails(true);
+                const { data } = await axios.get(`${API}/api/skill-tests/report/${id}`);
+                setSubmissionDetails(prev => ({ ...prev, [id]: data }));
+            } catch (err) {
+                console.error("Failed to fetch report details", err);
+            } finally {
+                setLoadingDetails(false);
+            }
+        }
+    };
+
     const filtered = filter === 'all' ? submissions
         : filter === 'passed' ? submissions.filter(s => s.overall_status === 'completed')
-        : filter === 'failed' ? submissions.filter(s => s.overall_status === 'failed')
-        : submissions.filter(s => s.overall_status === 'in_progress');
+            : filter === 'failed' ? submissions.filter(s => s.overall_status === 'failed')
+                : submissions.filter(s => s.overall_status === 'in_progress');
 
     const stats = {
         total: submissions.length,
@@ -134,9 +158,14 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
                     {filtered.map(sub => {
                         const isExpanded = expandedId === sub.id;
                         const report = sub.report;
-                        const overallScore = Math.round(
-                            ((sub.mcq_score || 0) + (sub.coding_score || 0) + (sub.sql_score || 0)) / 3
-                        );
+                        // Calculate overall score (safely)
+                        const s_mcq = Number(sub.mcq_score) || 0;
+                        const s_coding = Number(sub.coding_score) || 0;
+                        const s_sql = Number(sub.sql_score) || 0;
+                        // Interview is typically 0-10, so multiply by 10 to normalize to percentage if included
+                        const s_interview = (Number(sub.interview_score) || 0) * 10;
+
+                        const overallScore = Math.round((s_mcq + s_coding + s_sql + s_interview) / 4);
 
                         return (
                             <div key={sub.id} style={{
@@ -145,7 +174,7 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
                                 borderLeft: `4px solid ${sub.overall_status === 'completed' ? '#22c55e' : sub.overall_status === 'failed' ? '#ef4444' : '#f59e0b'}`
                             }}>
                                 {/* Card Header */}
-                                <div onClick={() => setExpandedId(isExpanded ? null : sub.id)}
+                                <div onClick={() => toggleExpand(sub.id)}
                                     style={{ padding: '18px 20px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div style={{ flex: 1 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
@@ -209,6 +238,146 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
                                 {/* Expanded Report */}
                                 {isExpanded && (
                                     <div style={{ borderTop: '1px solid #334155', padding: '20px', background: '#0f172a' }}>
+
+                                        {/* Proctoring Violations */}
+                                        {submissionDetails[sub.id]?.violations?.length > 0 ? (
+                                            <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '12px' }}>
+                                                <h4 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <Shield size={16} /> Proctoring Violations Detected ({submissionDetails[sub.id].violations.length})
+                                                </h4>
+                                                <div style={{ maxHeight: '150px', overflowY: 'auto', paddingRight: '4px' }}>
+                                                    {submissionDetails[sub.id].violations.map((v, i) => (
+                                                        <div key={i} style={{ display: 'flex', gap: '12px', fontSize: '12px', marginBottom: '6px', alignItems: 'flex-start', padding: '4px 0', borderBottom: '1px solid rgba(239,68,68,0.1)' }}>
+                                                            <span style={{ color: '#cbd5e1', fontFamily: 'monospace', opacity: 0.7 }}>{new Date(v.created_at).toLocaleTimeString()}</span>
+                                                            <span style={{ fontWeight: 700, color: v.severity === 'high' ? '#ef4444' : '#f59e0b', minWidth: '120px' }}>
+                                                                {v.event_type.replace(/_/g, ' ').toUpperCase()}
+                                                            </span>
+                                                            <span style={{ color: '#cbd5e1' }}>{v.details}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : loadingDetails && !submissionDetails[sub.id] ? (
+                                            <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+                                                Loading details...
+                                            </div>
+                                        ) : null}
+
+                                        {/* Placement Readiness & Detailed Analysis (New) */}
+                                        {submissionDetails[sub.id]?.overall_rating && (
+                                            <div style={{ marginBottom: '32px', animation: 'fadeIn 0.5s' }}>
+                                                {/* Hero Summary */}
+                                                <div style={{
+                                                    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                                                    padding: '24px', borderRadius: '16px',
+                                                    border: '1px solid #334155', allowOverflow: 'hidden', position: 'relative'
+                                                }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                                                        <div>
+                                                            <div style={{ textTransform: 'uppercase', fontSize: '11px', letterSpacing: '1px', color: '#94a3b8', fontWeight: 700, marginBottom: '4px' }}>
+                                                                Placement Readiness Assessment
+                                                            </div>
+                                                            <h3 style={{ margin: 0, fontSize: '22px', fontWeight: 800, background: 'linear-gradient(90deg, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                                                                {submissionDetails[sub.id].overall_rating} Candidate
+                                                            </h3>
+                                                        </div>
+                                                        <div style={{
+                                                            padding: '8px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 700,
+                                                            background: submissionDetails[sub.id].overall_rating === 'Excellent' ? 'rgba(34,197,94,0.2)' :
+                                                                submissionDetails[sub.id].overall_rating === 'Good' ? 'rgba(59,130,246,0.2)' : 'rgba(234,179,8,0.2)',
+                                                            color: submissionDetails[sub.id].overall_rating === 'Excellent' ? '#4ade80' :
+                                                                submissionDetails[sub.id].overall_rating === 'Good' ? '#60a5fa' : '#facc15',
+                                                            border: '1px solid currentColor',
+                                                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                                        }}>
+                                                            {submissionDetails[sub.id].overall_rating}
+                                                        </div>
+                                                    </div>
+
+                                                    <p style={{ color: '#cbd5e1', lineHeight: '1.7', fontSize: '14px', borderLeft: '3px solid #6366f1', paddingLeft: '16px', marginBottom: '24px' }}>
+                                                        {submissionDetails[sub.id].summary}
+                                                    </p>
+
+                                                    {/* Concept Mastery Grid */}
+                                                    {submissionDetails[sub.id].concept_mastery && (
+                                                        <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #334155' }}>
+                                                            <h5 style={{ margin: '0 0 16px', fontSize: '13px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                <Activity size={14} /> Concept Mastery
+                                                            </h5>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px 24px' }}>
+                                                                {Object.entries(submissionDetails[sub.id].concept_mastery).map(([concept, score]) => (
+                                                                    <div key={concept}>
+                                                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px', fontWeight: 500 }}>
+                                                                            <span style={{ color: '#e2e8f0' }}>{concept}</span>
+                                                                            <span style={{ color: score > 75 ? '#4ade80' : score > 50 ? '#facc15' : '#f87171' }}>{score}%</span>
+                                                                        </div>
+                                                                        <div style={{ height: '6px', background: '#1e293b', borderRadius: '3px', overflow: 'hidden' }}>
+                                                                            <div style={{
+                                                                                width: `${score}%`, height: '100%',
+                                                                                background: `linear-gradient(90deg, ${score > 75 ? '#22c55e' : score > 50 ? '#eab308' : '#ef4444'}, ${score > 75 ? '#4ade80' : score > 50 ? '#facc15' : '#f87171'})`,
+                                                                                borderRadius: '3px',
+                                                                                transition: 'width 1s ease-out'
+                                                                            }} />
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Strengths & Weaknesses */}
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+                                                    <div style={{ background: 'rgba(34, 197, 94, 0.03)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(34, 197, 94, 0.15)' }}>
+                                                        <h4 style={{ color: '#4ade80', fontSize: '15px', fontWeight: 700, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <Zap size={18} fill="rgba(34, 197, 94, 0.2)" /> Key Strengths
+                                                        </h4>
+                                                        <ul style={{ margin: 0, paddingLeft: '20px', color: '#cbd5e1', fontSize: '13px', lineHeight: '1.6' }}>
+                                                            {submissionDetails[sub.id].strengths?.map((s, i) => <li key={i} style={{ marginBottom: '8px' }}>{s}</li>)}
+                                                        </ul>
+                                                    </div>
+                                                    <div style={{ background: 'rgba(239, 68, 68, 0.03)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+                                                        <h4 style={{ color: '#f87171', fontSize: '15px', fontWeight: 700, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <Target size={18} /> Areas for Improvement
+                                                        </h4>
+                                                        <ul style={{ margin: 0, paddingLeft: '20px', color: '#cbd5e1', fontSize: '13px', lineHeight: '1.6' }}>
+                                                            {submissionDetails[sub.id].weaknesses?.map((w, i) => <li key={i} style={{ marginBottom: '8px' }}>{w}</li>)}
+                                                        </ul>
+                                                    </div>
+                                                </div>
+
+                                                {/* 4-Week Roadmap */}
+                                                {submissionDetails[sub.id].roadmap && (
+                                                    <div style={{ marginTop: '20px', background: '#0f172a', padding: '24px', borderRadius: '16px', border: '1px solid #1e293b' }}>
+                                                        <h4 style={{ color: '#f8fafc', fontSize: '16px', fontWeight: 700, margin: '0 0 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                            <Map size={20} color="#818cf8" />
+                                                            Personalized 4-Week Growth Plan
+                                                        </h4>
+                                                        <div style={{ display: 'grid', gap: '16px' }}>
+                                                            {submissionDetails[sub.id].roadmap.map((step, idx) => (
+                                                                <div key={idx} style={{ display: 'flex', gap: '16px', paddingBottom: idx !== submissionDetails[sub.id].roadmap.length - 1 ? '16px' : 0, borderBottom: idx !== submissionDetails[sub.id].roadmap.length - 1 ? '1px dashed #334155' : 'none' }}>
+                                                                    <div style={{
+                                                                        minWidth: '40px', height: '40px', borderRadius: '50%', background: '#312e81', color: '#a5b4fc',
+                                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '14px', flexShrink: 0
+                                                                    }}>W{step.week || idx + 1}</div>
+                                                                    <div>
+                                                                        <h5 style={{ margin: '0 0 6px', color: '#e2e8f0', fontSize: '14px' }}>{step.focus_area}</h5>
+                                                                        <div style={{ color: '#94a3b8', fontSize: '13px', lineHeight: '1.5' }}>
+                                                                            {Array.isArray(step.action_items) ? (
+                                                                                <ul style={{ margin: 0, paddingLeft: '16px' }}>
+                                                                                    {step.action_items.map((item, ii) => <li key={ii}>{item}</li>)}
+                                                                                </ul>
+                                                                            ) : step.action_items}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
                                         {/* Section Breakdown */}
                                         <h4 style={{ margin: '0 0 14px', fontSize: '14px', fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <BarChart2 size={16} color="#8b5cf6" /> Section Breakdown
