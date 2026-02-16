@@ -190,7 +190,7 @@ function registerSkillTestRoutes(app, pool) {
         try {
             const { attemptId } = req.params;
             const [attempts] = await pool.query(
-                `SELECT a.*, t.skills, t.mcq_count 
+                `SELECT a.*, t.skills, t.mcq_count, t.mcq_duration_minutes 
                  FROM skill_test_attempts a 
                  JOIN skill_tests t ON a.test_id = t.id 
                  WHERE a.id = ?`,
@@ -199,10 +199,17 @@ function registerSkillTestRoutes(app, pool) {
 
             if (attempts.length === 0) return res.status(404).json({ error: 'Attempt not found' });
             const attempt = attempts[0];
+            const durationMinutes = attempt.mcq_duration_minutes || 30;
 
-            // If already generated, return existing
+            // If already generated, return existing with calculated end_time
             if (attempt.mcq_questions) {
-                return res.json({ questions: typeof attempt.mcq_questions === 'string' ? JSON.parse(attempt.mcq_questions) : attempt.mcq_questions });
+                const startTime = attempt.mcq_start_time ? new Date(attempt.mcq_start_time) : new Date();
+                const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
+                return res.json({
+                    questions: typeof attempt.mcq_questions === 'string' ? JSON.parse(attempt.mcq_questions) : attempt.mcq_questions,
+                    end_time: endTime.toISOString(),
+                    existing_answers: attempt.mcq_answers ? (typeof attempt.mcq_answers === 'string' ? JSON.parse(attempt.mcq_answers) : attempt.mcq_answers) : {}
+                });
             }
 
             // Generate using AI
@@ -214,7 +221,9 @@ function registerSkillTestRoutes(app, pool) {
                 [JSON.stringify(questions), attemptId]
             );
 
-            res.json({ questions });
+            // End time = now + duration
+            const endTime = new Date(Date.now() + durationMinutes * 60 * 1000);
+            res.json({ questions, end_time: endTime.toISOString() });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }

@@ -95,6 +95,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     const answersRef = useRef(answers)
     const tabSwitchesRef = useRef(tabSwitches)
     const timeLeftRef = useRef(timeLeft)
+    const submittedRef = useRef(false)
 
     // Enhanced Proctoring State
     const proctoring = test.proctoring || {}
@@ -146,11 +147,12 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
     useEffect(() => { tabSwitchesRef.current = tabSwitches }, [tabSwitches])
     useEffect(() => { timeLeftRef.current = timeLeft }, [timeLeft])
 
-    // Handle fullscreen - auto re-enter if exited during test
+    // Handle fullscreen - runs once on mount, cleaned up on unmount
+    // Uses submittedRef (synchronous) instead of state to avoid stale closures
     useEffect(() => {
         const enterFullscreen = async () => {
             try {
-                if (!document.fullscreenElement && !showResult && !isSubmitting) {
+                if (!document.fullscreenElement && !submittedRef.current) {
                     await document.documentElement.requestFullscreen()
                 }
             } catch (_) { }
@@ -159,14 +161,15 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         // Enter fullscreen on mount
         enterFullscreen()
 
-        // Re-enter fullscreen if user exits (proctored tests)
+        // Re-enter fullscreen if user exits during test (proctored tests)
         const handleFullscreenChange = () => {
-            if (!document.fullscreenElement && !showResult && !isSubmitting && proctoring.enabled) {
-                // Show warning and re-enter fullscreen
+            if (!document.fullscreenElement && !submittedRef.current && proctoring.enabled) {
                 setWarningMessage('⚠️ Fullscreen mode required! Re-entering...')
                 setShowWarning(true)
                 setTimeout(() => {
-                    enterFullscreen()
+                    if (!submittedRef.current) {
+                        enterFullscreen()
+                    }
                     setShowWarning(false)
                 }, 1500)
             }
@@ -174,7 +177,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
         document.addEventListener('fullscreenchange', handleFullscreenChange)
 
-        // Initialize Socket Connection
+        // Initialize Socket Connection (once on mount)
         if (test && user) {
             socketService.emitSubmissionStarted(
                 user.id,
@@ -188,9 +191,14 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
 
         return () => {
             document.removeEventListener('fullscreenchange', handleFullscreenChange)
-            if (document.fullscreenElement) document.exitFullscreen().catch(() => { })
+            // Only exit fullscreen on unmount if test wasn't submitted
+            // (submitted tests handle their own fullscreen exit in handleSubmit)
+            if (document.fullscreenElement && !submittedRef.current) {
+                document.exitFullscreen().catch(() => { })
+            }
         }
-    }, [showResult, isSubmitting, proctoring.enabled])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []) // Run once on mount — all checks use submittedRef (synchronous)
 
     useEffect(() => {
         if (result || !totalQuestions) return
@@ -556,12 +564,23 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         if (!auto && totalQuestions > 0 && Object.keys(answers).length < totalQuestions) {
             if (!window.confirm(`You have ${totalQuestions - Object.keys(answers).length} unanswered. Submit anyway?`)) return
         }
+
+        // Mark as submitted FIRST — prevents fullscreen re-entry during entire submission
+        submittedRef.current = true
         setIsSubmitting(true)
+
         if (mediaStream) {
             mediaStream.getTracks().forEach(t => t.stop())
         }
         if (cameraCheckIntervalRef.current) clearInterval(cameraCheckIntervalRef.current)
         if (phoneCheckIntervalRef.current) clearInterval(phoneCheckIntervalRef.current)
+
+        // Exit fullscreen immediately before making the API call
+        if (document.fullscreenElement) {
+            try {
+                await document.exitFullscreen()
+            } catch (_) { }
+        }
 
         try {
             const timeSpent = (test.duration || 120) * 60 - timeLeftRef.current
@@ -576,7 +595,7 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                     test.title,
                     null,
                     'success',
-                    Math.round(((Object.keys(answersRef.current).length) / totalQuestions) * 100) // Rough score estimate or just 100 on completion
+                    Math.round(((Object.keys(answersRef.current).length) / totalQuestions) * 100)
                 )
             }
 
@@ -592,22 +611,22 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
                 faceMissingCount: faceMissingCountRef.current,
                 proctoringEnabled: proctoring.enabled || false
             })
-            console.log('[Submit] Response:', res.data)
+            console.log('[Submit] Response received:', JSON.stringify(res.data).substring(0, 500))
 
             // Ensure we have valid result data
             const submissionResult = res.data.submission || res.data
+            console.log('[Submit] submissionResult status:', submissionResult?.status, 'score:', submissionResult?.score, 'sectionScores:', JSON.stringify(submissionResult?.sectionScores))
+
             if (submissionResult) {
-                // Exit fullscreen first before showing results
-                if (document.fullscreenElement) {
-                    try {
-                        await document.exitFullscreen()
-                    } catch (_) { }
-                }
-                // Small delay to ensure fullscreen exit completes
-                await new Promise(resolve => setTimeout(resolve, 100))
+                // Small delay to ensure fullscreen exit has completed
+                await new Promise(resolve => setTimeout(resolve, 200))
+                console.log('[Submit] Submission successful, returning to test list...')
                 setIsSubmitting(false)
-                setResult(submissionResult)
-                setShowResult(true)
+                // Instead of rendering result inline (which causes black screen due to
+                // fullscreen/proctoring state conflicts), unmount entirely and let
+                // the parent component handle result display
+                onClose()
+                onComplete && onComplete(submissionResult)
             } else {
                 console.error('[Submit] No submission data in response')
                 setIsSubmitting(false)

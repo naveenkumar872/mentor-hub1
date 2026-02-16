@@ -2249,6 +2249,7 @@ function GlobalTests({ user }) {
     const [selectedTest, setSelectedTest] = useState(null)
     const [showTestInterface, setShowTestInterface] = useState(false)
     const [submissions, setSubmissions] = useState([])
+    const [submissionResult, setSubmissionResult] = useState(null)
 
     useEffect(() => {
         const fetchTests = async () => {
@@ -2305,9 +2306,14 @@ function GlobalTests({ user }) {
         }
     }
 
-    const handleComplete = () => {
+    const handleComplete = (result) => {
         setShowTestInterface(false)
         setSelectedTest(null)
+        // Show result modal if we received result data
+        if (result) {
+            setSubmissionResult(result)
+        }
+        // Refresh submissions list
         axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`).then(r => setSubmissions(Array.isArray(r.data) ? r.data : [])).catch(() => { })
     }
 
@@ -2325,6 +2331,183 @@ function GlobalTests({ user }) {
     }
 
     const completedCount = submissions.filter(s => s.status === 'passed').length
+
+    // Submission Result Modal — shown after test submission
+    const ResultModal = () => {
+        if (!submissionResult) return null
+        const sectionScores = submissionResult.sectionScores || {}
+        const isPassed = submissionResult.status === 'passed'
+        return (
+            <div style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(15, 23, 42, 0.9)',
+                backdropFilter: 'blur(8px)',
+                zIndex: 99999,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2rem',
+                overflow: 'auto',
+                animation: 'fadeIn 0.3s ease-out'
+            }}>
+                <style>{`
+                    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                    @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+                `}</style>
+
+                <div style={{
+                    background: 'rgba(30,41,59,0.98)',
+                    borderRadius: '24px',
+                    border: `2px solid ${isPassed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                    maxWidth: 800,
+                    width: '100%',
+                    maxHeight: '90vh',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: `0 25px 50px -12px ${isPassed ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
+                    animation: 'scaleIn 0.4s ease-out'
+                }}>
+                    {/* Header */}
+                    <div style={{
+                        padding: '2rem 2rem 1.5rem',
+                        background: isPassed ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.1))' : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(251, 146, 60, 0.1))',
+                        borderBottom: `1px solid ${isPassed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                        textAlign: 'center'
+                    }}>
+                        <div style={{
+                            width: '80px',
+                            height: '80px',
+                            borderRadius: '50%',
+                            background: isPassed ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'linear-gradient(135deg, #ef4444, #f97316)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 1rem',
+                            boxShadow: `0 8px 24px ${isPassed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                            animation: isPassed ? 'pulse 2s ease-in-out infinite' : 'none'
+                        }}>
+                            {isPassed ? <Award size={40} color="white" /> : <XCircle size={40} color="white" />}
+                        </div>
+                        <h2 style={{ margin: '0 0 0.5rem', color: 'white', fontSize: '1.75rem', fontWeight: 800 }}>
+                            {isPassed ? '🎉 Congratulations!' : 'Test Completed'}
+                        </h2>
+                        <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '1rem' }}>
+                            {isPassed ? 'You have successfully passed the assessment!' : 'Keep practicing to improve your score.'}
+                        </p>
+                    </div>
+
+                    <div style={{ padding: '2rem', overflowY: 'auto' }}>
+                        {/* Score Card */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '1.5rem',
+                            marginBottom: '2rem',
+                            flexWrap: 'wrap',
+                            justifyContent: 'center'
+                        }}>
+                            <div style={{
+                                padding: '1.5rem 2.5rem',
+                                background: isPassed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                                borderRadius: 16,
+                                border: `2px solid ${isPassed ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+                                textAlign: 'center',
+                                minWidth: '180px'
+                            }}>
+                                <div style={{
+                                    fontSize: '3.5rem',
+                                    fontWeight: 900,
+                                    color: isPassed ? '#10b981' : '#ef4444',
+                                    lineHeight: 1
+                                }}>
+                                    {submissionResult.score ?? submissionResult.overallPercentage}%
+                                </div>
+                                <div style={{
+                                    fontSize: '0.9rem',
+                                    color: 'rgba(255,255,255,0.6)',
+                                    marginTop: '0.5rem',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '2px',
+                                    fontWeight: 600
+                                }}>
+                                    Overall Score
+                                </div>
+                            </div>
+                            <div style={{
+                                padding: '1.5rem 2rem',
+                                background: 'rgba(139, 92, 246, 0.1)',
+                                borderRadius: 16,
+                                border: '1px solid rgba(139, 92, 246, 0.3)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#a78bfa' }}>
+                                    {submissionResult.correctCount || 0}/{submissionResult.totalQuestions || 0}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.25rem' }}>
+                                    Correct Answers
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Section Scores */}
+                        <h3 style={{ margin: '0 0 1rem', color: 'white', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Layers size={18} color="#8b5cf6" /> Section-wise Performance
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.75rem' }}>
+                            {Object.entries(sectionScores).map(([sec, score]) => {
+                                const scoreColor = score >= 70 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+                                return (
+                                    <div key={sec} style={{
+                                        padding: '1rem',
+                                        background: 'rgba(30, 41, 59, 0.8)',
+                                        borderRadius: 12,
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        textAlign: 'center'
+                                    }}>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: scoreColor }}>{score}%</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize', marginTop: '0.25rem' }}>{sec}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{
+                        padding: '1.25rem 2rem',
+                        borderTop: '1px solid rgba(139,92,246,0.2)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: '1rem',
+                        background: 'rgba(15, 23, 42, 0.5)'
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => setSubmissionResult(null)}
+                            style={{
+                                padding: '0.85rem 2.5rem',
+                                background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                border: 'none',
+                                borderRadius: '12px',
+                                color: 'white',
+                                fontWeight: 700,
+                                fontSize: '1rem',
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 14px rgba(139, 92, 246, 0.4)',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseOver={e => e.target.style.transform = 'translateY(-2px)'}
+                            onMouseOut={e => e.target.style.transform = 'translateY(0)'}
+                        >
+                            Close & View Results
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
     return (
         <div className="animate-fadeIn">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -2439,6 +2622,7 @@ function GlobalTests({ user }) {
                     </div>
                 </>
             )}
+            <ResultModal />
         </div>
     )
 }

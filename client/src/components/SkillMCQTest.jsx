@@ -51,7 +51,16 @@ export default function SkillMCQTest({ attemptId, attemptData, onComplete, onFai
             const { data } = await axios.post(`${API}/api/skill-tests/mcq/start/${attemptId}`);
             setQuestions(data.questions || []);
             setAnswers(data.existing_answers || {});
-            const end = new Date(data.end_time);
+
+            // Calculate end time — use server-provided end_time, or fallback to 30 min from now
+            let end;
+            if (data.end_time) {
+                end = new Date(data.end_time);
+            }
+            // Fallback if end_time is missing or invalid
+            if (!end || isNaN(end.getTime())) {
+                end = new Date(Date.now() + 30 * 60 * 1000);
+            }
             setEndTime(end);
 
             // Start timer
