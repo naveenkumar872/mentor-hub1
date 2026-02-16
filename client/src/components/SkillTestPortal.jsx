@@ -529,7 +529,7 @@ export default function SkillTestPortal({ user }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
                         {/* Enable Camera Button */}
                         <button onClick={enableCamera} style={{
-                            padding: '12px 24px', border: 'none', borderRadius: '10px', cursor: 'pointer',
+                            padding: '12px 24px', borderRadius: '10px', cursor: 'pointer',
                             fontWeight: 700, fontSize: '14px', display: 'flex', alignItems: 'center',
                             justifyContent: 'center', gap: '8px', width: '100%',
                             background: cameraStream ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)',

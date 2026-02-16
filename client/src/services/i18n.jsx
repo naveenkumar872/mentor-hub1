@@ -174,7 +174,7 @@ const translations = {
         aptitude_subtitle: 'Test your reasoning and analytical skills',
         global_tests_student_subtitle: 'Aptitude, Verbal, Logical, Coding, SQL',
         submissions_subtitle: 'View your submission history and reports',
-        my_mentor: 'My Mentor',
+
 
         // Accessibility
         skip_to_content: 'Skip to main content',

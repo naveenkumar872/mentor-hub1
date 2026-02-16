@@ -227,7 +227,7 @@ export default function SkillSubmissions({ user, isAdmin = false }) {
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Total Score</div>
                                             <div style={{ fontSize: '20px', fontWeight: 800, color: '#f1f5f9' }}>
-                                                {Math.round((Number(sub.mcq_score || 0) + Number(sub.coding_score || 0) + Number(sub.sql_score || 0) + Number(sub.interview_score || 0)) / 4)}%
+                                                {Math.round((Number(sub.mcq_score || 0) + Number(sub.coding_score || 0) + Number(sub.sql_score || 0) + (Number(sub.interview_score || 0) * 10)) / 4)}%
                                             </div>
                                         </div>
                                         {isAdmin && (

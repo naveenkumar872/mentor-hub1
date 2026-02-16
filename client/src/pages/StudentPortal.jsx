@@ -810,63 +810,118 @@ function TaskSubmitModal({ task, user, onClose }) {
                             </div>
                         </>
                     ) : (
-                        <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-                            <div style={{
-                                width: '80px', height: '80px', borderRadius: '50%',
-                                background: result.status === 'accepted' || result.score >= 60 ? 'var(--success-alpha)' : result.status === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'var(--warning-alpha)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem'
-                            }}>
-                                {result.status === 'accepted' || result.score >= 60 ? (
-                                    <CheckCircle size={40} color="var(--success)" />
-                                ) : result.status === 'error' ? (
-                                    <XCircle size={40} color="var(--danger)" />
-                                ) : (
-                                    <AlertTriangle size={40} color="var(--warning)" />
-                                )}
+                        <div style={{ textAlign: 'left', padding: '0.5rem' }}>
+                            {/* Header Section */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                                <div style={{
+                                    width: '100px', height: '100px', borderRadius: '50%',
+                                    background: `conic-gradient(${result.score >= 80 ? 'var(--success)' : result.score >= 60 ? 'var(--warning)' : 'var(--danger)'} ${result.score * 3.6}deg, var(--bg-dark) 0deg)`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    position: 'relative', flexShrink: 0
+                                }}>
+                                    <div style={{ width: '85px', height: '85px', borderRadius: '50%', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)' }}>{result.score}</span>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Score</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, color: result.score >= 80 ? 'var(--success)' : result.score >= 60 ? 'var(--warning)' : 'var(--danger)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>
+                                        {result.score >= 90 ? 'Outstanding!' : result.score >= 80 ? 'Excellent Work!' : result.score >= 60 ? 'Good Effort' : 'Needs Improvement'}
+                                    </h3>
+                                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.5' }}>
+                                        {result.summary || "Evaluation complete. Review the detailed feedback below to improve your skills."}
+                                    </p>
+                                </div>
                             </div>
-                            <h3 style={{ marginBottom: '0.5rem', color: result.status === 'accepted' || result.score >= 60 ? 'var(--success)' : result.status === 'error' ? 'var(--danger)' : 'var(--warning)' }}>
-                                {result.status === 'error' ? 'Submission Error' : result.score >= 80 ? 'Excellent Work!' : result.score >= 60 ? 'Good Job!' : 'Needs Improvement'}
-                            </h3>
 
-                            {result.score !== undefined && (
-                                <div style={{ margin: '1.5rem 0' }}>
-                                    <div style={{ fontSize: '3rem', fontWeight: 800, background: 'linear-gradient(135deg, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                                        {result.score}/100
-                                    </div>
-                                    <div style={{ width: '200px', height: '8px', background: 'var(--bg-dark)', borderRadius: '4px', margin: '1rem auto', overflow: 'hidden' }}>
-                                        <div style={{
-                                            width: `${result.score}%`,
-                                            height: '100%',
-                                            background: result.score >= 80 ? 'var(--success)' : result.score >= 60 ? 'var(--warning)' : 'var(--danger)',
-                                            borderRadius: '4px',
-                                            transition: 'width 0.5s ease'
-                                        }} />
-                                    </div>
-                                </div>
-                            )}
-
-                            {result.feedback && (
-                                <div style={{ textAlign: 'left', background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', marginTop: '1rem' }}>
-                                    <h4 style={{ margin: '0 0 0.5rem', color: 'var(--primary)', fontSize: '0.9rem' }}>AI Feedback</h4>
-                                    <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{result.feedback}</p>
-                                </div>
-                            )}
-
-                            {result.breakdown && (
-                                <div style={{ textAlign: 'left', marginTop: '1rem' }}>
-                                    <h4 style={{ margin: '0 0 0.75rem', color: 'var(--text-main)', fontSize: '0.9rem' }}>Score Breakdown</h4>
-                                    <div style={{ display: 'grid', gap: '0.5rem' }}>
-                                        {Object.entries(result.breakdown).map(([key, value]) => (
-                                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', background: 'var(--bg-dark)', borderRadius: '0.5rem' }}>
-                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
-                                                <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{value}</span>
+                            {/* Metrics Grid */}
+                            {(result.metrics || result.breakdown) && (
+                                <div style={{ marginBottom: '2rem' }}>
+                                    <h4 style={{ color: 'var(--text-main)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <BarChart3 size={18} color="var(--primary)" /> Performance Metrics
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                        {Object.entries(result.metrics || result.breakdown).map(([key, val]) => (
+                                            <div key={key} style={{ background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
+                                                    <span style={{ fontWeight: 700, color: val >= 80 ? 'var(--success)' : val >= 60 ? 'var(--warning)' : 'var(--danger)' }}>{val}%</span>
+                                                </div>
+                                                <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                    <div style={{
+                                                        width: `${val}%`,
+                                                        height: '100%',
+                                                        background: val >= 80 ? 'var(--success)' : val >= 60 ? 'var(--warning)' : 'var(--danger)',
+                                                        borderRadius: '3px',
+                                                        transition: 'width 1s ease-out'
+                                                    }} />
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            <button className="btn-create-new" onClick={onClose} style={{ marginTop: '2rem' }}>Close</button>
+                            {/* Strengths & Improvements */}
+                            {(result.strengths?.length > 0 || result.suggestion_points?.length > 0) && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                                    {result.strengths?.length > 0 && (
+                                        <div style={{ background: 'rgba(16, 185, 129, 0.05)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
+                                            <h4 style={{ margin: '0 0 1rem', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                                <CheckCircle size={18} /> Key Strengths
+                                            </h4>
+                                            <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {result.strengths.map((s, i) => (
+                                                    <li key={i} style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>{s}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {result.suggestion_points?.length > 0 && (
+                                        <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
+                                            <h4 style={{ margin: '0 0 1rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                                <AlertTriangle size={18} /> Areas for Improvement
+                                            </h4>
+                                            <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {result.suggestion_points.map((s, i) => (
+                                                    <li key={i} style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5' }}>{s}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Detailed Feedback Tab/Section */}
+                            <div style={{ marginBottom: '2rem' }}>
+                                <h4 style={{ color: 'var(--text-main)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <FileText size={18} color="var(--info)" /> Detailed Analysis
+                                </h4>
+                                <div style={{
+                                    background: 'var(--bg-dark)',
+                                    padding: '1.5rem',
+                                    borderRadius: '0.75rem',
+                                    border: '1px solid var(--border-color)',
+                                    maxHeight: '400px',
+                                    overflowY: 'auto'
+                                }}>
+                                    <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.7', fontFamily: 'monospace' }}>
+                                        {result.detailed_feedback || result.feedback}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Next Steps */}
+                            {result.next_steps && (
+                                <div style={{ background: 'linear-gradient(to right, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1))', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                                    <h4 style={{ margin: '0 0 0.75rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                        <Target size={18} /> Recommended Next Steps
+                                    </h4>
+                                    <p style={{ margin: 0, color: 'var(--text-main)', fontSize: '0.95rem', lineHeight: '1.6' }}>{result.next_steps}</p>
+                                </div>
+                            )}
+
+                            <button className="btn-create-new" onClick={onClose} style={{ marginTop: '2rem', width: '100%', padding: '1rem', fontSize: '1rem' }}>Close Report</button>
                         </div>
                     )}
                 </div>
@@ -1738,10 +1793,12 @@ function CodeEditorModal({ problem, user, onClose }) {
 // ==================== SUBMISSIONS WITH REPORT & DELETE ====================
 function Submissions({ user }) {
     const [submissions, setSubmissions] = useState([])
+    const [mlTaskSubmissions, setMlTaskSubmissions] = useState([])
     const [aptitudeSubmissions, setAptitudeSubmissions] = useState([])
     const [globalSubmissions, setGlobalSubmissions] = useState([])
     const [loading, setLoading] = useState(true)
     const [viewReport, setViewReport] = useState(null)
+    const [viewMLReport, setViewMLReport] = useState(null)
     const [activeTab, setActiveTab] = useState('all')
     const [viewAptitudeResult, setViewAptitudeResult] = useState(null)
     const [viewGlobalReport, setViewGlobalReport] = useState(null)
@@ -1755,13 +1812,16 @@ function Submissions({ user }) {
             axios.get(`${API_BASE}/global-test-submissions?studentId=${user.id}`)
         ]).then(([codeRes, aptRes, globalRes]) => {
             const codeData = Array.isArray(codeRes.data) ? codeRes.data : (codeRes.data?.data || [])
-            setSubmissions(codeData.map(s => ({ ...s, subType: 'code' })))
+            const mlTasks = codeData.filter(s => s.isMLTask).map(s => ({ ...s, subType: 'ml-task' }))
+            const codeSubs = codeData.filter(s => !s.isMLTask).map(s => ({ ...s, subType: 'code' }))
+            setSubmissions(codeSubs)
+            setMlTaskSubmissions(mlTasks)
             setAptitudeSubmissions((aptRes.data || []).map(s => ({ ...s, subType: 'aptitude', itemTitle: s.testTitle })))
             setGlobalSubmissions((globalRes.data || []).map(s => ({
                 ...s,
                 subType: 'global',
                 itemTitle: s.testTitle,
-                score: s.overallPercentage // Use overallPercentage as score
+                score: s.overallPercentage
             })))
             setLoading(false)
         }).catch(err => {
@@ -1788,7 +1848,7 @@ function Submissions({ user }) {
         }
     }
 
-    const allSubmissions = [...submissions, ...aptitudeSubmissions, ...globalSubmissions]
+    const allSubmissions = [...submissions, ...mlTaskSubmissions, ...aptitudeSubmissions, ...globalSubmissions]
         .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
 
     const getFilteredSubmissions = () => {
@@ -1796,9 +1856,11 @@ function Submissions({ user }) {
             ? allSubmissions
             : activeTab === 'code'
                 ? submissions
-                : activeTab === 'aptitude'
-                    ? aptitudeSubmissions
-                    : globalSubmissions
+                : activeTab === 'ml-task'
+                    ? mlTaskSubmissions
+                    : activeTab === 'aptitude'
+                        ? aptitudeSubmissions
+                        : globalSubmissions
 
         return filtered.filter(s =>
             (s.itemTitle || s.testTitle || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1839,6 +1901,18 @@ function Submissions({ user }) {
                             fontWeight: 500
                         }}
                     >💻 Code ({submissions.length})</button>
+                    <button
+                        onClick={() => setActiveTab('ml-task')}
+                        style={{
+                            padding: '0.6rem 1.2rem',
+                            background: activeTab === 'ml-task' ? '#06b6d4' : 'rgba(6, 182, 212, 0.1)',
+                            border: activeTab === 'ml-task' ? 'none' : '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            color: activeTab === 'ml-task' ? 'white' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontWeight: 500
+                        }}
+                    >🧠 ML Tasks ({mlTaskSubmissions.length})</button>
                     <button
                         onClick={() => setActiveTab('aptitude')}
                         style={{
@@ -1900,10 +1974,10 @@ function Submissions({ user }) {
                                             fontSize: '0.75rem',
                                             padding: '2px 8px',
                                             borderRadius: '4px',
-                                            background: sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'var(--primary-alpha)',
-                                            color: sub.subType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
+                                            background: sub.subType === 'ml-task' ? 'rgba(6, 182, 212, 0.1)' : sub.subType === 'aptitude' ? 'rgba(139, 92, 246, 0.1)' : 'var(--primary-alpha)',
+                                            color: sub.subType === 'ml-task' ? '#06b6d4' : sub.subType === 'aptitude' ? '#8b5cf6' : 'var(--primary)'
                                         }}>
-                                            {sub.subType === 'aptitude' ? '📝 Aptitude' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
+                                            {sub.subType === 'ml-task' ? '🧠 ML Task' : sub.subType === 'aptitude' ? '📝 Aptitude' : sub.subType === 'global' ? '🌐 Global' : '💻 Code'}
                                         </span>
                                     </td>
                                     <td><div style={{ color: 'var(--primary)', fontWeight: 500 }}>{sub.itemTitle || sub.testTitle}</div></td>
@@ -1978,6 +2052,11 @@ function Submissions({ user }) {
                                                     <button onClick={() => setViewGlobalReport(sub.id)} style={{ background: 'var(--primary-alpha)', border: 'none', color: 'var(--primary)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}><Eye size={14} /> Full Report</button>
                                                     <button onClick={() => handleDelete(sub)} style={{ background: 'var(--danger-alpha)', border: 'none', color: 'var(--danger)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}><Trash2 size={14} /></button>
                                                 </>
+                                            ) : sub.subType === 'ml-task' ? (
+                                                <>
+                                                    <button onClick={() => setViewMLReport(sub)} style={{ background: 'rgba(6, 182, 212, 0.1)', border: 'none', color: '#06b6d4', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}><Eye size={14} /> ML Report</button>
+                                                    <button onClick={() => handleDelete(sub)} style={{ background: 'var(--danger-alpha)', border: 'none', color: 'var(--danger)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}><Trash2 size={14} /></button>
+                                                </>
                                             ) : (
                                                 <>
                                                     <button onClick={() => setViewReport(sub)} style={{ background: 'var(--primary-alpha)', border: 'none', color: 'var(--primary)', padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}><Eye size={14} /> Report</button>
@@ -1993,6 +2072,9 @@ function Submissions({ user }) {
                 </table>
             </div>
             {viewReport && <SubmissionReportModal submission={viewReport} user={user} onClose={() => setViewReport(null)} />}
+
+            {/* ML Task Report Modal */}
+            {viewMLReport && <MLTaskReportModal submission={viewMLReport} onClose={() => setViewMLReport(null)} />}
 
             {/* Aptitude Results Modal */}
             {viewAptitudeResult && (
@@ -2235,6 +2317,161 @@ function SubmissionReportModal({ submission, user, onClose }) {
                     <div>
                         <h4 style={{ margin: '0 0 0.75rem' }}>Submitted Code</h4>
                         <pre style={{ background: 'var(--code-bg)', padding: '1.5rem', borderRadius: '0.5rem', overflow: 'auto', maxHeight: '300px', fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--code-text)', border: '1px solid var(--border-color)' }}>{submission.code}</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ==================== ML TASK REPORT MODAL ====================
+function MLTaskReportModal({ submission, onClose }) {
+    const isGithub = (submission.submissionType || '').includes('github')
+
+    const parseMetricScore = (str) => {
+        if (!str || str === 'N/A') return null
+        const match = str.match(/(\d+)/)
+        return match ? parseInt(match[1]) : null
+    }
+
+    const metrics = [
+        { label: 'Correctness', value: parseMetricScore(submission.analysis?.correctness), color: '#3b82f6' },
+        { label: 'Code Quality', value: parseMetricScore(submission.analysis?.efficiency), color: '#8b5cf6' },
+        { label: 'Documentation', value: parseMetricScore(submission.analysis?.codeStyle), color: '#06b6d4' },
+        { label: 'Model Performance', value: parseMetricScore(submission.analysis?.bestPractices), color: '#10b981' }
+    ].filter(m => m.value !== null)
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="modal-header">
+                    <div className="modal-title-with-icon">
+                        <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Brain size={20} color="white" />
+                        </div>
+                        <div>
+                            <span style={{ fontSize: '0.7rem', color: '#06b6d4', textTransform: 'uppercase', fontWeight: 600 }}>ML Task Report</span>
+                            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{submission.itemTitle || 'ML Task'}</h2>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="modal-close"><XCircle size={20} /></button>
+                </div>
+                <div className="modal-body" style={{ padding: '1.5rem' }}>
+                    {/* Score & Status Header */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '2rem', marginBottom: '2rem',
+                        padding: '1.5rem', borderRadius: '1rem',
+                        background: submission.status === 'accepted' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                        border: `1px solid ${submission.status === 'accepted' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                    }}>
+                        <div style={{
+                            width: '90px', height: '90px', borderRadius: '50%',
+                            background: `conic-gradient(${submission.score >= 80 ? '#10b981' : submission.score >= 60 ? '#f59e0b' : '#ef4444'} ${(submission.score || 0) * 3.6}deg, rgba(255,255,255,0.05) 0deg)`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                        }}>
+                            <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>{submission.score}</span>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>SCORE</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                                padding: '0.4rem 1rem', borderRadius: '2rem', marginBottom: '0.5rem',
+                                background: submission.status === 'accepted' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: submission.status === 'accepted' ? '#10b981' : '#ef4444',
+                                fontWeight: 700, fontSize: '0.9rem'
+                            }}>
+                                {submission.status === 'accepted' ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                                {(submission.status || 'pending').toUpperCase()}
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                    📅 {new Date(submission.submittedAt).toLocaleString()}
+                                </span>
+                                <span style={{ fontSize: '0.8rem', color: '#06b6d4', fontWeight: 600 }}>
+                                    {isGithub ? '🔗 GitHub Submission' : '📁 File Upload'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Metrics */}
+                    {metrics.length > 0 && (
+                        <div style={{ marginBottom: '2rem' }}>
+                            <h4 style={{ margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
+                                <BarChart3 size={18} color="#06b6d4" /> Performance Metrics
+                            </h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                                {metrics.map(m => (
+                                    <div key={m.label} style={{ background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{m.label}</span>
+                                            <span style={{ fontWeight: 700, color: m.value >= 80 ? '#10b981' : m.value >= 60 ? '#f59e0b' : '#ef4444' }}>{m.value}%</span>
+                                        </div>
+                                        <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${m.value}%`, height: '100%',
+                                                background: m.color,
+                                                borderRadius: '3px', transition: 'width 1s ease-out'
+                                            }} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* AI Feedback */}
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <h4 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Sparkles size={18} color="#06b6d4" /> AI Feedback
+                        </h4>
+                        <div style={{
+                            background: 'var(--bg-dark)', padding: '1.25rem', borderRadius: '0.75rem',
+                            border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap',
+                            color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.7', maxHeight: '300px', overflowY: 'auto'
+                        }}>
+                            {submission.feedback || 'No feedback provided.'}
+                        </div>
+                    </div>
+
+                    {/* AI Summary */}
+                    {submission.aiExplanation && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Eye size={18} color="#8b5cf6" /> Summary
+                            </h4>
+                            <div style={{
+                                background: 'rgba(139, 92, 246, 0.05)', padding: '1rem', borderRadius: '0.75rem',
+                                border: '1px solid rgba(139, 92, 246, 0.2)',
+                                color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6'
+                            }}>
+                                {submission.aiExplanation}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Submitted Content */}
+                    <div>
+                        <h4 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {isGithub ? <Github size={18} color="var(--text-main)" /> : <FileText size={18} color="var(--text-main)" />}
+                            {isGithub ? 'GitHub Repository' : 'Submitted Code'}
+                        </h4>
+                        {isGithub ? (
+                            <div style={{ background: 'var(--bg-dark)', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                                <a href={submission.code} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+                                    <ExternalLink size={16} /> {submission.code}
+                                </a>
+                            </div>
+                        ) : (
+                            <pre style={{
+                                background: 'var(--bg-dark)', padding: '1.25rem', borderRadius: '0.75rem',
+                                overflow: 'auto', maxHeight: '300px', fontSize: '0.8rem',
+                                fontFamily: 'monospace', color: 'var(--text-main)',
+                                border: '1px solid var(--border-color)', lineHeight: '1.6'
+                            }}>{submission.code}</pre>
+                        )}
                     </div>
                 </div>
             </div>

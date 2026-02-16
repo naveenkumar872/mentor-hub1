@@ -693,6 +693,7 @@ app.get('/api/submissions', async (req, res) => {
             itemTitle: s.problemTitle || s.taskTitle || 'Unknown',
             code: s.code,
             submissionType: s.submission_type,
+            isMLTask: (s.submission_type || '').startsWith('ml-'),
             fileName: s.file_name,
             language: s.language,
             score: s.score,
@@ -732,6 +733,154 @@ app.get('/api/submissions', async (req, res) => {
         res.json(response);
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ML Task Submission Route with AI Evaluation
+app.post('/api/submissions/ml-task', async (req, res) => {
+    try {
+        const {
+            studentId, taskId, submissionType, code, githubUrl,
+            taskTitle, taskDescription, taskRequirements
+        } = req.body;
+
+        console.log(`[ML-Task] Received submission from Student:${studentId} Task:${taskId} Type:${submissionType}`);
+
+        if (!studentId || !taskId) {
+            return res.status(400).json({ error: 'Missing required fields: studentId or taskId' });
+        }
+
+        // 1. Prepare Content for AI
+        let contentToEvaluate = '';
+        if (submissionType === 'file') {
+            if (!code) return res.status(400).json({ error: 'Code content missing for file submission' });
+            contentToEvaluate = code;
+        } else if (submissionType === 'github') {
+            if (!githubUrl) return res.status(400).json({ error: 'GitHub URL missing' });
+            contentToEvaluate = `GitHub Repository: ${githubUrl}\n\n(Note: As an AI, please evaluate based on the repository structure and description inferred from the URL if browsing is not possible. Provide feedback assuming standard project structure.)`;
+        } else {
+            return res.status(400).json({ error: 'Invalid submission type' });
+        }
+
+        // 2. Construct AI Prompt
+        const systemPrompt = `You are an expert Machine Learning Mentor & Senior Data Scientist. 
+        Evaluate the student's submission for the following ML task with a professional, constructive, and detailed approach.
+        
+        Task: ${taskTitle}
+        Description: ${taskDescription}
+        Requirements:
+        ${taskRequirements}
+        
+        Student Submission (${submissionType}):
+        ${contentToEvaluate.substring(0, 50000)} -- Truncated for token limits if necessary
+
+        YOUR COLABORATION:
+        Analyze the submission for:
+        1. Correctness (logic, approach, model selection)
+        2. Code Quality (modularity, variable naming, readability)
+        3. Documentation (comments, README, explanation)
+        4. Data Handling (preprocessing, splitting, leakage prevention)
+        5. Model Evaluation (metrics, validation strategy)
+
+        OUTPUT FORMAT:
+        Return strict JSON only (no markdown formatting):
+        {
+            "score": number (0-100),
+            "status": "accepted" | "rejected",
+            "summary": "Professional executive summary of the submission's quality and approach (2-3 sentences).",
+            "strengths": ["List of 3-5 key strengths observed"],
+            "suggestion_points": ["List of 3-5 specific actionable areas for improvement"],
+            "metrics": {
+                "Correctness": number (0-100),
+                "Code Quality": number (0-100),
+                "Documentation": number (0-100),
+                "Model Performance": number (0-100)
+            },
+            "detailed_feedback": "Comprehensive technical feedback in Markdown format. Use headers, bullet points, and code blocks if needed to explain improvements.",
+            "next_steps": "Actionable advice for the learner's next steps in this topic."
+        }`;
+
+        // 3. Call AI
+        let aiResult = { score: 0, feedback: "Evaluation active but result parsing failed.", status: "accepted", metrics: {} };
+        try {
+            const completion = await cerebrasChat([
+                { role: 'system', content: 'You are an AI evaluator for ML coding tasks. Respond with JSON only.' },
+                { role: 'user', content: systemPrompt }
+            ], { temperature: 0.2 });
+
+            const aiContent = completion.choices?.[0]?.message?.content || '';
+            const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                aiResult = JSON.parse(jsonMatch[0]);
+                // Map metrics to breakdown for consistency if needed, or send as is
+                aiResult.breakdown = aiResult.metrics;
+                aiResult.feedback = aiResult.detailed_feedback; // For backward compatibility with DB column
+            } else {
+                throw new Error('AI response was not valid JSON');
+            }
+        } catch (aiErr) {
+            console.error('AI Eval Error:', aiErr.message);
+            aiResult = {
+                score: 50,
+                summary: "AI Evaluation Service Error. The system could not complete the automated review.",
+                strengths: [],
+                suggestion_points: ["Please try submitting again later."],
+                metrics: { "Availability": 0 },
+                feedback: `AI Evaluation Service Error: ${aiErr.message}.`,
+                status: 'error',
+                detailed_feedback: `The evaluation service encountered an error: ${aiErr.message}`
+            };
+        }
+
+        // 4. Return result to client
+        res.json(aiResult);
+
+        // 5. (Async) Save to DB for records/progress
+        try {
+            const submissionId = uuidv4();
+            const mlSubmissionType = submissionType === 'file' ? 'ml-file' : 'ml-github';
+            const codeContent = submissionType === 'file' ? code : githubUrl;
+            const fileName = req.body.fileName || null;
+
+            await pool.query(
+                `INSERT INTO submissions (
+                    id, student_id, problem_id, task_id, code, submission_type, file_name, language,
+                    score, status, feedback, ai_explanation,
+                    analysis_correctness, analysis_efficiency, analysis_code_style, analysis_best_practices,
+                    plagiarism_detected, tab_switches, integrity_violation, submitted_at
+                ) VALUES (?, ?, NULL, ?, ?, ?, ?, 'ML', ?, ?, ?, ?, ?, ?, ?, ?, 'false', 0, 'false', NOW())`,
+                [
+                    submissionId, studentId, taskId, codeContent, mlSubmissionType, fileName,
+                    aiResult.score || 0,
+                    aiResult.status || 'accepted',
+                    aiResult.feedback || aiResult.detailed_feedback || '',
+                    aiResult.summary || '',
+                    aiResult.metrics?.['Correctness'] ? `${aiResult.metrics['Correctness']}/100` : 'N/A',
+                    aiResult.metrics?.['Code Quality'] ? `${aiResult.metrics['Code Quality']}/100` : 'N/A',
+                    aiResult.metrics?.['Documentation'] ? `${aiResult.metrics['Documentation']}/100` : 'N/A',
+                    aiResult.metrics?.['Model Performance'] ? `${aiResult.metrics['Model Performance']}/100` : 'N/A'
+                ]
+            );
+            console.log(`[ML-Task] Submission saved to DB: ${submissionId}`);
+
+            // If passed, mark task as completed
+            if (aiResult.score >= 60 || aiResult.status === 'accepted') {
+                try {
+                    await pool.query(
+                        `INSERT IGNORE INTO task_completions (student_id, task_id) VALUES (?, ?)`,
+                        [studentId, taskId]
+                    );
+                } catch (tcErr) {
+                    console.warn('Could not insert task_completion:', tcErr.message);
+                }
+            }
+        } catch (dbErr) {
+            console.warn('Could not save ML task submission to DB:', dbErr.message);
+        }
+
+    } catch (err) {
+        console.error('ML Task Submission Endpoint Error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
