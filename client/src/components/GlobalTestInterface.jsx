@@ -842,8 +842,18 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
         // Fallback to test cases
         if (currentQ.testCases) {
             // For SQL questions: testCases is { expectedOutput: "..." }
+            // For SQL questions: testCases might be { expectedOutput: "..." } OR array of cases
             if (currentQ.questionType === 'sql' || currentQ.type === 'SQL') {
-                const expectedOutput = currentQ.testCases.expectedOutput || 'N/A'
+                let expectedOutput = 'N/A'
+                if (Array.isArray(currentQ.testCases)) {
+                    // New format: array of test cases
+                    const first = currentQ.testCases[0]
+                    if (first) expectedOutput = first.expected_output || first.expectedOutput || 'N/A'
+                } else if (currentQ.testCases) {
+                    // Legacy format: object
+                    expectedOutput = currentQ.testCases.expectedOutput || 'N/A'
+                }
+
                 return {
                     input: 'N/A',
                     output: String(expectedOutput)

@@ -1,4 +1,5 @@
 const express = require('express');
+// Triggering server reload to register new routes
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
@@ -199,6 +200,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Import and mount skill test routes AFTER middleware
 const skillTestRoutes = require('./skill_test_routes');
 skillTestRoutes(app, pool);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================== AUTH ROUTES ====================

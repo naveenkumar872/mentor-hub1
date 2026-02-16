@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Eye, EyeOff, CheckCircle, Save, X, AlertTriangle, Code } from 'lucide-react'
 
-function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title = 'Coding Problem' }) {
+function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title = 'Coding Problem', inputLabel = 'Sample Input', outputLabel = 'Sample Output' }) {
     const [testCases, setTestCases] = useState([])
     const [newTestCase, setNewTestCase] = useState({
         input: '',
@@ -158,7 +158,7 @@ function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title
                             </h4>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                 <div className="form-group">
-                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>Sample Input</label>
+                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>{inputLabel}</label>
                                     <textarea
                                         rows="3"
                                         placeholder="Enter test input..."
@@ -168,7 +168,7 @@ function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>Sample Output</label>
+                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>{outputLabel}</label>
                                     <textarea
                                         rows="3"
                                         placeholder="Enter expected output..."
@@ -259,7 +259,7 @@ function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title
                                         <div>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                                 <div className="form-group">
-                                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>Sample Input</label>
+                                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>{inputLabel}</label>
                                                     <textarea
                                                         rows="3"
                                                         value={editData.input}
@@ -268,7 +268,7 @@ function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title
                                                     />
                                                 </div>
                                                 <div className="form-group">
-                                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>Sample Output</label>
+                                                    <label className="form-label" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>{outputLabel}</label>
                                                     <textarea
                                                         rows="3"
                                                         value={editData.expectedOutput}
@@ -347,7 +347,7 @@ function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title
                                             </div>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                                 <div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>Sample Input:</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>{inputLabel}:</div>
                                                     <code style={{
                                                         display: 'block',
                                                         padding: '0.5rem',
@@ -363,7 +363,7 @@ function LocalTestCasesManager({ initialTestCases = [], onUpdate, onClose, title
                                                     </code>
                                                 </div>
                                                 <div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>Sample Output:</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>{outputLabel}:</div>
                                                     <code style={{
                                                         display: 'block',
                                                         padding: '0.5rem',

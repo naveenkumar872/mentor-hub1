@@ -4333,7 +4333,7 @@ function GlobalTestsAdmin() {
                                                                 </span>
                                                             </div>
                                                             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                                <button type="button" onClick={() => setManagingTestCases({ index: idx })} style={{ padding: '0.5rem 0.75rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                                <button type="button" onClick={() => setManagingTestCases({ index: idx, section: 'coding' })} style={{ padding: '0.5rem 0.75rem', background: '#3b82f6', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
                                                                     <ClipboardList size={16} /> Manage Test Cases
                                                                 </button>
                                                                 <button type="button" onClick={() => {
@@ -4348,18 +4348,49 @@ function GlobalTestsAdmin() {
                                             </div>
 
                                             {/* Local Test Cases Manager Modal */}
-                                            {managingTestCases && questionsBySection.coding?.[managingTestCases.index] && (
+                                            {managingTestCases && questionsBySection[managingTestCases.section]?.[managingTestCases.index] && (
                                                 <LocalTestCasesManager
-                                                    title={questionsBySection.coding[managingTestCases.index].question?.substring(0, 50)}
-                                                    initialTestCases={(Array.isArray(questionsBySection.coding[managingTestCases.index].testCases)
-                                                        ? questionsBySection.coding[managingTestCases.index].testCases
-                                                        : (questionsBySection.coding[managingTestCases.index].testCases?.cases || [])).map(c => ({
-                                                            ...c,
-                                                            expectedOutput: c.expected_output || c.expectedOutput,
-                                                            isHidden: c.isHidden || false,
-                                                            points: c.points || 10,
-                                                            description: c.description || ''
-                                                        }))}
+                                                    title={questionsBySection[managingTestCases.section][managingTestCases.index].question?.substring(0, 50)}
+                                                    inputLabel={managingTestCases.section === 'sql' ? 'Database Schema (SQL)' : 'Sample Input'}
+                                                    outputLabel={managingTestCases.section === 'sql' ? 'Expected Result (Table/Text)' : 'Sample Output'}
+                                                    initialTestCases={(() => {
+                                                        const q = questionsBySection[managingTestCases.section][managingTestCases.index]
+                                                        if (Array.isArray(q.testCases)) {
+                                                            return q.testCases.map(c => ({
+                                                                ...c,
+                                                                expectedOutput: c.expected_output || c.expectedOutput,
+                                                                isHidden: c.isHidden || false,
+                                                                points: c.points || 10,
+                                                                description: c.description || ''
+                                                            }))
+                                                        } else if (managingTestCases.section === 'sql') {
+                                                            // Handle SQL specific formats
+                                                            // Format 1: schema/expectedOutput properties
+                                                            // Format 2: starterCode (schema) and testCases.expectedOutput
+                                                            const schema = q.schema || q.starterCode || ''
+                                                            const output = q.expectedOutput || q.testCases?.expectedOutput || ''
+                                                            if (schema || output) {
+                                                                return [{
+                                                                    input: schema,
+                                                                    expectedOutput: output,
+                                                                    isHidden: false,
+                                                                    points: q.points || 10,
+                                                                    description: 'Default Case'
+                                                                }]
+                                                            }
+                                                        }
+
+                                                        if (q.testCases?.cases) {
+                                                            return q.testCases.cases.map(c => ({
+                                                                ...c,
+                                                                expectedOutput: c.expected_output || c.expectedOutput,
+                                                                isHidden: c.isHidden || false,
+                                                                points: c.points || 10,
+                                                                description: c.description || ''
+                                                            }))
+                                                        }
+                                                        return []
+                                                    })()}
                                                     onClose={() => setManagingTestCases(null)}
                                                     onUpdate={(newCases) => {
                                                         const denormalized = newCases.map(c => ({
@@ -4370,18 +4401,40 @@ function GlobalTestsAdmin() {
                                                             description: c.description
                                                         }))
                                                         setQuestionsBySection(prev => {
-                                                            const coding = [...(prev.coding || [])]
-                                                            if (coding[managingTestCases.index]) {
-                                                                const currentLang = coding[managingTestCases.index].testCases?.language || 'Python'
-                                                                coding[managingTestCases.index] = {
-                                                                    ...coding[managingTestCases.index],
-                                                                    testCases: {
-                                                                        language: currentLang,
-                                                                        cases: denormalized
+                                                            const section = managingTestCases.section
+                                                            const list = [...(prev[section] || [])]
+                                                            if (list[managingTestCases.index]) {
+                                                                const q = list[managingTestCases.index]
+                                                                if (section === 'sql') {
+                                                                    // For SQL, update root schema/expectedOutput AND starterCode
+                                                                    const first = newCases[0] || { input: '', expectedOutput: '' }
+                                                                    list[managingTestCases.index] = {
+                                                                        ...q,
+                                                                        schema: first.input,
+                                                                        starterCode: first.input, // Critical: GlobalTestInterface uses this for schema if sqlSchema missing
+                                                                        expectedOutput: first.expectedOutput,
+                                                                        testCases: denormalized // Store as array for future
+                                                                    }
+                                                                } else {
+                                                                    // For Coding
+                                                                    const currentLang = q.testCases?.language || 'Python'
+                                                                    if (q.testCases?.language || !Array.isArray(q.testCases)) {
+                                                                        list[managingTestCases.index] = {
+                                                                            ...q,
+                                                                            testCases: {
+                                                                                language: currentLang,
+                                                                                cases: denormalized
+                                                                            }
+                                                                        }
+                                                                    } else {
+                                                                        list[managingTestCases.index] = {
+                                                                            ...q,
+                                                                            testCases: denormalized
+                                                                        }
                                                                     }
                                                                 }
                                                             }
-                                                            return { ...prev, coding }
+                                                            return { ...prev, [section]: list }
                                                         })
                                                     }}
                                                 />
@@ -4449,6 +4502,33 @@ function GlobalTestsAdmin() {
                                                     <textarea value={sqlQuestion.expectedOutput} onChange={e => setSqlQuestion({ ...sqlQuestion, expectedOutput: e.target.value })} placeholder="Paste the expected result as shown by SQLite" rows={4} style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical' }} />
                                                 </div>
                                                 <button type="button" className="btn-create-new" onClick={addSqlQuestion}>Add this SQL question</button>
+                                            </div>
+
+                                            {/* Added SQL Questions List */}
+                                            <div style={{ marginTop: '2rem' }}>
+                                                {questionsBySection.sql?.length > 0 && <h4 style={{ color: 'white', marginBottom: '1rem', fontSize: '1rem' }}>Added SQL Problems ({questionsBySection.sql.length})</h4>}
+                                                {questionsBySection.sql?.map((q, idx) => (
+                                                    <div key={idx} className="card glass" style={{ marginBottom: '1rem', padding: '1rem', background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '12px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                            <div>
+                                                                <h5 style={{ margin: '0 0 0.5rem', color: '#60a5fa', fontSize: '1rem' }}>{q.question?.substring(0, 100)}...</h5>
+                                                                <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>
+                                                                    SQL Problem • {(Array.isArray(q.testCases) ? q.testCases : (q.schema ? 1 : 0))} test case(s)
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                <button type="button" onClick={() => setManagingTestCases({ index: idx, section: 'sql' })} style={{ padding: '0.5rem 0.75rem', background: '#06b6d4', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                                    <ClipboardList size={16} /> Manage Data
+                                                                </button>
+                                                                <button type="button" onClick={() => {
+                                                                    setQuestionsBySection(prev => ({ ...prev, sql: prev.sql.filter((_, i) => i !== idx) }))
+                                                                }} style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.2)', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }}>
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </>
                                     )}

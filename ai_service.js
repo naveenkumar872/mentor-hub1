@@ -80,8 +80,27 @@ function parseJSON(text) {
 //  MCQ GENERATION
 // ═══════════════════════════════════════════
 
+// Random topic categories for variety
+const TOPIC_POOLS = {
+    concepts: ['design patterns', 'concurrency', 'memory management', 'error handling', 'testing', 'security', 'performance', 'architecture', 'debugging', 'deployment', 'networking', 'APIs', 'databases', 'caching', 'logging'],
+    approaches: ['scenario-based', 'code-output prediction', 'bug-finding', 'best-practice identification', 'tradeoff analysis', 'real-world problem solving', 'optimization', 'architecture decision'],
+    themes: ['e-commerce system', 'social media app', 'banking system', 'healthcare platform', 'logistics system', 'real-time chat', 'streaming service', 'IoT dashboard', 'machine learning pipeline', 'CI/CD workflow']
+};
+
+function getRandomSeed() {
+    return Math.floor(Math.random() * 1000000);
+}
+
+function pickRandom(arr, n) {
+    const shuffled = [...arr].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, Math.min(n, arr.length));
+}
+
 async function generateMCQQuestions(skills, count = 10) {
     const skillsStr = skills.slice(0, 15).join(', ');
+    const seed = getRandomSeed();
+    const focusTopics = pickRandom(TOPIC_POOLS.concepts, 4).join(', ');
+    const questionStyle = pickRandom(TOPIC_POOLS.approaches, 3).join(', ');
 
     const messages = [
         {
@@ -100,20 +119,25 @@ Each question object must have these exact fields:
         },
         {
             role: 'user',
-            content: `Generate ${count} technical MCQ questions based on these skills: ${skillsStr}
+            content: `[Seed: ${seed}] Generate ${count} UNIQUE technical MCQ questions based on these skills: ${skillsStr}
+
+IMPORTANT: Generate completely NEW and UNIQUE questions every time. DO NOT use common or frequently-asked questions.
+Focus on these specific topics for THIS session: ${focusTopics}
+Use these question styles: ${questionStyle}
 
 Distribution:
 - 30% Easy questions (fundamentals)
-- 50% Medium questions (practical application)
+- 50% Medium questions (practical application)  
 - 20% Hard questions (advanced concepts)
 
 Make questions practical and real-world oriented. Cover different skills proportionally.
+Be creative and avoid generic questions like "What is X?" - instead test applied knowledge.
 Return ONLY a valid JSON array.`
         }
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.7, max_tokens: 8000 });
+        const response = await callCerebras(messages, { temperature: 0.95, max_tokens: 8000 });
         const questions = parseJSON(response);
 
         if (!questions || !Array.isArray(questions)) {
@@ -213,9 +237,12 @@ Return ONLY a valid JSON array with EXACTLY ${count} problems. Each problem obje
         },
         {
             role: 'user',
-            content: `Generate EXACTLY ${count} coding problem(s) that test these skills: ${skillsStr}
+            content: `[Seed: ${getRandomSeed()}] Generate EXACTLY ${count} UNIQUE coding problem(s) that test these skills: ${skillsStr}
 
 ${difficultyInstruction}
+
+IMPORTANT: Generate completely DIFFERENT problems every time. Avoid common problems like Two Sum, FizzBuzz, Palindrome, Fibonacci, Reverse String. 
+Think of creative, unique problem scenarios from: ${pickRandom(TOPIC_POOLS.themes, 3).join(', ')}.
 
 Each problem should have at least 3 test cases.
 Make sure the "starter_code" for each language is correct and runnable. It must handle the input parsing exactly as described in "input_format".
@@ -225,7 +252,7 @@ Return ONLY a valid JSON array with exactly ${count} problem(s).`
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.7, max_tokens: 8000 });
+        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 8000 });
         let problems = parseJSON(response);
         if (problems && Array.isArray(problems) && problems.length > 0) {
             // Transform sample_input/output to examples format and trim to exact count
@@ -576,13 +603,17 @@ Return ONLY a valid JSON array. Each problem must have:
         },
         {
             role: 'user',
-            content: `Generate ${count} SQL problems with increasing difficulty.
+            content: `[Seed: ${getRandomSeed()}] Generate ${count} UNIQUE SQL problems with increasing difficulty.
+
+IMPORTANT: Generate completely DIFFERENT problems every time. Avoid repeating common problems like "find employees above average salary" or "count by department".
+Think of creative query scenarios involving: ${pickRandom(['joins', 'subqueries', 'window functions', 'aggregation', 'string functions', 'date functions', 'CASE statements', 'CTEs', 'self-joins', 'UNION', 'HAVING', 'nested queries'], 4).join(', ')}.
+
 Return ONLY a valid JSON array.`
         }
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.7, max_tokens: 4000 });
+        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 4000 });
         const problems = parseJSON(response);
         if (problems && Array.isArray(problems) && problems.length > 0) {
             return problems.slice(0, count);
@@ -652,7 +683,7 @@ Return a JSON object with:
         },
         {
             role: 'user',
-            content: `Skills to test: ${skills.join(', ')}
+            content: `[Seed: ${getRandomSeed()}] Skills to test: ${skills.join(', ')}
 
 Question ${questionNumber} of ${totalQuestions}.
 
@@ -664,12 +695,16 @@ For early questions (1-3), ask foundational questions.
 For middle questions (4-7), ask practical and project-based questions.
 For later questions (8+), ask complex scenario-based questions.
 
+IMPORTANT: Be creative. DO NOT ask generic questions like "What is X?" or "Explain Y". 
+Instead, use scenario-based, problem-solving, or design questions.
+Focus on: ${pickRandom(TOPIC_POOLS.concepts, 2).join(', ')}
+
 Return ONLY valid JSON.`
         }
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.8, max_tokens: 2000 });
+        const response = await callCerebras(messages, { temperature: 0.95, max_tokens: 2000 });
         const data = parseJSON(response);
         if (data && data.question) return data;
         return getFallbackQuestion(skills, questionNumber);
@@ -769,16 +804,19 @@ MCQ Results:
 - Score: ${mcqResults.score}%
 - Correct: ${mcqResults.correct}/${mcqResults.total}
 - Passed: ${mcqResults.passed}
+- Question Details: ${JSON.stringify(mcqResults.questionDetails || [])}
 
 Coding Results:
 - Score: ${codingResults.score}%
 - Problems Solved: ${codingResults.solved}/${codingResults.total}
 - Passed: ${codingResults.passed}
+- Problem Details: ${JSON.stringify(codingResults.problemDetails || [])}
 
 SQL Results:
 - Score: ${sqlResults.score}%
 - Problems Solved: ${sqlResults.solved}/${sqlResults.total}
 - Passed: ${sqlResults.passed}
+- Problem Details: ${JSON.stringify(sqlResults.problemDetails || [])}
 
 AI Interview Results:
 - Average Score: ${interviewResults.avgScore}/10
@@ -789,12 +827,26 @@ AI Interview Results:
 Proctoring:
 - Total Violations: ${proctoringViolations}
 
-Generate a comprehensive report. Return ONLY valid JSON.`
+Generate a comprehensive, detailed report. Include:
+1. Question-wise feedback for MCQ (which topics were wrong, why)
+2. Problem-wise feedback for coding (approach, efficiency, code quality)
+3. SQL query feedback (correctness, optimization)
+4. Interview answer feedback (depth, communication, confidence)
+5. Skill-wise assessment with specific scores per skill
+
+Also include:
+- "section_feedback": object with keys "mcq", "coding", "sql", "interview" — each a detailed string paragraph
+- "mcq_question_analysis": array of objects with "question_summary", "correct", "skill", "feedback"
+- "coding_problem_analysis": array of objects with "problem_title", "solved", "feedback", "improvement_tip"
+- "sql_problem_analysis": array of objects with "problem_title", "solved", "feedback", "improvement_tip"
+- "skill_wise_scores": object with skill names as keys and scores (0-100) as values
+
+Return ONLY valid JSON.`
         }
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.5, max_tokens: 4000 });
+        const response = await callCerebras(messages, { temperature: 0.5, max_tokens: 6000 });
         const report = parseJSON(response);
         if (report && report.overall_rating) return report;
         return getDefaultReport();
@@ -821,6 +873,7 @@ function getDefaultReport() {
 module.exports = {
     generateMCQQuestions,
     generateCodingProblems,
+    generateFallbackCoding,
     generateSQLProblems,
     generateInterviewQuestion,
     evaluateInterviewAnswer,

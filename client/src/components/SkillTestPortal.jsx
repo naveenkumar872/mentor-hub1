@@ -44,6 +44,9 @@ export default function SkillTestPortal({ user }) {
     const monitorIntervalRef = useRef(null);
     const logProctoringRef = useRef(null);
 
+    const [modelLoaded, setModelLoaded] = useState(false);
+    const phoneDetectionCooldown = useRef(0); // timestamp of last phone alert
+
     const [model, setModel] = useState(null);
 
     useEffect(() => {
@@ -53,25 +56,41 @@ export default function SkillTestPortal({ user }) {
 
     const loadProctoringModel = async () => {
         try {
-            if (window.cocoSsd) {
-                const m = await window.cocoSsd.load();
-                setModel(m);
-            } else {
-                // Dynamically load scripts
-                const script1 = document.createElement('script');
-                script1.src = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs";
-                document.body.appendChild(script1);
-                script1.onload = () => {
-                    const script2 = document.createElement('script');
-                    script2.src = "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd";
-                    document.body.appendChild(script2);
-                    script2.onload = async () => {
-                        const m = await window.cocoSsd.load();
-                        setModel(m);
-                    };
-                };
+            // Wait for scripts loaded via index.html <script defer>
+            const waitForCocoSsd = () => new Promise((resolve) => {
+                if (window.cocoSsd) return resolve();
+                // Check every 200ms for up to 30 seconds
+                let elapsed = 0;
+                const check = setInterval(() => {
+                    elapsed += 200;
+                    if (window.cocoSsd) { clearInterval(check); resolve(); }
+                    else if (elapsed > 30000) { clearInterval(check); resolve(); } // timeout
+                }, 200);
+            });
+
+            console.log('⏳ Waiting for TensorFlow.js & COCO-SSD scripts...');
+            await waitForCocoSsd();
+
+            if (!window.cocoSsd) {
+                console.error('❌ COCO-SSD scripts failed to load from CDN');
+                return;
             }
-        } catch (e) { console.error("Model load error", e); }
+
+            console.log('📦 Scripts ready. Loading COCO-SSD model weights...');
+            const m = await window.cocoSsd.load({ base: 'mobilenet_v2' }); // More accurate model
+            setModel(m);
+            setModelLoaded(true);
+            console.log('✅ AI Proctoring Model loaded successfully!');
+
+            // Warm-up detection
+            try {
+                const warmupCanvas = document.createElement('canvas');
+                warmupCanvas.width = 64;
+                warmupCanvas.height = 64;
+                await m.detect(warmupCanvas);
+                console.log('🔥 Model warmed up and ready for real-time detection');
+            } catch (e) { }
+        } catch (e) { console.error("Model load error:", e); }
     };
 
 
@@ -90,7 +109,6 @@ export default function SkillTestPortal({ user }) {
             const isFull = !!document.fullscreenElement;
             setIsFullscreen(isFull);
             if (!isFull && activeAttempt && currentView !== 'list' && currentView !== 'report') {
-                // Log fullscreen exit as proctoring event
                 logProctoringRef.current?.('fullscreen_exit', 'Student exited fullscreen mode', 'high');
             }
         };
@@ -112,7 +130,6 @@ export default function SkillTestPortal({ user }) {
                 testStage: currentView,
                 eventType, details, severity
             });
-            // Track stats locally
             setProctoringStats(prev => ({
                 ...prev,
                 violationCount: prev.violationCount + 1,
@@ -121,19 +138,17 @@ export default function SkillTestPortal({ user }) {
                 phoneDetections: eventType === 'phone_detected' ? prev.phoneDetections + 1 : prev.phoneDetections,
                 cameraBlocks: eventType === 'camera_blocked' ? prev.cameraBlocks + 1 : prev.cameraBlocks,
             }));
-            // Show warning overlay
             const warningMessages = {
                 'tab_switch': { title: '⚠️ Tab Switch Detected!', msg: 'Switching tabs is monitored. Return to your test immediately.' },
                 'fullscreen_exit': { title: '⚠️ Fullscreen Exited!', msg: 'You must stay in fullscreen mode. Please re-enter fullscreen.' },
                 'camera_blocked': { title: '📷 Camera Blocked!', msg: 'Your camera appears to be covered or blocked. Please uncover it.' },
-                'phone_detected': { title: '📱 Phone/Object Detected!', msg: 'Suspicious activity detected near camera. Keep your area clear.' },
+                'phone_detected': { title: '📱 Suspicious Activity!', msg: 'Device or object detected near camera. Keep your area clear.' },
             };
             const wm = warningMessages[eventType] || { title: '⚠️ Violation!', msg: details };
             showViolationWarning(wm.title, wm.msg, severity);
         } catch { }
     }, [activeAttempt, currentView, attemptData, showViolationWarning]);
 
-    // Keep ref updated for use in intervals/listeners
     useEffect(() => {
         logProctoringRef.current = logProctoring;
     }, [logProctoring]);
@@ -141,18 +156,11 @@ export default function SkillTestPortal({ user }) {
     // Block Copy/Paste/Right-click
     useEffect(() => {
         if (!activeAttempt || currentView === 'list' || currentView === 'report' || attemptData?.proctoring_enabled === false) return;
-
-        const preventEvent = (e) => {
-            e.preventDefault();
-            // Optional: Log this attempt if strict
-            // logProctoringRef.current?.('paste_attempt', 'Clipboard/Context menu usage blocked', 'low');
-        };
-
+        const preventEvent = (e) => { e.preventDefault(); };
         window.addEventListener('copy', preventEvent);
         window.addEventListener('paste', preventEvent);
         window.addEventListener('cut', preventEvent);
         window.addEventListener('contextmenu', preventEvent);
-
         return () => {
             window.removeEventListener('copy', preventEvent);
             window.removeEventListener('paste', preventEvent);
@@ -189,8 +197,8 @@ export default function SkillTestPortal({ user }) {
 
         // Create hidden canvas for frame analysis
         const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 48;
+        canvas.width = 640;
+        canvas.height = 480;
         const ctx = canvas.getContext('2d');
         canvasRef.current = canvas;
 
@@ -199,61 +207,92 @@ export default function SkillTestPortal({ user }) {
         monitorVideo.srcObject = cameraStream;
         monitorVideo.muted = true;
         monitorVideo.playsInline = true;
-        monitorVideo.play().catch(() => { });
+        monitorVideo.width = 640;
+        monitorVideo.height = 480;
+        monitorVideo.play().catch(e => console.warn("Video play error:", e));
 
-        let lastAvgBrightness = -1;
         let darkFrameCount = 0;
-        let brightChangeCount = 0;
         const DARK_THRESHOLD = 20;
         const DARK_FRAMES_TRIGGER = 3;
-        const BRIGHTNESS_CHANGE = 80;
-        const CHANGE_FRAMES_TRIGGER = 2;
+        const PHONE_COOLDOWN_MS = 8000; // 8 seconds between phone alerts
 
         monitorIntervalRef.current = setInterval(async () => {
             try {
-                if (monitorVideo.readyState < 2) return;
+                if (!monitorVideo || monitorVideo.paused || monitorVideo.ended || monitorVideo.readyState < 2) return;
+                if (!ctx) return;
 
                 // 1. Basic Brightness / Blocked Check
-                ctx.drawImage(monitorVideo, 0, 0, 64, 48);
-                const imageData = ctx.getImageData(0, 0, 64, 48);
-                const data = imageData.data;
-                let totalBrightness = 0;
-                for (let i = 0; i < data.length; i += 4) {
-                    totalBrightness += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-                }
-                const avgBrightness = totalBrightness / (data.length / 4);
-
-                if (avgBrightness < DARK_THRESHOLD) {
-                    darkFrameCount++;
-                    if (darkFrameCount === DARK_FRAMES_TRIGGER) {
-                        logProctoringRef.current?.('camera_blocked', 'Camera appears to be covered', 'high');
+                try {
+                    ctx.drawImage(monitorVideo, 0, 0, 640, 480);
+                    const imageData = ctx.getImageData(0, 0, 640, 480);
+                    const data = imageData.data;
+                    let totalBrightness = 0;
+                    for (let i = 0; i < data.length; i += 16) {
+                        totalBrightness += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+                    }
+                    const avgBrightness = totalBrightness / (data.length / 16);
+                    if (avgBrightness < DARK_THRESHOLD) {
+                        darkFrameCount++;
+                        if (darkFrameCount === DARK_FRAMES_TRIGGER) {
+                            logProctoringRef.current?.('camera_blocked', 'Camera appears to be covered', 'high');
+                            darkFrameCount = 0;
+                        }
+                    } else {
                         darkFrameCount = 0;
                     }
-                } else {
-                    darkFrameCount = 0;
-                }
+                } catch (e) { return; }
 
-                // 2. AI Model Detection (Phone / Person)
-                if (model && monitorVideo.readyState === 4) {
-                    const predictions = await model.detect(monitorVideo);
+                // 2. AI Model Detection (Phone / Person / Objects)
+                if (model && monitorVideo.readyState >= 2) {
+                    try {
+                        const predictions = await model.detect(monitorVideo);
 
-                    /* Debugging AI predictions */
-                    // if (predictions.length) console.log('AI Sees:', predictions);
+                        // Only log non-person detections
+                        const nonPersonDetections = predictions.filter(p => p.class !== 'person');
+                        if (nonPersonDetections.length > 0) {
+                            console.log('🔍 AI:', nonPersonDetections.map(p => `${p.class}(${(p.score * 100).toFixed(0)}%)`).join(', '));
+                        }
 
-                    const phone = predictions.find(p => p.class === 'cell phone' && p.score > 0.6);
-                    if (phone) {
-                        console.warn('VIOLATION DETECTED: Phone', phone);
-                        logProctoringRef.current?.('phone_detected', 'Cell phone detected in frame', 'high');
-                    }
+                        // Standardized Device Detection (Phone, Remote, Laptop group)
+                        // Grouping these as requested by user to count as "Phone" violations
+                        const deviceClasses = ['cell phone', 'remote', 'laptop', 'mouse', 'tablet'];
+                        const deviceObj = predictions.find(p => deviceClasses.includes(p.class) && p.score >= 0.40);
 
-                    const persons = predictions.filter(p => p.class === 'person' && p.score > 0.5);
-                    if (persons.length > 1) {
-                        logProctoringRef.current?.('phone_detected', 'Multiple people detected in frame', 'high');
+                        if (deviceObj) {
+                            const now = Date.now();
+                            if (now - phoneDetectionCooldown.current > PHONE_COOLDOWN_MS) {
+                                phoneDetectionCooldown.current = now;
+                                console.warn(`🚨 SUSPICIOUS DEVICE: ${deviceObj.class} (${(deviceObj.score * 100).toFixed(0)}%)`);
+                                // All these classes map to 'phone_detected' to increment the phone count in UI
+                                logProctoringRef.current?.('phone_detected', `Suspicious activity: ${deviceObj.class} detected (${(deviceObj.score * 100).toFixed(0)}% confidence)`, 'high');
+                            }
+                        }
+
+                        // Suspicious objects (books, keyboards outside of student's own)
+                        const suspiciousObjects = predictions.filter(p =>
+                            ['book', 'keyboard'].includes(p.class) && p.score > 0.45
+                        );
+                        if (suspiciousObjects.length > 0) {
+                            console.warn('⚠️ Suspicious:', suspiciousObjects.map(o => `${o.class}(${(o.score * 100).toFixed(0)}%)`).join(', '));
+                            const now = Date.now();
+                            if (now - phoneDetectionCooldown.current > PHONE_COOLDOWN_MS) {
+                                phoneDetectionCooldown.current = now;
+                                logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
+                            }
+                        }
+
+                        // Multiple people detection
+                        const persons = predictions.filter(p => p.class === 'person' && p.score > 0.35);
+                        if (persons.length > 1) {
+                            logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
+                        }
+                    } catch (e) {
+                        console.warn("Detection error:", e.message);
                     }
                 }
 
             } catch (e) { console.error(e); }
-        }, 2000);
+        }, 500); // Check every 500ms for fast detection
 
         return () => {
             if (monitorIntervalRef.current) {
@@ -325,7 +364,7 @@ export default function SkillTestPortal({ user }) {
     // Enable camera
     const enableCamera = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
             setCameraStream(stream);
             setCameraError('');
             if (videoRef.current) {
@@ -413,8 +452,18 @@ export default function SkillTestPortal({ user }) {
 
     const onStageComplete = async (stage, result) => {
         await loadAttemptData(activeAttempt);
-        // Force re-enter fullscreen as this is a user-initiated action
-        setTimeout(() => enterFullscreen(), 100);
+        // Re-enter fullscreen after stage transition
+        // Use a short delay to let the DOM update
+        setTimeout(() => {
+            if (!document.fullscreenElement) {
+                const target = containerRef.current || document.documentElement;
+                target.requestFullscreen().catch(() => {
+                    // Fullscreen may fail if not triggered by user gesture
+                    // The proctoring bar will show the "Re-enter Fullscreen" button
+                    console.warn('Could not re-enter fullscreen after stage change');
+                });
+            }
+        }, 200);
     };
 
     const goBack = () => {
@@ -539,184 +588,250 @@ export default function SkillTestPortal({ user }) {
         return (
             <div ref={containerRef} style={{
                 minHeight: '100vh', background: '#0f172a', color: '#f1f5f9',
-                position: 'relative', overflow: 'auto'
+                display: 'flex', overflow: 'hidden'
             }}>
-                {/* Camera PIP */}
+                <style>{`@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+
+                {/* Left Sidebar - Camera & Proctoring */}
                 {cameraStream && (
                     <div style={{
-                        position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000,
-                        width: '160px', height: '120px', borderRadius: '12px', overflow: 'hidden',
-                        border: '2px solid #8b5cf6', boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                        width: '260px', minWidth: '260px', background: '#0b1120',
+                        borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column',
+                        padding: '12px', gap: '10px', height: '100vh', position: 'sticky', top: 0
                     }}>
-                        <video ref={el => { if (el && cameraStream) el.srcObject = cameraStream; }}
-                            autoPlay muted playsInline
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
+                        {/* Camera Feed */}
                         <div style={{
-                            position: 'absolute', top: '4px', left: '4px', background: 'rgba(239,68,68,0.9)',
-                            borderRadius: '4px', padding: '1px 6px', fontSize: '9px', color: 'white',
-                            fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px'
+                            width: '100%', aspectRatio: '3/4', borderRadius: '12px', overflow: 'hidden',
+                            border: '2px solid #8b5cf6', boxShadow: '0 4px 20px rgba(139,92,246,0.2)',
+                            background: '#000', position: 'relative'
                         }}>
-                            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'white', animation: 'blink 1s infinite' }} />
-                            REC
+                            <video ref={el => { if (el && cameraStream) el.srcObject = cameraStream; }}
+                                autoPlay muted playsInline
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
+                            <div style={{
+                                position: 'absolute', top: '6px', left: '6px', background: 'rgba(239,68,68,0.9)',
+                                borderRadius: '4px', padding: '2px 8px', fontSize: '10px', color: 'white',
+                                fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px'
+                            }}>
+                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'white', animation: 'blink 1s infinite' }} />
+                                REC
+                            </div>
                         </div>
-                        <style>{`@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+
+                        {/* Proctoring Status Cards */}
+                        <div style={{
+                            background: '#1e293b', borderRadius: '10px', padding: '10px',
+                            border: '1px solid #334155'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: '#94a3b8', marginBottom: '8px' }}>
+                                <Shield size={13} color="#8b5cf6" /> Proctoring
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <div style={{
+                                    padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 600,
+                                    background: modelLoaded ? 'rgba(34,197,94,0.1)' : 'rgba(234,179,8,0.1)',
+                                    color: modelLoaded ? '#22c55e' : '#eab308',
+                                    border: `1px solid ${modelLoaded ? 'rgba(34,197,94,0.2)' : 'rgba(234,179,8,0.2)'}`,
+                                    display: 'flex', alignItems: 'center', gap: '5px'
+                                }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: modelLoaded ? '#22c55e' : '#eab308', boxShadow: `0 0 6px ${modelLoaded ? '#22c55e' : '#eab308'}`, animation: modelLoaded ? 'none' : 'blink 1s infinite' }} />
+                                    {modelLoaded ? '● AI Active' : '◌ AI Loading...'}
+                                </div>
+                                <div style={{
+                                    padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 600,
+                                    background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)',
+                                    display: 'flex', alignItems: 'center', gap: '5px'
+                                }}>
+                                    <Camera size={10} /> Camera ON
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Violation Stats */}
+                        <div style={{
+                            background: '#1e293b', borderRadius: '10px', padding: '10px',
+                            border: '1px solid #334155'
+                        }}>
+                            <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                Monitoring
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <ArrowLeftRight size={10} /> Tab Switches
+                                    </span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: proctoringStats.tabSwitchCount > 0 ? '#fbbf24' : '#64748b' }}>
+                                        {proctoringStats.tabSwitchCount}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <Smartphone size={10} /> Phone
+                                    </span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: proctoringStats.phoneDetections > 0 ? '#fbbf24' : '#64748b' }}>
+                                        {proctoringStats.phoneDetections}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <Maximize size={10} /> FS Exits
+                                    </span>
+                                    <span style={{ fontSize: '12px', fontWeight: 700, color: proctoringStats.fullscreenExits > 0 ? '#fbbf24' : '#64748b' }}>
+                                        {proctoringStats.fullscreenExits}
+                                    </span>
+                                </div>
+                                {proctoringStats.violationCount > 0 && (
+                                    <div style={{
+                                        marginTop: '4px', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
+                                        background: 'rgba(239,68,68,0.1)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.2)',
+                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                        justifyContent: 'center'
+                                    }}>
+                                        <AlertTriangle size={10} /> {proctoringStats.violationCount} Violations
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
 
-                <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-                    {/* Progress Header */}
-                    <div style={{ marginBottom: '24px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#f1f5f9' }}>{attemptData.title}</h2>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {!isFullscreen && (
-                                    <button onClick={enterFullscreen} style={{
-                                        padding: '6px 12px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)',
-                                        borderRadius: '8px', cursor: 'pointer', fontSize: '11px', color: '#fbbf24',
-                                        fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px'
-                                    }}><Maximize size={13} /> Re-enter Fullscreen</button>
-                                )}
-                                <button onClick={goBack} style={{
-                                    padding: '8px 16px', background: '#334155', border: '1px solid #475569',
-                                    borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#94a3b8'
-                                }}>← Exit Test</button>
+                {/* Main Content Area */}
+                <div style={{ flex: 1, overflow: 'auto', height: '100vh' }}>
+                    <div style={{ padding: '12px 20px', paddingBottom: '80px' }}>
+                        {/* Progress Header */}
+                        <div style={{ marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#f1f5f9' }}>{attemptData.title}</h2>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {!isFullscreen && (
+                                        <button onClick={enterFullscreen} style={{
+                                            padding: '6px 12px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)',
+                                            borderRadius: '8px', cursor: 'pointer', fontSize: '11px', color: '#fbbf24',
+                                            fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px'
+                                        }}><Maximize size={13} /> Re-enter Fullscreen</button>
+                                    )}
+                                    <button onClick={goBack} style={{
+                                        padding: '6px 14px', background: '#334155', border: '1px solid #475569',
+                                        borderRadius: '8px', cursor: 'pointer', fontSize: '12px', color: '#94a3b8'
+                                    }}>← Exit Test</button>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Stage Progress Bar */}
-                        <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-                            {stageOrder.map((stage, idx) => {
-                                const stageStatus = attemptData[`${stage}_status`] ||
-                                    (stage === 'interview' ? attemptData.interview_status : 'pending');
-                                let bg = '#334155';
-                                if (stageStatus === 'passed') bg = '#22c55e';
-                                else if (stageStatus === 'failed') bg = '#ef4444';
-                                else if (stageStatus === 'in_progress') bg = '#f59e0b';
-                                else if (idx === currentStageIdx) bg = '#3b82f6';
+                            {/* Stage Progress Bar */}
+                            <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                                {stageOrder.map((stage, idx) => {
+                                    const stageStatus = attemptData[`${stage}_status`] ||
+                                        (stage === 'interview' ? attemptData.interview_status : 'pending');
+                                    let bg = '#334155';
+                                    if (stageStatus === 'passed') bg = '#22c55e';
+                                    else if (stageStatus === 'failed') bg = '#ef4444';
+                                    else if (stageStatus === 'in_progress') bg = '#f59e0b';
+                                    else if (idx === currentStageIdx) bg = '#3b82f6';
 
-                                return (
-                                    <div key={stage} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                        <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: bg }} />
-                                        <span style={{
-                                            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
-                                            color: idx === currentStageIdx ? '#60a5fa' : '#64748b'
-                                        }}>
-                                            {stage === 'mcq' ? 'MCQ' : stage.charAt(0).toUpperCase() + stage.slice(1)}
-                                        </span>
+                                    return (
+                                        <div key={stage} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                                            <div style={{ width: '100%', height: '5px', borderRadius: '3px', background: bg }} />
+                                            <span style={{
+                                                fontSize: '10px', fontWeight: 600, textTransform: 'uppercase',
+                                                color: idx === currentStageIdx ? '#60a5fa' : '#64748b'
+                                            }}>
+                                                {stage === 'mcq' ? 'MCQ' : stage.charAt(0).toUpperCase() + stage.slice(1)}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Proctoring Stats Bar (only when no camera sidebar) */}
+                            {attemptData.proctoring_enabled !== false && !cameraStream && (
+                                <div style={{
+                                    display: 'flex', gap: '10px', padding: '8px 14px', background: '#1e293b',
+                                    borderRadius: '8px', border: '1px solid #334155', flexWrap: 'wrap', alignItems: 'center'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600 }}>
+                                        <Shield size={13} color="#8b5cf6" />
+                                        <span style={{ color: '#94a3b8' }}>Proctoring:</span>
                                     </div>
-                                );
-                            })}
+                                    <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
+                                        <div style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#0f172a', padding: '3px 7px', borderRadius: '6px', border: '1px solid #334155' }}>
+                                            <ArrowLeftRight size={9} /> Tabs: <span style={{ color: proctoringStats.tabSwitchCount > 0 ? '#fbbf24' : '#94a3b8' }}>{proctoringStats.tabSwitchCount}</span>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#0f172a', padding: '3px 7px', borderRadius: '6px', border: '1px solid #334155' }}>
+                                            <Smartphone size={9} /> Phone: <span style={{ color: proctoringStats.phoneDetections > 0 ? '#fbbf24' : '#94a3b8' }}>{proctoringStats.phoneDetections}</span>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px', background: '#0f172a', padding: '3px 7px', borderRadius: '6px', border: '1px solid #334155' }}>
+                                            <Maximize size={9} /> FS: <span style={{ color: proctoringStats.fullscreenExits > 0 ? '#fbbf24' : '#94a3b8' }}>{proctoringStats.fullscreenExits}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Proctoring Stats Bar */}
-                        <div style={{
-                            display: 'flex', gap: '12px', padding: '10px 16px', background: '#1e293b',
-                            borderRadius: '10px', border: '1px solid #334155', flexWrap: 'wrap', alignItems: 'center'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600 }}>
-                                <Shield size={14} color="#8b5cf6" />
-                                <span style={{ color: '#94a3b8' }}>Proctoring:</span>
-                            </div>
+                        {/* Stage Components */}
+                        {
+                            currentView === 'mcq' && (
+                                <SkillMCQTest
+                                    attemptId={activeAttempt}
+                                    attemptData={attemptData}
+                                    onComplete={(result) => onStageComplete('mcq', result)}
+                                    onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
+                                />
+                            )
+                        }
+                        {
+                            currentView === 'coding' && (
+                                <SkillCodingTest
+                                    attemptId={activeAttempt}
+                                    attemptData={attemptData}
+                                    onComplete={(result) => onStageComplete('coding', result)}
+                                    onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
+                                />
+                            )
+                        }
+                        {
+                            currentView === 'sql' && (
+                                <SkillSQLTest
+                                    attemptId={activeAttempt}
+                                    attemptData={attemptData}
+                                    onComplete={(result) => onStageComplete('sql', result)}
+                                    onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
+                                />
+                            )
+                        }
+                        {
+                            currentView === 'interview' && (
+                                <SkillAIInterview
+                                    attemptId={activeAttempt}
+                                    attemptData={attemptData}
+                                    onComplete={(result) => onStageComplete('interview', result)}
+                                    onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
+                                />
+                            )
+                        }
+                    </div>
+                </div>
 
-                            {/* AI Status */}
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
-                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                background: model ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                                color: model ? '#34d399' : '#f87171',
-                                border: `1px solid ${model ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`
-                            }}>
-                                <Eye size={12} />
-                                {model ? 'AI Active' : 'Loading AI...'}
-                            </div>
-
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
-                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                background: proctoringStats.cameraActive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                                color: proctoringStats.cameraActive ? '#34d399' : '#f87171',
-                                border: `1px solid ${proctoringStats.cameraActive ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`
-                            }}>
-                                <Camera size={12} />
-                                {proctoringStats.cameraActive ? 'Camera ON' : 'Camera OFF'}
-                            </div>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
-                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                background: proctoringStats.violationCount > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
-                                color: proctoringStats.violationCount > 0 ? '#f87171' : '#34d399',
-                                border: `1px solid ${proctoringStats.violationCount > 0 ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`
-                            }}>
-                                <AlertTriangle size={12} />
-                                Violations: {proctoringStats.violationCount}
-                            </div>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
-                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                background: proctoringStats.tabSwitchCount > 0 ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.15)',
-                                color: proctoringStats.tabSwitchCount > 0 ? '#fbbf24' : '#94a3b8',
-                                border: `1px solid ${proctoringStats.tabSwitchCount > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(100,116,139,0.3)'}`
-                            }}>
-                                <ArrowLeftRight size={12} />
-                                Tab Switches: {proctoringStats.tabSwitchCount}
-                            </div>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
-                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                background: proctoringStats.phoneDetections > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(100,116,139,0.15)',
-                                color: proctoringStats.phoneDetections > 0 ? '#f87171' : '#94a3b8',
-                                border: `1px solid ${proctoringStats.phoneDetections > 0 ? 'rgba(239,68,68,0.3)' : 'rgba(100,116,139,0.3)'}`
-                            }}>
-                                <Smartphone size={12} />
-                                Phone: {proctoringStats.phoneDetections}
-                            </div>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px',
-                                borderRadius: '12px', fontSize: '11px', fontWeight: 600,
-                                background: proctoringStats.fullscreenExits > 0 ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.15)',
-                                color: proctoringStats.fullscreenExits > 0 ? '#fbbf24' : '#94a3b8',
-                                border: `1px solid ${proctoringStats.fullscreenExits > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(100,116,139,0.3)'}`
-                            }}>
-                                <Maximize size={12} />
-                                FS Exits: {proctoringStats.fullscreenExits}
-                            </div>
+                {/* Violation Warning Overlay */}
+                {violationWarning && (
+                    <div style={{
+                        position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
+                        zIndex: 10000, minWidth: '320px', maxWidth: '400px',
+                        background: violationWarning.severity === 'high' ? '#ef4444' : '#f59e0b',
+                        color: 'white', padding: '20px', borderRadius: '16px',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                        animation: 'slideIn 0.3s ease-out',
+                        display: 'flex', gap: '16px', alignItems: 'flex-start'
+                    }}>
+                        <style>{`
+                            @keyframes slideIn { from { transform: translate(-50%, -40px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+                        `}</style>
+                        <AlertTriangle size={24} style={{ marginTop: '2px' }} />
+                        <div>
+                            <div style={{ fontWeight: 800, fontSize: '18px', marginBottom: '4px' }}>{violationWarning.title}</div>
+                            <div style={{ fontSize: '14px', opacity: 0.9, lineHeight: '1.4' }}>{violationWarning.message}</div>
                         </div>
                     </div>
-
-                    {/* Stage Components */}
-                    {currentView === 'mcq' && (
-                        <SkillMCQTest
-                            attemptId={activeAttempt}
-                            attemptData={attemptData}
-                            onComplete={(result) => onStageComplete('mcq', result)}
-                            onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
-                        />
-                    )}
-                    {currentView === 'coding' && (
-                        <SkillCodingTest
-                            attemptId={activeAttempt}
-                            attemptData={attemptData}
-                            onComplete={(result) => onStageComplete('coding', result)}
-                            onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
-                        />
-                    )}
-                    {currentView === 'sql' && (
-                        <SkillSQLTest
-                            attemptId={activeAttempt}
-                            attemptData={attemptData}
-                            onComplete={(result) => onStageComplete('sql', result)}
-                            onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
-                        />
-                    )}
-                    {currentView === 'interview' && (
-                        <SkillAIInterview
-                            attemptId={activeAttempt}
-                            attemptData={attemptData}
-                            onComplete={(result) => onStageComplete('interview', result)}
-                            onFailed={() => { loadAttemptData(activeAttempt); setCurrentView('report'); }}
-                        />
-                    )}
-                </div>
+                )}
             </div>
         );
     }
@@ -770,7 +885,7 @@ export default function SkillTestPortal({ user }) {
                                         {test.description && <p style={{ margin: '0 0 10px', color: '#94a3b8', fontSize: '13px' }}>{test.description}</p>}
 
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
-                                            {test.skills.map(s => (
+                                            {(test.skills && Array.isArray(test.skills) ? test.skills : []).map(s => (
                                                 <span key={s} style={{ padding: '2px 8px', background: 'rgba(139,92,246,0.15)', color: '#a78bfa', borderRadius: '12px', fontSize: '11px', border: '1px solid rgba(139,92,246,0.25)' }}>{s}</span>
                                             ))}
                                         </div>
