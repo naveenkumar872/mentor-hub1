@@ -580,26 +580,36 @@ int main() {
 //  SQL PROBLEM GENERATION
 // ═══════════════════════════════════════════
 
-async function generateSQLProblems(skills, count = 3) {
+async function generateSQLProblems(skills, count = 3, tableNames = null) {
+    // Use test-specific table names if provided, otherwise fallback to defaults
+    const tables = tableNames || {
+        employees: 'employees',
+        departments: 'departments',
+        projects: 'projects',
+        orders: 'orders'
+    };
+
     const messages = [
         {
             role: 'system',
             content: `You are an expert SQL instructor. Generate SQL problems that can be tested against a sandbox database.
 
 The sandbox database has these tables:
-- employees (id INT, name TEXT, department TEXT, salary DECIMAL, hire_date DATE, manager_id INT)
-- departments (id INT, name TEXT, budget DECIMAL, location TEXT)
-- projects (id INT, name TEXT, department_id INT, start_date DATE, end_date DATE, status TEXT)
-- orders (id INT, customer_name TEXT, product TEXT, quantity INT, price DECIMAL, order_date DATE)
+- ${tables.employees} (id INT, name TEXT, department TEXT, salary DECIMAL, hire_date DATE, manager_id INT)
+- ${tables.departments} (id INT, name TEXT, budget DECIMAL, location TEXT)
+- ${tables.projects} (id INT, name TEXT, department_id INT, start_date DATE, end_date DATE, status TEXT)
+- ${tables.orders} (id INT, customer_name TEXT, product TEXT, quantity INT, price DECIMAL, order_date DATE)
+
+IMPORTANT: Use EXACTLY these table names in your queries and descriptions: ${tables.employees}, ${tables.departments}, ${tables.projects}, ${tables.orders}
 
 Return ONLY a valid JSON array. Each problem must have:
 - "id": number
 - "title": string
-- "description": string (clear problem statement)
+- "description": string (clear problem statement, include the exact table names students should use)
 - "difficulty": "easy" | "medium" | "hard"
 - "hint": string
 - "expected_columns": array of strings (column names in result)
-- "reference_query": string (the correct SQL query)`
+- "reference_query": string (the correct SQL query using the exact table names above)`
         },
         {
             role: 'user',
@@ -607,6 +617,8 @@ Return ONLY a valid JSON array. Each problem must have:
 
 IMPORTANT: Generate completely DIFFERENT problems every time. Avoid repeating common problems like "find employees above average salary" or "count by department".
 Think of creative query scenarios involving: ${pickRandom(['joins', 'subqueries', 'window functions', 'aggregation', 'string functions', 'date functions', 'CASE statements', 'CTEs', 'self-joins', 'UNION', 'HAVING', 'nested queries'], 4).join(', ')}.
+
+Remember: Use these EXACT table names: ${tables.employees}, ${tables.departments}, ${tables.projects}, ${tables.orders}
 
 Return ONLY a valid JSON array.`
         }
@@ -870,6 +882,57 @@ function getDefaultReport() {
     };
 }
 
+/**
+ * Evaluate a student's SQL query against the problem using AI
+ * This avoids running student queries on the real production database
+ */
+async function evaluateSQLQuery(problem, studentQuery) {
+    const messages = [
+        {
+            role: 'system',
+            content: `You are an expert SQL evaluator. Compare a student's SQL query against a reference solution.
+
+The database has tables with the following schemas (table names may include a test prefix like st5_):
+- employees table (id INT, name TEXT, department TEXT, salary DECIMAL, hire_date DATE, manager_id INT)
+- departments table (id INT, name TEXT, budget DECIMAL, location TEXT)
+- projects table (id INT, name TEXT, department_id INT, start_date DATE, end_date DATE, status TEXT)
+- orders table (id INT, customer_name TEXT, product TEXT, quantity INT, price DECIMAL, order_date DATE)
+
+The reference query uses the correct table names. The student's query MUST use the same table names as the reference query.
+
+Evaluate if the student's query would produce the SAME result as the reference query.
+Consider: column names/aliases, filtering logic, joins, grouping, ordering, aggregations, and correct table names.
+Minor differences in style are OK (e.g., different alias names, explicit vs implicit joins) as long as the OUTPUT would be equivalent.
+
+Return ONLY a valid JSON object with:
+- "passed": boolean (true if the query is functionally correct)
+- "feedback": string (detailed explanation of what's right/wrong)
+- "score": number 0-100 (partial credit possible)`
+        },
+        {
+            role: 'user',
+            content: `Problem: ${problem.title || ''}
+Description: ${problem.description || ''}
+Expected columns: ${JSON.stringify(problem.expected_columns || [])}
+Reference query: ${problem.reference_query || 'Not available'}
+
+Student's query: ${studentQuery}
+
+Evaluate if the student's query is correct. Return ONLY valid JSON.`
+        }
+    ];
+
+    try {
+        const response = await callCerebras(messages, { temperature: 0.2, max_tokens: 1500 });
+        const evaluation = parseJSON(response);
+        if (evaluation && typeof evaluation.passed === 'boolean') return evaluation;
+        return { passed: false, feedback: 'Unable to evaluate query. Please try again.', score: 0 };
+    } catch (err) {
+        console.error('SQL evaluation failed:', err.message);
+        return { passed: false, feedback: 'Evaluation service temporarily unavailable.', score: 0 };
+    }
+}
+
 module.exports = {
     generateMCQQuestions,
     generateCodingProblems,
@@ -877,5 +940,6 @@ module.exports = {
     generateSQLProblems,
     generateInterviewQuestion,
     evaluateInterviewAnswer,
+    evaluateSQLQuery,
     generateFinalReport
 };

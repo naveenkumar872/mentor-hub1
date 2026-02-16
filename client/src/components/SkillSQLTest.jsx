@@ -80,7 +80,8 @@ export default function SkillSQLTest({ attemptId, attemptData, onComplete, onFai
         setEvalResult(null);
         try {
             const { data } = await axios.post(`${API}/api/skill-tests/sql/run`, {
-                query: queries[p.id] || ''
+                query: queries[p.id] || '',
+                attemptId
             });
             setRunResult(data);
         } catch (err) {
@@ -376,10 +377,13 @@ orders (id, customer_name, product, quantity, price, order_date)
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: evalResult.passed ? '#34d399' : '#f87171' }}>
                                     {evalResult.passed ? <CheckCircle size={16} color="#22c55e" /> : <XCircle size={16} color="#ef4444" />}
-                                    {evalResult.passed ? 'Query Correct!' : 'Results do not match expected output'}
+                                    {evalResult.passed ? 'Query Correct!' : 'Query Incorrect'}
                                 </div>
-                                {renderTable(evalResult.reference_result, 'Expected Output:', '#22c55e')}
-                                {renderTable(evalResult.student_result, 'Your Output:', '#f87171')}
+                                {evalResult.feedback && (
+                                    <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#cbd5e1', lineHeight: 1.5 }}>
+                                        {evalResult.feedback}
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>

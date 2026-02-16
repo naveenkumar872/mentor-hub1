@@ -38,9 +38,11 @@ export default function SkillTestReport({ attemptId, onBack, initialData = null,
         </div>
     );
     if (error) return <div style={{ textAlign: 'center', padding: '40px', color: '#ef4444' }}>{error}</div>;
-    if (!data || !data.attempt) return <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Report data unavailable</div>;
+    // Handle both nested format (new API) and flat format (legacy/cached)
+    const attempt = data?.attempt || data;
+    const violations = data?.violations || data?.proctoring_logs || [];
 
-    const { attempt, violations } = data;
+    if (!attempt || !attempt.id) return <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Report data unavailable</div>;
     const passed = attempt.overall_status === 'completed';
     // Ensure report is an object
     const report = (attempt.report && typeof attempt.report === 'object') ? attempt.report : {};
@@ -119,15 +121,19 @@ export default function SkillTestReport({ attemptId, onBack, initialData = null,
                         padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
                         background: passed ? '#22c55e' : '#ef4444', color: 'white', marginTop: '8px'
                     }}>
-                        {attempt.overall_status === 'completed' ? 'PASSED' : 'NOT PASSED'}
+                        {attempt.overall_status === 'completed' ? 'PASSED' :
+                            attempt.mcq_status === 'failed' ? 'MCQ FAILED' :
+                                attempt.coding_status === 'failed' ? 'CODING FAILED' :
+                                    attempt.sql_status === 'failed' ? 'SQL FAILED' :
+                                        attempt.interview_status === 'failed' ? 'INTERVIEW FAILED' : 'NOT PASSED'}
                     </span>
                 </div>
 
                 {/* 2. Score Breakdown */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                     {sections.map(s => {
-                        const isPassed = s.status === 'passed';
-                        const isPending = s.status === 'pending';
+                        const isPassed = s.status === 'completed' || s.status === 'passed';
+                        const isPending = !s.status || s.status === 'pending';
                         const val = s.isOutOf10 ? (s.score || 0) * 10 : (s.score || 0); // Normalize for visual
                         return (
                             <div key={s.key} style={{

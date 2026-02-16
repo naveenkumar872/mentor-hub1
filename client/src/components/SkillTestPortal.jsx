@@ -264,7 +264,7 @@ export default function SkillTestPortal({ user }) {
                                 phoneDetectionCooldown.current = now;
                                 console.warn(`🚨 SUSPICIOUS DEVICE: ${deviceObj.class} (${(deviceObj.score * 100).toFixed(0)}%)`);
                                 // All these classes map to 'phone_detected' to increment the phone count in UI
-                                logProctoringRef.current?.('phone_detected', `Suspicious activity: ${deviceObj.class} detected (${(deviceObj.score * 100).toFixed(0)}% confidence)`, 'high');
+                                // logProctoringRef.current?.('phone_detected', `Suspicious activity: ${deviceObj.class} detected (${(deviceObj.score * 100).toFixed(0)}% confidence)`, 'high');
                             }
                         }
 
@@ -277,14 +277,14 @@ export default function SkillTestPortal({ user }) {
                             const now = Date.now();
                             if (now - phoneDetectionCooldown.current > PHONE_COOLDOWN_MS) {
                                 phoneDetectionCooldown.current = now;
-                                logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
+                                // logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
                             }
                         }
 
                         // Multiple people detection
                         const persons = predictions.filter(p => p.class === 'person' && p.score > 0.35);
                         if (persons.length > 1) {
-                            logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
+                            // logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
                         }
                     } catch (e) {
                         console.warn("Detection error:", e.message);
@@ -701,7 +701,7 @@ export default function SkillTestPortal({ user }) {
                         {/* Progress Header */}
                         <div style={{ marginBottom: '12px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#f1f5f9' }}>{attemptData.title}</h2>
+                                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#f1f5f9' }}>{attemptData.test_title || attemptData.title || 'Skill Test'}</h2>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {!isFullscreen && (
                                         <button onClick={enterFullscreen} style={{
@@ -723,7 +723,7 @@ export default function SkillTestPortal({ user }) {
                                     const stageStatus = attemptData[`${stage}_status`] ||
                                         (stage === 'interview' ? attemptData.interview_status : 'pending');
                                     let bg = '#334155';
-                                    if (stageStatus === 'passed') bg = '#22c55e';
+                                    if (stageStatus === 'completed' || stageStatus === 'passed') bg = '#22c55e';
                                     else if (stageStatus === 'failed') bg = '#ef4444';
                                     else if (stageStatus === 'in_progress') bg = '#f59e0b';
                                     else if (idx === currentStageIdx) bg = '#3b82f6';

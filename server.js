@@ -12,7 +12,7 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 const http = require('http');
-const socketIO = require('socket.io');
+const { Server: SocketIOServer } = require('socket.io');
 require('dotenv').config();
 
 // Performance optimization imports
@@ -26,7 +26,7 @@ const PORT = process.env.PORT || 3000;
 
 // Create HTTP server and initialize Socket.io
 const httpServer = http.createServer(app);
-const io = socketIO(httpServer, {
+const io = new SocketIOServer(httpServer, {
     cors: {
         origin: process.env.CORS_ORIGIN || '*',
         methods: ['GET', 'POST'],
@@ -1686,21 +1686,52 @@ app.delete('/api/submissions', async (req, res) => {
 
 // ==================== RUN CODE & SUBMIT API ====================
 
+// Helper: Run code using local subprocess (child_process.spawn)
+function runCodeSubprocess(command, args, stdinData, timeout = 15000) {
+    return new Promise((resolve, reject) => {
+        const { spawn } = require('child_process');
+        const proc = spawn(command, args, {
+            timeout,
+            shell: true,
+            env: { ...process.env, PATH: process.env.PATH }
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        proc.stdout.on('data', (data) => { stdout += data.toString(); });
+        proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+        // Send stdin if provided
+        if (stdinData) {
+            proc.stdin.write(stdinData);
+        }
+        proc.stdin.end();
+
+        proc.on('close', (code) => {
+            resolve({ stdout, stderr, exitCode: code });
+        });
+
+        proc.on('error', (err) => {
+            reject(err);
+        });
+
+        // Kill process if it exceeds timeout
+        setTimeout(() => {
+            try { proc.kill('SIGTERM'); } catch (e) { }
+            reject(new Error('Execution timed out (15 seconds limit)'));
+        }, timeout);
+    });
+}
+
 app.post('/api/run', async (req, res) => {
+    const os = require('os');
+    const tempDir = os.tmpdir();
+    const runId = uuidv4().slice(0, 8);
+    const cleanupFiles = []; // Track files to clean up
+
     try {
         const { code, language, problemId, sqlSchema, stdin } = req.body;
-
-        // Map languages to Piston runtimes
-        const languageMap = {
-            'Python': { language: 'python', version: '3.10.0' },
-            'JavaScript': { language: 'javascript', version: '18.15.0' },
-            'Java': { language: 'java', version: '15.0.2' },
-            'C': { language: 'c', version: '10.2.0' },
-            'C++': { language: 'cpp', version: '10.2.0' },
-            'SQL': { language: 'sqlite3', version: '3.36.0' }
-        };
-
-        const runtime = languageMap[language] || { language: language.toLowerCase(), version: '*' };
 
         // For SQL, prepend the schema to create tables before running the query
         let codeToExecute = code;
@@ -1721,36 +1752,107 @@ app.post('/api/run', async (req, res) => {
             }
         }
 
-        // Piston Execution API
-        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                language: runtime.language,
-                version: runtime.version,
-                files: [
-                    {
-                        content: codeToExecute
-                    }
-                ],
-                stdin: stdin || ''
-            })
-        });
+        let result;
 
-        const data = await response.json();
+        if (language === 'Python') {
+            // --- Python ---
+            const filePath = path.join(tempDir, `run_${runId}.py`);
+            fs.writeFileSync(filePath, codeToExecute);
+            cleanupFiles.push(filePath);
+            result = await runCodeSubprocess('python', [filePath], stdin || '');
 
-        if (data.run) {
-            res.json({
-                output: data.run.output || 'No output detected',
-                status: data.run.code === 0 ? 'success' : 'error'
-            });
+        } else if (language === 'JavaScript') {
+            // --- JavaScript (Node.js) ---
+            const filePath = path.join(tempDir, `run_${runId}.js`);
+            fs.writeFileSync(filePath, codeToExecute);
+            cleanupFiles.push(filePath);
+            result = await runCodeSubprocess('node', [filePath], stdin || '');
+
+        } else if (language === 'C') {
+            // --- C (gcc) ---
+            const srcPath = path.join(tempDir, `run_${runId}.c`);
+            const outPath = path.join(tempDir, `run_${runId}.exe`);
+            fs.writeFileSync(srcPath, codeToExecute);
+            cleanupFiles.push(srcPath, outPath);
+
+            // Compile
+            const compileResult = await runCodeSubprocess('gcc', [srcPath, '-o', outPath], '');
+            if (compileResult.exitCode !== 0) {
+                return res.json({ output: compileResult.stderr || 'Compilation failed', status: 'error' });
+            }
+            // Run
+            result = await runCodeSubprocess(outPath, [], stdin || '');
+
+        } else if (language === 'C++') {
+            // --- C++ (g++) ---
+            const srcPath = path.join(tempDir, `run_${runId}.cpp`);
+            const outPath = path.join(tempDir, `run_${runId}.exe`);
+            fs.writeFileSync(srcPath, codeToExecute);
+            cleanupFiles.push(srcPath, outPath);
+
+            // Compile
+            const compileResult = await runCodeSubprocess('g++', [srcPath, '-o', outPath], '');
+            if (compileResult.exitCode !== 0) {
+                return res.json({ output: compileResult.stderr || 'Compilation failed', status: 'error' });
+            }
+            // Run
+            result = await runCodeSubprocess(outPath, [], stdin || '');
+
+        } else if (language === 'Java') {
+            // --- Java ---
+            // Extract class name from code (look for 'public class ClassName')
+            const classMatch = codeToExecute.match(/public\s+class\s+(\w+)/);
+            const className = classMatch ? classMatch[1] : 'Main';
+            const javaDir = path.join(tempDir, `java_${runId}`);
+            fs.mkdirSync(javaDir, { recursive: true });
+            const srcPath = path.join(javaDir, `${className}.java`);
+            fs.writeFileSync(srcPath, codeToExecute);
+            cleanupFiles.push(javaDir);
+
+            // Compile
+            const compileResult = await runCodeSubprocess('javac', [srcPath], '');
+            if (compileResult.exitCode !== 0) {
+                return res.json({ output: compileResult.stderr || 'Compilation failed', status: 'error' });
+            }
+            // Run
+            result = await runCodeSubprocess('java', ['-cp', javaDir, className], stdin || '');
+
+        } else if (language === 'SQL') {
+            // --- SQL (sqlite3) ---
+            const sqlFile = path.join(tempDir, `run_${runId}.sql`);
+            const dbFile = path.join(tempDir, `run_${runId}.db`);
+            fs.writeFileSync(sqlFile, codeToExecute);
+            cleanupFiles.push(sqlFile, dbFile);
+            result = await runCodeSubprocess('sqlite3', [dbFile], `.read ${sqlFile}\n`);
+
         } else {
-            throw new Error(data.message || 'Execution failed');
+            return res.status(400).json({ error: `Unsupported language: ${language}` });
         }
+
+        // Return the result
+        const output = (result.stdout + result.stderr).trim();
+        res.json({
+            output: output || 'No output detected',
+            status: result.exitCode === 0 ? 'success' : 'error'
+        });
 
     } catch (error) {
         console.error('Run Error:', error);
         res.status(500).json({ error: 'Failed to run code', details: error.message });
+    } finally {
+        // Cleanup temp files
+        for (const f of cleanupFiles) {
+            try {
+                if (fs.existsSync(f)) {
+                    const stat = fs.statSync(f);
+                    if (stat.isDirectory()) {
+                        fs.rmSync(f, { recursive: true, force: true });
+                    } else {
+                        fs.unlinkSync(f);
+                    }
+                }
+            } catch (e) { /* ignore cleanup errors */ }
+        }
     }
 });
 
