@@ -799,16 +799,24 @@ app.post('/api/submissions/ml-task', async (req, res) => {
 
         // 3. Call AI
         let aiResult = { score: 0, feedback: "Evaluation active but result parsing failed.", status: "accepted", metrics: {} };
+        let aiContent = '';
         try {
             const completion = await cerebrasChat([
-                { role: 'system', content: 'You are an AI evaluator for ML coding tasks. Respond with JSON only.' },
+                { role: 'system', content: 'You are an AI evaluator for ML coding tasks. Respond with valid JSON only. Ensure all property keys and string values are properly escaped.' },
                 { role: 'user', content: systemPrompt }
-            ], { temperature: 0.2 });
+            ], {
+                temperature: 0.2,
+                max_tokens: 4000,
+                response_format: { type: 'json_object' }
+            });
 
-            const aiContent = completion.choices?.[0]?.message?.content || '';
-            const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                aiResult = JSON.parse(jsonMatch[0]);
+            aiContent = completion.choices?.[0]?.message?.content || '';
+            const jsonStartIndex = aiContent.indexOf('{');
+            const jsonEndIndex = aiContent.lastIndexOf('}');
+
+            if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
+                const jsonStr = aiContent.substring(jsonStartIndex, jsonEndIndex + 1);
+                aiResult = JSON.parse(jsonStr);
                 // Map metrics to breakdown for consistency if needed, or send as is
                 aiResult.breakdown = aiResult.metrics;
                 aiResult.feedback = aiResult.detailed_feedback; // For backward compatibility with DB column
@@ -817,6 +825,7 @@ app.post('/api/submissions/ml-task', async (req, res) => {
             }
         } catch (aiErr) {
             console.error('AI Eval Error:', aiErr.message);
+            console.error('Raw AI Content causing error:', aiContent);
             aiResult = {
                 score: 50,
                 summary: "AI Evaluation Service Error. The system could not complete the automated review.",
