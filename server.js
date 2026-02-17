@@ -1,4 +1,5 @@
 const express = require('express');
+require('dotenv').config();
 // Triggering server reload to register new routes
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -13,7 +14,6 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 const http = require('http');
 const { Server: SocketIOServer } = require('socket.io');
-require('dotenv').config();
 
 // Performance optimization imports
 const { paginatedResponse } = require('./utils/pagination');
@@ -105,7 +105,7 @@ async function cerebrasChat(messages, options = {}) {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: options.model || 'llama-3.3-70b',
+                    model: options.model || 'gpt-oss-120b',
                     messages: messages,
                     temperature: options.temperature || 0.7,
                     max_tokens: options.max_tokens || 1024,
@@ -194,14 +194,11 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Import and mount skill test routes AFTER middleware
 const skillTestRoutes = require('./skill_test_routes');
 skillTestRoutes(app, pool);
-
-app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================== AUTH ROUTES ====================
 
@@ -939,7 +936,7 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                         { role: 'system', content: 'You are a plagiarism detection system. Analyze code for copying.' },
                         { role: 'user', content: plagiarismPrompt }
                     ], {
-                        model: 'llama-3.3-70b',
+                        model: 'gpt-oss-120b',
                         temperature: 0.1,
                         max_tokens: 300,
                         response_format: { type: 'json_object' }
@@ -1187,7 +1184,7 @@ Scoring Guide:
                     { role: 'system', content: 'You are an expert code evaluator. Be fair but thorough.' },
                     { role: 'user', content: evaluationPrompt }
                 ], {
-                    model: 'llama-3.3-70b',
+                    model: 'gpt-oss-120b',
                     temperature: 0.2,
                     max_tokens: 800,
                     response_format: { type: 'json_object' }
@@ -1589,7 +1586,7 @@ Respond in this exact JSON format:
                 const aiResponse = await cerebrasChat([
                     { role: 'user', content: evaluationPrompt }
                 ], {
-                    model: 'llama-3.3-70b',
+                    model: 'gpt-oss-120b',
                     temperature: 0.3,
                     max_tokens: 1000
                 });
@@ -2026,7 +2023,7 @@ app.post('/api/hints', async (req, res) => {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `${problemContext}\n\nCode (${language}):\n${code}` }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             temperature: 0.7,
             max_tokens: 800,
             response_format: { type: 'json_object' }
@@ -2059,7 +2056,7 @@ app.post('/api/ai/generate-problem', async (req, res) => {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             response_format: { type: 'json_object' }
         });
 
@@ -2087,7 +2084,7 @@ app.post('/api/ai/chat', async (req, res) => {
             { role: 'system', content: systemPrompt },
             ...messages
         ], {
-            model: 'llama-3.3-70b'
+            model: 'gpt-oss-120b'
         });
 
         const response = chatCompletion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
@@ -2128,7 +2125,7 @@ Rules:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Generate ${numQuestions} aptitude questions about: ${topic || 'logical reasoning, number series, verbal ability'}` }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             response_format: { type: 'json_object' }
         });
 
@@ -3227,7 +3224,7 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: `Analyze this detailed submission data and provide insights for EACH question:\n\n${questionsContext}` }
                 ], {
-                    model: 'llama-3.3-70b',
+                    model: 'gpt-oss-120b',
                     temperature: 0.7,
                     max_tokens: 4000,
                     response_format: { type: 'json_object' }
@@ -4318,7 +4315,7 @@ Respond in JSON format:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Schema:\n${schema}` }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             temperature: 0.1,
             max_tokens: 1500,
             response_format: { type: 'json_object' }
@@ -4363,7 +4360,7 @@ Respond in JSON format:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             temperature: 0.2,
             max_tokens: 1500,
             response_format: { type: 'json_object' }
@@ -4558,7 +4555,7 @@ Provide a JSON response with:
             const aiResponse = await cerebrasChat([
                 { role: 'system', content: 'You are an educational performance analyst. Provide constructive, actionable insights.' },
                 { role: 'user', content: insightPrompt }
-            ], { model: 'llama-3.3-70b', temperature: 0.3, response_format: { type: 'json_object' } });
+            ], { model: 'gpt-oss-120b', temperature: 0.3, response_format: { type: 'json_object' } });
 
             aiInsights = JSON.parse(aiResponse.choices[0]?.message?.content || '{}');
         } catch (e) {
@@ -4700,7 +4697,7 @@ Guidelines:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Topic: ${topic}\nDifficulty: ${difficulty}\nLanguage: ${language}` }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             temperature: 0.7,
             max_tokens: 2000,
             response_format: { type: 'json_object' }
@@ -4754,7 +4751,7 @@ Guidelines:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Topic: ${topic}\nDifficulty: ${difficulty}` }
         ], {
-            model: 'llama-3.3-70b',
+            model: 'gpt-oss-120b',
             temperature: 0.7,
             max_tokens: 2000,
             response_format: { type: 'json_object' }

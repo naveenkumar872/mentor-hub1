@@ -144,36 +144,7 @@ const translations = {
         submissions_subtitle: 'View your submission history and reports',
         my_mentor: 'My Mentor',
 
-        // Portal Titles & Subtitles
-        system_overview: 'System Overview',
-        system_administration: 'System Administration',
-        mentor_student_assignments: 'Mentor-Student assignments',
-        student_leaderboard: 'Student Leaderboard',
-        top_performers: 'Top performers',
-        mentor_leaderboard: 'Mentor Leaderboard',
-        mentor_activity: 'Mentor activity',
-        platform_wide_submissions: 'Platform-wide submissions',
-        tasks_visible_all: 'Tasks visible to all users',
-        coding_challenges_all: 'Coding challenges for everyone',
-        manage_aptitude_tests: 'Manage aptitude tests for all students',
-        global_tests_subtitle: 'Aptitude, Verbal, Logical, Coding, SQL – create and manage',
-        global_live_monitoring: 'Global Live Monitoring',
-        monitor_all_subtitle: 'Monitor all mentors, students, and proctoring alerts',
-        admin_ops_subtitle: 'Bulk operations, backups, exports, audit logs & system health',
-        upload_ml_tasks: 'Upload ML Tasks',
-        ml_tasks: 'ML Tasks',
-        create_ml_tasks_subtitle: 'Create machine learning tasks for students',
-        create_problems_subtitle: 'Create coding/SQL problems',
-        student_rankings: 'Student rankings',
-        review_student_work: 'Review student work with AI evaluation',
-        live_student_monitoring: 'Live Student Monitoring',
-        realtime_activity_subtitle: 'Real-time student activity and proctoring alerts',
-        welcome_back_name: 'Welcome back, {name}!',
-        ml_tasks_subtitle: 'Machine Learning tasks to complete',
-        solve_coding_subtitle: 'Solve coding and SQL problems',
-        aptitude_subtitle: 'Test your reasoning and analytical skills',
-        global_tests_student_subtitle: 'Aptitude, Verbal, Logical, Coding, SQL',
-        submissions_subtitle: 'View your submission history and reports',
+
 
 
         // Accessibility
