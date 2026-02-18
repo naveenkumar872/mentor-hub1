@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, Award, List, Search, Send, Activity, CheckCircle, Check, TrendingUp, Clock, Globe, FileCode, Plus, X, Code, ChevronRight, Upload, AlertTriangle, Zap, Target, Sparkles, Bot, Wand2, Eye, FileText, BarChart2, RefreshCw, Calendar, HelpCircle, Trash2, Save, Brain, XCircle, Shield, Download, ClipboardList, Settings, Database, Mail, MessageSquare, Github, ExternalLink, BarChart3, Video } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts'
 import DashboardLayout from '../components/DashboardLayout'
 import { AIChatbot, AIFloatingButton } from '../components/AIChatbot'
@@ -5978,19 +5978,26 @@ function AdminAnalyticsDashboard() {
     const [plagiarism, setPlagiarism] = useState(null)
     const [timeToSolve, setTimeToSolve] = useState(null)
     const [topicAnalysis, setTopicAnalysis] = useState(null)
+    const [proctoring, setProctoring] = useState(null)
+    const [studentStats, setStudentStats] = useState(null)
     const [loading, setLoading] = useState(true)
     const [exporting, setExporting] = useState(false)
+    const [searchStudent, setSearchStudent] = useState('')
 
     useEffect(() => {
         setLoading(true)
         Promise.all([
             axios.get(`${API_BASE}/analytics/plagiarism`),
             axios.get(`${API_BASE}/analytics/time-to-solve`),
-            axios.get(`${API_BASE}/analytics/topics`)
-        ]).then(([pRes, tRes, taRes]) => {
+            axios.get(`${API_BASE}/analytics/topics`),
+            axios.get(`${API_BASE}/proctoring/analytics`).catch(() => ({ data: null })),
+            axios.get(`${API_BASE}/proctoring/analytics/by-student`).catch(() => ({ data: null }))
+        ]).then(([pRes, tRes, taRes, prRes, ssRes]) => {
             setPlagiarism(pRes.data)
             setTimeToSolve(tRes.data)
             setTopicAnalysis(taRes.data)
+            setProctoring(prRes.data)
+            setStudentStats(ssRes.data)
             setLoading(false)
         }).catch(err => { console.error(err); setLoading(false) })
     }, [])
@@ -6018,6 +6025,8 @@ function AdminAnalyticsDashboard() {
         { id: 'overview', label: t('topic_analysis'), icon: <BarChart2 size={16} /> },
         { id: 'plagiarism', label: t('plagiarism_detection'), icon: <Shield size={16} /> },
         { id: 'time-to-solve', label: t('time_to_solve'), icon: <Clock size={16} /> },
+        { id: 'proctoring', label: '🎥 Proctoring', icon: <Video size={16} /> },
+        { id: 'student-stats', label: '👥 Student Stats', icon: <Users size={16} /> },
         { id: 'export', label: t('export_report'), icon: <Download size={16} /> }
     ]
 
@@ -6274,6 +6283,300 @@ function AdminAnalyticsDashboard() {
                     </div>
                 </div>
             )}
+
+            {/* PROCTORING ANALYTICS TAB */}
+            {activeTab === 'proctoring' && proctoring && proctoring.analytics ? (
+                <div>
+                    {/* Info Box - What This Tab Means */}
+                    <div style={{ padding: '1rem', borderRadius: '12px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: '1.5rem' }}>
+                        <strong style={{ color: '#3b82f6' }}>📊 PROCTORING TAB EXPLANATION:</strong>
+                        <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                            <li><strong>Total Sessions</strong> = How many exams were taken with proctoring enabled (last 30 days)</li>
+                            <li><strong>Completed</strong> = How many exams finished without critical issues</li>
+                            <li><strong>Flagged</strong> = How many exams had violations (tab switches, camera blocked, phone detected, copy attempts)</li>
+                            <li><strong>Avg Score</strong> = Average violation intensity (0 = clean, 100 = severe violations)</li>
+                        </ul>
+                    </div>
+
+                    {/* Main Stats Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #3b82f6' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>📹 Total Sessions</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#3b82f6' }}>{proctoring.analytics.totalSessions || 0}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Total exams with proctoring</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #10b981' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>🟢 Completed</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#10b981' }}>{proctoring.analytics.completedSessions || 0}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Exams completed cleanly</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #f59e0b' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>⚠️ Flagged</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f59e0b' }}>{proctoring.analytics.flaggedSessions || 0}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Exams with violations</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #ef4444' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>🚨 Avg Score</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ef4444' }}>{Math.round(proctoring.analytics.averageViolationScore || 0)}/100</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>0=clean, 100=severe</div>
+                        </div>
+                    </div>
+
+                    {/* Violations By Type + Severity Distribution */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><AlertTriangle size={18} /> Violations by Type</h3>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,159,64,0.08)' }}>
+                                <strong>What each violation means:</strong>
+                                <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.2rem', lineHeight: '1.5' }}>
+                                    <li><strong>TABSWITCHES</strong> - Student left exam tab (tried to look at other tabs) = 🚨 Cheating Sign</li>
+                                    <li><strong>CAMERABLOCKED</strong> - Student's camera was covered/blocked = 🚨 Cannot verify identity</li>
+                                    <li><strong>PHONEDETECTION</strong> - Phone detected near desk = 🚨 Could use for cheating</li>
+                                    <li><strong>COPYPASTE</strong> - Tried to copy code = 🚨 Using external code</li>
+                                </ul>
+                            </div>
+                            {proctoring.analytics.violationsByType && Object.entries(proctoring.analytics.violationsByType).length > 0 ? (
+                                Object.entries(proctoring.analytics.violationsByType).sort((a, b) => b[1] - a[1]).map(([type, count], i) => {
+                                    const colors = ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981']
+                                    const color = colors[i % colors.length]
+                                    return (
+                                        <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', borderRadius: '10px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 700, fontSize: '0.9rem', textTransform: 'uppercase' }}>{type}</div>
+                                            </div>
+                                            <div style={{ height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden', flex: 1 }}>
+                                                <div style={{ height: '100%', width: `${Math.min(count / Math.max(...Object.values(proctoring.analytics.violationsByType)) * 100, 100)}%`, borderRadius: '4px', background: color }} />
+                                            </div>
+                                            <span style={{ fontWeight: 700, fontSize: '0.85rem', width: '40px', textAlign: 'right', color: color }}>{count}</span>
+                                        </div>
+                                    )
+                                })
+                            ) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem' }}>No violations data</div>}
+                        </div>
+
+                        <div className="dashboard-panel">
+                            <h3 className="panel-title"><Zap size={18} /> Severity Distribution</h3>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(34,197,94,0.08)' }}>
+                                <strong>Status meanings:</strong>
+                                <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.2rem', lineHeight: '1.5' }}>
+                                    <li><strong>✅ APPROVED</strong> - Student exam is clean, no violations</li>
+                                    <li><strong>⚠️ REQUIRES_REVIEW</strong> - Some violations, admin review needed</li>
+                                    <li><strong>❌ REJECTED_FLAGGED</strong> - Serious violations, exam flagged for rejection</li>
+                                </ul>
+                            </div>
+                            {proctoring.analytics.severityDistribution ? (
+                                ['APPROVED', 'REQUIRES_REVIEW', 'REJECTED_FLAGGED'].map((status, i) => {
+                                    const count = proctoring.analytics.severityDistribution[status] || 0
+                                    const colors = ['#10b981', '#f59e0b', '#ef4444']
+                                    const color = colors[i]
+                                    const icons = ['✅', '⚠️', '❌']
+                                    return (
+                                        <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem', borderRadius: '10px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+                                            <span style={{ fontSize: '1.5rem' }}>{icons[i]}</span>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{status.replace(/_/g, ' ')}</div>
+                                            </div>
+                                            <div style={{ height: '8px', borderRadius: '4px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden', flex: 1 }}>
+                                                <div style={{ height: '100%', width: `${count / (proctoring.analytics.totalSessions || 1) * 100}%`, borderRadius: '4px', background: color }} />
+                                            </div>
+                                            <span style={{ fontWeight: 700, fontSize: '0.85rem', width: '40px', textAlign: 'right', color }}>{count}</span>
+                                        </div>
+                                    )
+                                })
+                            ) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem' }}>No severity data</div>}
+                        </div>
+                    </div>
+
+                    {/* Session Summary Card */}
+                    <div className="dashboard-panel">
+                        <h3 className="panel-title"><Video size={18} /> Proctoring Summary</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                            <div style={{ padding: '1rem', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Total Violations</div>
+                                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#ef4444' }}>{proctoring.analytics.totalViolations || 0}</div>
+                            </div>
+                            <div style={{ padding: '1rem', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Active Sessions</div>
+                                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#3b82f6' }}>{proctoring.analytics.activeSessions || 0}</div>
+                            </div>
+                            <div style={{ padding: '1rem', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Avg Score</div>
+                                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#f59e0b' }}>{Math.round(proctoring.analytics.averageViolationScore || 0)}</div>
+                            </div>
+                            <div style={{ padding: '1rem', borderRadius: '10px', background: 'var(--bg-secondary)' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Flagged Rate</div>
+                                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#8b5cf6' }}>{proctoring.analytics.totalSessions ? Math.round(proctoring.analytics.flaggedSessions / proctoring.analytics.totalSessions * 100) : 0}%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Info Message */}
+                    <div style={{ padding: '1rem', borderRadius: '12px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '1rem' }}>
+                        <strong style={{ color: '#3b82f6' }}>💡 HOW TO USE THIS TAB:</strong>
+                        <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.5rem', lineHeight: '1.6' }}>
+                            <li><strong>Total Sessions:</strong> Check if students are taking proctored exams</li>
+                            <li><strong>Flagged Rate:</strong> See what % of exams have violations (higher = more cheating)</li>
+                            <li><strong>Top Violation Type:</strong> If CAMERABLOCKED is high, fix camera setup. If TABSWITCHES is high, remind students to stay in exam.</li>
+                            <li><strong>Severity Distribution:</strong> See how many exams need review vs. rejection</li>
+                            <li><strong>Action:</strong> Use "Student Stats" tab to review individual student violations and approve/reject their exams.</li>
+                        </ul>
+                    </div>
+                </div>
+            ) : activeTab === 'proctoring' && !proctoring ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Video size={40} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
+                    <p>Proctoring data loading...</p>
+                </div>
+            ) : activeTab === 'proctoring' ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Video size={40} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
+                    <p>No proctoring data available yet. Run exams with proctoring enabled to see analytics.</p>
+                </div>
+            ) : null}
+
+            {/* STUDENT STATISTICS TAB */}
+            {activeTab === 'student-stats' && studentStats && studentStats.students ? (
+                <div>
+                    {/* Info Box - What This Tab Means */}
+                    <div style={{ padding: '1rem', borderRadius: '12px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', marginBottom: '1.5rem' }}>
+                        <strong style={{ color: '#3b82f6' }}>👥 STUDENT STATS TAB EXPLANATION:</strong>
+                        <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                            <li><strong>Total Students</strong> = How many students took proctored exams</li>
+                            <li><strong>Clean Students</strong> = Students with ZERO violations (no cheating signs)</li>
+                            <li><strong>Flagged Students</strong> = Students with violations detected (needs review)</li>
+                            <li><strong>Repeat Violators</strong> = Students with 2+ flagged exams (serious cases)</li>
+                            <li><strong>Status Badges:</strong> ✅ CLEAN = no violations | ⚡ CAUTION = 1 violation | ⚠️ FLAGGED = multiple violations | 🚨 REPEAT = 2+ violations</li>
+                        </ul>
+                    </div>
+
+                    {/* Search Bar */}
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <input 
+                            type="text" 
+                            placeholder="🔍 Search student name or ID..." 
+                            value={searchStudent}
+                            onChange={(e) => setSearchStudent(e.target.value)}
+                            style={{
+                                width: '100%',
+                                maxWidth: '400px',
+                                padding: '0.75rem 1rem',
+                                borderRadius: '10px',
+                                border: '2px solid var(--border-color)',
+                                background: 'var(--card-bg)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.9rem'
+                            }}
+                        />
+                    </div>
+
+                    {/* Summary Stats */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #3b82f6' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>👥 Total Students</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#3b82f6' }}>{studentStats.totalStudents || 0}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Took proctored exams</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #10b981' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>✅ Clean Students</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#10b981' }}>{studentStats.students.filter(s => s.flagged_exams === 0).length}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Zero violations</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #f59e0b' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>⚠️ Flagged Students</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f59e0b' }}>{studentStats.students.filter(s => s.flagged_exams > 0).length}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Has violations</div>
+                        </div>
+                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #ef4444' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>🚨 Repeat Violators</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ef4444' }}>{studentStats.students.filter(s => s.flagged_exams >= 2).length}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>2+ flagged exams</div>
+                        </div>
+                    </div>
+
+                    {/* Top Violators */}
+                    {studentStats.topViolators && studentStats.topViolators.length > 0 && (
+                        <div className="dashboard-panel" style={{ marginBottom: '1.5rem' }}>
+                            <h3 className="panel-title"><AlertTriangle size={18} /> 🚨 Top 10 Violators</h3>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.08)' }}>
+                                <strong>How to read violation numbers (e.g., "2011"):</strong> First digit = tab switches | Second digit = copy/paste attempts | Third digit = camera blocked | Fourth digit = phone detected. Example: "2011" = 2 tabs + 0 copy + 1 camera + 1 phone
+                            </div>
+                            {studentStats.topViolators.map((student, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', borderRadius: '8px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{i + 1}. {student.student_name}</div>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{student.total_exams} exams | Avg Score: {student.avg_score}/100</div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 700, color: '#ef4444' }}>{student.flagged_exams} flagged</span>
+                                        <span style={{ padding: '0.3rem 0.8rem', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700, background: student.status.includes('CLEAN') ? 'rgba(16,185,129,0.2)' : student.status.includes('REPEAT') ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)', color: student.status.includes('CLEAN') ? '#10b981' : student.status.includes('REPEAT') ? '#f59e0b' : '#ef4444' }}>{student.status}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* All Students Table */}
+                    <div className="dashboard-panel">
+                        <h3 className="panel-title"><Users size={18} /> All Students ({searchStudent ? studentStats.students.filter(s => s.student_name.toLowerCase().includes(searchStudent.toLowerCase()) || s.student_id.toLowerCase().includes(searchStudent.toLowerCase())).length : studentStats.students.length})</h3>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                <thead><tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                    <th style={{ textAlign: 'left', padding: '0.6rem' }}>Student Name</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>Exams</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>Flagged</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>Pass Rate</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>Avg Score</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>Violations</th>
+                                    <th style={{ textAlign: 'center', padding: '0.6rem' }}>Status</th>
+                                </tr></thead>
+                                <tbody>
+                                    {studentStats.students
+                                        .filter(s => !searchStudent || s.student_name.toLowerCase().includes(searchStudent.toLowerCase()) || s.student_id.toLowerCase().includes(searchStudent.toLowerCase()))
+                                        .map((student, i) => (
+                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                            <td style={{ padding: '0.6rem', fontWeight: 600 }}>
+                                                <div>{student.student_name}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{student.student_id}</div>
+                                            </td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{student.total_exams}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600, color: student.flagged_exams > 0 ? '#ef4444' : '#10b981' }}>{student.flagged_exams}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                <span style={{ padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: student.pass_rate >= 80 ? 'rgba(16,185,129,0.12)' : student.pass_rate >= 50 ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)', color: student.pass_rate >= 80 ? '#10b981' : student.pass_rate >= 50 ? '#f59e0b' : '#ef4444' }}>{student.pass_rate}%</span>
+                                            </td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 700, color: student.avg_score >= 60 ? '#ef4444' : student.avg_score >= 30 ? '#f59e0b' : '#10b981' }}>{student.avg_score}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{student.total_violations}</td>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                <span style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 700, background: student.status.includes('CLEAN') ? 'rgba(16,185,129,0.15)' : student.status.includes('REPEAT') ? 'rgba(245,158,11,0.15)' : student.status.includes('DEFINITE') ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)', color: student.status.includes('CLEAN') ? '#10b981' : student.status.includes('REPEAT') ? '#f59e0b' : student.status.includes('DEFINITE') ? '#ef4444' : '#3b82f6' }}>{student.status}</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Info Card */}
+                    <div style={{ padding: '1rem', borderRadius: '12px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '1rem' }}>
+                        <strong style={{ color: '#3b82f6' }}>💡 Understanding Student Data:</strong>
+                        <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.5rem', lineHeight: '1.6' }}>
+                            <li><strong>Violations Code:</strong> 4-digit number (e.g., 2011) = Tabs | Copy | Camera | Phone counts</li>
+                            <li><strong>Status Meanings:</strong> ✅ CLEAN (0 violations) | ⚡ CAUTION (1 violation) | ⚠️ FLAGGED (multiple violations) | 🚨 REPEAT VIOLATOR (2+ flagged exams)</li>
+                            <li><strong>Avg Score:</strong> 0-30 = low violations | 30-60 = medium | 60+ = serious violations</li>
+                            <li><strong>Action:</strong> Review ⚠️ and 🚨 students. Approve clean exams, reject serious violations.</li>
+                        </ul>
+                    </div>
+                </div>
+            ) : activeTab === 'student-stats' && !studentStats ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Users size={40} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
+                    <p>Student statistics loading...</p>
+                </div>
+            ) : activeTab === 'student-stats' ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Users size={40} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
+                    <p>No student proctoring data available yet. Students need to complete exams with proctoring enabled.</p>
+                </div>
+            ) : null}
 
             {/* EXPORT TAB */}
             {activeTab === 'export' && (

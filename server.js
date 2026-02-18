@@ -19,6 +19,9 @@ const { Server: SocketIOServer } = require('socket.io');
 const { paginatedResponse } = require('./utils/pagination');
 const { cacheManager } = require('./utils/cache');
 
+// Plagiarism detection import
+const plagiarismDetector = require('./plagiarism_detector');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -7108,6 +7111,964 @@ io.on('connection', (socket) => {
         console.error(`❌ Socket error: ${error}`);
     });
 });
+
+// ==================== PLAGIARISM DETECTION ROUTES ====================
+
+/**
+ * API Endpoints for AI-Powered Plagiarism Detection
+ * Location: Admin Dashboard, Mentor Portal (for their students)
+ */
+
+// Analyze single submission for plagiarism
+app.post('/api/plagiarism/analyze/:submissionId', async (req, res) => {
+    try {
+        const submissionId = req.params.submissionId;
+        const { compareProblemOnly = true } = req.body;
+
+        // Get the submission
+        const [submissions] = await pool.query('SELECT * FROM submissions WHERE id = ?', [submissionId]);
+        if (submissions.length === 0) return res.status(404).json({ error: 'Submission not found' });
+
+        const submission = submissions[0];
+
+        // Get comparison submissions
+        let compareSubmissions = [];
+        if (compareProblemOnly && submission.problem_id) {
+            // Compare only with submissions for the same problem
+            const [subs] = await pool.query(
+                `SELECT s.id, s.student_id, s.code, u.name as student_name, s.submitted_at 
+                 FROM submissions s
+                 JOIN users u ON s.student_id = u.id
+                 WHERE s.problem_id = ? AND s.language = ? AND s.student_id != ?
+                 ORDER BY s.submitted_at DESC`,
+                [submission.problem_id, submission.language, submission.student_id]
+            );
+            compareSubmissions = subs;
+        } else {
+            // Compare with all submissions of the same language (cross-problem)
+            const [subs] = await pool.query(
+                `SELECT s.id, s.student_id, s.code, u.name as student_name, s.submitted_at 
+                 FROM submissions s
+                 JOIN users u ON s.student_id = u.id
+                 WHERE s.language = ? AND s.student_id != ? AND s.code IS NOT NULL
+                 ORDER BY s.submitted_at DESC LIMIT 50`,
+                [submission.language, submission.student_id]
+            );
+            compareSubmissions = subs;
+        }
+
+        // Run plagiarism analysis
+        const plagiarismResult = plagiarismDetector.analyzePlgiarismBatch(
+            submission,
+            compareSubmissions,
+            70 // similarity threshold
+        );
+
+        // Calculate suspicion score
+        const suspicionScore = plagiarismDetector.calculateSuspicionScore(
+            plagiarismResult,
+            {
+                multipleLanguages: false,
+                quickSubmission: false,
+                unusualVariableNames: false,
+                perfectFormatting: false
+            }
+        );
+
+        // Generate report
+        const report = plagiarismDetector.generateReport(plagiarismResult, suspicionScore);
+
+        // Save to database
+        const reportId = `pr-${uuidv4().slice(0, 12)}`;
+        const plagiarismReportData = JSON.stringify({
+            similarities: plagiarismResult.similarities,
+            topMatches: plagiarismResult.suspiciousMatches.slice(0, 5),
+            details: plagiarismResult
+        });
+
+        await pool.query(
+            `INSERT INTO plagiarism_reports (
+                id, submission_id, student_id, problem_id, suspicion_score, 
+                intensity, flagged, max_similarity, suspicious_match_count, 
+                recommendation, report_data
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                reportId, submission.id, submission.student_id, submission.problem_id,
+                suspicionScore, report.intensity, suspicionScore >= 70 ? 1 : 0,
+                plagiarismResult.maxSimilarity, plagiarismResult.suspiciousMatches.length,
+                report.recommendation.action, plagiarismReportData
+            ]
+        );
+
+        // Update submission with plagiarism score
+        await pool.query(
+            `UPDATE submissions SET plagiarism_score = ?, flagged_submission = ?, plagiarism_intensity = ? 
+             WHERE id = ?`,
+            [
+                suspicionScore,
+                suspicionScore >= 70 ? 1 : 0,
+                report.intensity,
+                submission.id
+            ]
+        );
+
+        res.json({
+            reportId,
+            submissionId,
+            suspicionScore,
+            intensity: report.intensity,
+            flagged: suspicionScore >= 70,
+            maxSimilarity: plagiarismResult.maxSimilarity,
+            suspiciousMatches: plagiarismResult.suspiciousMatches.length,
+            topMatches: plagiarismResult.suspiciousMatches.slice(0, 5),
+            recommendation: report.recommendation,
+            analysis: plagiarismResult
+        });
+
+    } catch (error) {
+        console.error('Plagiarism Analysis Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get plagiarism report for submission
+app.get('/api/plagiarism/report/:reportId', async (req, res) => {
+    try {
+        const [reports] = await pool.query(
+            `SELECT * FROM plagiarism_reports WHERE id = ?`,
+            [req.params.reportId]
+        );
+
+        if (reports.length === 0) return res.status(404).json({ error: 'Report not found' });
+
+        const report = reports[0];
+        const reportData = typeof report.report_data === 'string' 
+            ? JSON.parse(report.report_data) 
+            : report.report_data;
+
+        res.json({
+            id: report.id,
+            submissionId: report.submission_id,
+            studentId: report.student_id,
+            problemId: report.problem_id,
+            suspicionScore: Number(report.suspicion_score),
+            intensity: report.intensity,
+            flagged: !!report.flagged,
+            maxSimilarity: Number(report.max_similarity),
+            suspiciousMatchCount: report.suspicious_match_count,
+            recommendation: report.recommendation,
+            reviewStatus: report.review_status,
+            reviewedBy: report.reviewed_by,
+            reviewNotes: report.review_notes,
+            appealStatus: report.appeal_status,
+            appealNotes: report.appeal_notes,
+            createdAt: report.created_at,
+            updatedAt: report.updated_at,
+            analysis: reportData
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get plagiarism matches for a report
+app.get('/api/plagiarism/matches/:reportId', async (req, res) => {
+    try {
+        const [matches] = await pool.query(
+            `SELECT m.*, u1.name as source_student_name, u2.name as target_student_name
+             FROM plagiarism_matches m
+             JOIN users u1 ON m.source_student_id = u1.id
+             JOIN users u2 ON m.target_student_id = u2.id
+             WHERE m.plagiarism_report_id = ?
+             ORDER BY m.similarity_percentage DESC`,
+            [req.params.reportId]
+        );
+
+        const formattedMatches = matches.map(m => ({
+            id: m.id,
+            sourceSubmissionId: m.source_submission_id,
+            targetSubmissionId: m.target_submission_id,
+            sourceStudentId: m.source_student_id,
+            sourceStudentName: m.source_student_name,
+            targetStudentId: m.target_student_id,
+            targetStudentName: m.target_student_name,
+            similarity: Number(m.similarity_percentage),
+            jaccardSimilarity: m.jaccard_similarity ? Number(m.jaccard_similarity) : null,
+            lcsSimilarity: m.lcs_similarity ? Number(m.lcs_similarity) : null,
+            structuralSimilarity: m.structural_similarity ? Number(m.structural_similarity) : null,
+            commonTokens: m.common_tokens,
+            details: m.match_details ? JSON.parse(m.match_details) : null
+        }));
+
+        res.json(formattedMatches);
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// List plagiarism reports (for Admin/Mentor)
+app.get('/api/plagiarism/reports', async (req, res) => {
+    try {
+        const { studentId, problemId, minIntensity, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(1, parseInt(page));
+        const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+        const offset = (pageNum - 1) * pageSize;
+
+        let query = `
+            SELECT pr.*, u.name as student_name, p.title as problem_title
+            FROM plagiarism_reports pr
+            JOIN users u ON pr.student_id = u.id
+            LEFT JOIN problems p ON pr.problem_id = p.id
+            WHERE 1=1
+        `;
+        let countQuery = 'SELECT COUNT(*) as total FROM plagiarism_reports pr WHERE 1=1';
+        const params = [];
+
+        if (studentId) {
+            query += ' AND pr.student_id = ?';
+            countQuery += ' AND pr.student_id = ?';
+            params.push(studentId);
+        }
+
+        if (problemId) {
+            query += ' AND pr.problem_id = ?';
+            countQuery += ' AND pr.problem_id = ?';
+            params.push(problemId);
+        }
+
+        if (minIntensity) {
+            const intensityMap = { 'CRITICAL': 85, 'HIGH': 70, 'MEDIUM': 50, 'LOW': 0 };
+            const minScore = intensityMap[minIntensity] || minIntensity;
+            query += ' AND pr.suspicion_score >= ?';
+            countQuery += ' AND pr.suspicion_score >= ?';
+            params.push(minScore);
+        }
+
+        query += ' ORDER BY pr.suspicion_score DESC, pr.created_at DESC LIMIT ? OFFSET ?';
+
+        const [[{ total }]] = await pool.query(countQuery, params);
+        const [reports] = await pool.query(query, [...params, pageSize, offset]);
+
+        const formattedReports = reports.map(r => ({
+            id: r.id,
+            submissionId: r.submission_id,
+            studentId: r.student_id,
+            studentName: r.student_name,
+            problemId: r.problem_id,
+            problemTitle: r.problem_title,
+            suspicionScore: Number(r.suspicion_score),
+            intensity: r.intensity,
+            flagged: !!r.flagged,
+            maxSimilarity: Number(r.max_similarity),
+            suspiciousMatches: r.suspicious_match_count,
+            reviewStatus: r.review_status,
+            createdAt: r.created_at
+        }));
+
+        const response = await paginatedResponse({
+            data: formattedReports,
+            total,
+            page: pageNum,
+            limit: pageSize
+        });
+
+        res.json(response);
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Batch analyze submissions for a problem
+app.post('/api/plagiarism/batch-analyze/:problemId', async (req, res) => {
+    try {
+        const problemId = req.params.problemId;
+
+        // Get all submissions for this problem
+        const [submissions] = await pool.query(
+            `SELECT s.* FROM submissions s
+             WHERE s.problem_id = ? AND s.code IS NOT NULL
+             ORDER BY s.submitted_at ASC`,
+            [problemId]
+        );
+
+        if (submissions.length < 2) {
+            return res.json({
+                problemId,
+                totalSubmissions: submissions.length,
+                reportsGenerated: 0,
+                message: 'At least 2 submissions required for plagiarism detection'
+            });
+        }
+
+        let reportsGenerated = 0;
+        const results = [];
+
+        // Compare each submission with others
+        for (const submission of submissions) {
+            try {
+                const plagiarismResult = plagiarismDetector.analyzePlgiarismBatch(
+                    submission,
+                    submissions.filter(s => s.id !== submission.id),
+                    70
+                );
+
+                const suspicionScore = plagiarismDetector.calculateSuspicionScore(plagiarismResult);
+
+                // Save report if flagged or has high similarity
+                if (suspicionScore >= 50) {
+                    const reportId = `pr-${uuidv4().slice(0, 12)}`;
+                    const report = plagiarismDetector.generateReport(plagiarismResult, suspicionScore);
+
+                    await pool.query(
+                        `INSERT INTO plagiarism_reports (
+                            id, submission_id, student_id, problem_id, suspicion_score,
+                            intensity, flagged, max_similarity, suspicious_match_count,
+                            recommendation, report_data
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            reportId, submission.id, submission.student_id, problemId,
+                            suspicionScore, report.intensity, suspicionScore >= 70 ? 1 : 0,
+                            plagiarismResult.maxSimilarity, plagiarismResult.suspiciousMatches.length,
+                            report.recommendation.action, JSON.stringify(plagiarismResult)
+                        ]
+                    );
+
+                    await pool.query(
+                        `UPDATE submissions SET plagiarism_score = ?, flagged_submission = ?, plagiarism_intensity = ?
+                         WHERE id = ?`,
+                        [suspicionScore, suspicionScore >= 70 ? 1 : 0, report.intensity, submission.id]
+                    );
+
+                    reportsGenerated++;
+                    results.push({
+                        submissionId: submission.id,
+                        suspicionScore,
+                        flagged: suspicionScore >= 70,
+                        maxSimilarity: plagiarismResult.maxSimilarity
+                    });
+                }
+            } catch (err) {
+                console.error(`Error analyzing submission ${submission.id}:`, err.message);
+            }
+        }
+
+        res.json({
+            problemId,
+            totalSubmissions: submissions.length,
+            reportsGenerated,
+            results
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Review plagiarism report (Admin/Mentor action)
+app.put('/api/plagiarism/reports/:reportId/review', async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const { reviewedBy, reviewNotes, finalDecision } = req.body; // approved, rejected, needs_investigation
+
+        if (!['approved', 'rejected', 'needs_investigation'].includes(finalDecision)) {
+            return res.status(400).json({ error: 'Invalid finalDecision' });
+        }
+
+        const reviewedAt = new Date();
+
+        await pool.query(
+            `UPDATE plagiarism_reports 
+             SET review_status = 'reviewed', reviewed_by = ?, review_notes = ?, 
+                 plagiarism_review_status = ?, reviewed_at = ?
+             WHERE id = ?`,
+            [reviewedBy, reviewNotes, finalDecision, reviewedAt, reportId]
+        );
+
+        res.json({ success: true, message: 'Report reviewed' });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Appeal plagiarism flagging (by Student)
+app.post('/api/plagiarism/reports/:reportId/appeal', async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const { appealReason, studentId } = req.body;
+
+        const [reports] = await pool.query('SELECT * FROM plagiarism_reports WHERE id = ?', [reportId]);
+        if (reports.length === 0) return res.status(404).json({ error: 'Report not found' });
+
+        const report = reports[0];
+
+        // Verify student matches the report
+        if (report.student_id !== studentId) {
+            return res.status(403).json({ error: 'Unauthorized - not your submission' });
+        }
+
+        await pool.query(
+            `UPDATE plagiarism_reports 
+             SET appeal_status = 'pending', appeal_notes = ?
+             WHERE id = ?`,
+            [appealReason, reportId]
+        );
+
+        res.json({ success: true, message: 'Appeal submitted for review' });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get plagiarism dashboard stats
+app.get('/api/plagiarism/dashboard-stats', async (req, res) => {
+    try {
+        const { mentorId, problemId, timeRange = '30' } = req.query;
+
+        const days = parseInt(timeRange) || 30;
+
+        // Total flagged submissions
+        const [[{ flaggedCount }]] = await pool.query(
+            `SELECT COUNT(*) as flaggedCount FROM plagiarism_reports 
+             WHERE flagged = 1 AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+            [days]
+        );
+
+        // Reports by intensity
+        const [intensityStats] = await pool.query(
+            `SELECT intensity, COUNT(*) as count FROM plagiarism_reports
+             WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+             GROUP BY intensity`,
+            [days]
+        );
+
+        // Average suspicion score
+        const [[{ avgSuspicion }]] = await pool.query(
+            `SELECT AVG(suspicion_score) as avgSuspicion FROM plagiarism_reports
+             WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+            [days]
+        );
+
+        // Pending reviews
+        const [[{ pendingReviews }]] = await pool.query(
+            `SELECT COUNT(*) as pendingReviews FROM plagiarism_reports
+             WHERE review_status = 'pending'`
+        );
+
+        // Most similar pair
+        const [topMatches] = await pool.query(
+            `SELECT pr.*, u.name as student_name 
+             FROM plagiarism_reports pr
+             JOIN users u ON pr.student_id = u.id
+             WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+             ORDER BY max_similarity DESC LIMIT 5`,
+            [days]
+        );
+
+        const intensityBreakdown = {};
+        intensityStats.forEach(stat => {
+            intensityBreakdown[stat.intensity] = stat.count;
+        });
+
+        res.json({
+            timeRange: `${days} days`,
+            flaggedCount,
+            averageSuspicion: Math.round(Number(avgSuspicion) || 0),
+            pendingReviews,
+            intensityBreakdown: intensityBreakdown || { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
+            topMatches: topMatches.map(m => ({
+                studentId: m.student_id,
+                studentName: m.student_name,
+                similarity: Number(m.max_similarity),
+                intensity: m.intensity
+            }))
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get detailed plagiarism statistics by problem
+app.get('/api/plagiarism/problem-stats/:problemId', async (req, res) => {
+    try {
+        const { problemId } = req.params;
+
+        const [[{ totalSubmissions }]] = await pool.query(
+            'SELECT COUNT(*) as totalSubmissions FROM submissions WHERE problem_id = ?',
+            [problemId]
+        );
+
+        const [[{ flaggedSubmissions }]] = await pool.query(
+            'SELECT COUNT(*) as flaggedSubmissions FROM submissions WHERE problem_id = ? AND flagged_submission = 1',
+            [problemId]
+        );
+
+        const [similarityDistribution] = await pool.query(
+            `SELECT
+                SUM(CASE WHEN plagiarism_score >= 80 THEN 1 ELSE 0 END) as critical,
+                SUM(CASE WHEN plagiarism_score >= 60 AND plagiarism_score < 80 THEN 1 ELSE 0 END) as high,
+                SUM(CASE WHEN plagiarism_score >= 40 AND plagiarism_score < 60 THEN 1 ELSE 0 END) as medium,
+                SUM(CASE WHEN plagiarism_score > 0 AND plagiarism_score < 40 THEN 1 ELSE 0 END) as low
+             FROM submissions WHERE problem_id = ?`,
+            [problemId]
+        );
+
+        const [[{ avgSimilarity }]] = await pool.query(
+            'SELECT AVG(plagiarism_score) as avgSimilarity FROM submissions WHERE problem_id = ? AND plagiarism_score > 0',
+            [problemId]
+        );
+
+        res.json({
+            problemId,
+            totalSubmissions,
+            flaggedSubmissions,
+            flagPercentage: totalSubmissions > 0 ? Math.round((flaggedSubmissions / totalSubmissions) * 100) : 0,
+            averageSimilarity: Math.round(Number(avgSimilarity) || 0),
+            distribution: {
+                critical: similarityDistribution[0]?.critical || 0,
+                high: similarityDistribution[0]?.high || 0,
+                medium: similarityDistribution[0]?.medium || 0,
+                low: similarityDistribution[0]?.low || 0
+            }
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROCTORING ENDPOINTS (4 Core Endpoints for Exam Monitoring)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Import proctoring engine
+const proctoringEngine = require('./proctoring_engine');
+
+// 1️⃣ START EXAM - Initialize proctoring session
+app.post('/api/proctoring/start-exam', async (req, res) => {
+    try {
+        const { examId, problemId, studentId, mentorId } = req.body;
+        
+        if (!examId || !studentId) {
+            return res.status(400).json({ error: 'Missing required fields: examId, studentId' });
+        }
+
+        // Get device fingerprint from request
+        const sessionId = require('uuid').v4();
+        const deviceFingerprint = {
+            userAgent: req.headers['user-agent'],
+            acceptLanguage: req.headers['accept-language'],
+            timestamp: Date.now(),
+        };
+
+        // Initialize proctoring session
+        const session = proctoringEngine.initializeSession(sessionId, {
+            examId,
+            problemId,
+            studentId,
+            mentorId: mentorId || null,
+            deviceFingerprint,
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+        });
+
+        // Store in database for persistence
+        try {
+            await pool.query(
+                `CREATE TABLE IF NOT EXISTS proctoring_sessions (
+                    id VARCHAR(36) PRIMARY KEY,
+                    exam_id VARCHAR(36),
+                    student_id VARCHAR(36),
+                    mentor_id VARCHAR(36),
+                    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    end_time TIMESTAMP NULL,
+                    duration_minutes INT DEFAULT 0,
+                    status ENUM('ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED') DEFAULT 'ACTIVE',
+                    violation_score INT DEFAULT 0,
+                    total_violations INT DEFAULT 0,
+                    critical_violations INT DEFAULT 0,
+                    device_fingerprint JSON,
+                    ip_address VARCHAR(45),
+                    user_agent TEXT,
+                    is_flagged BOOLEAN DEFAULT FALSE,
+                    flag_reason TEXT,
+                    violations JSON,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    KEY idx_exam (exam_id),
+                    KEY idx_student (student_id),
+                    KEY idx_status (status)
+                )`
+            );
+
+            await pool.query(
+                `INSERT INTO proctoring_sessions 
+                (id, exam_id, student_id, mentor_id, violation_score, total_violations, critical_violations, device_fingerprint, ip_address, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    sessionId,
+                    examId,
+                    studentId,
+                    mentorId || null,
+                    session.violationScore,
+                    session.totalViolations,
+                    session.criticalViolations,
+                    JSON.stringify(deviceFingerprint),
+                    req.ip || req.connection.remoteAddress,
+                    req.headers['user-agent'],
+                ]
+            );
+        } catch (dbErr) {
+            console.warn('⚠️ Database storage error (but session created):', dbErr.message);
+        }
+
+        res.json({
+            success: true,
+            sessionId,
+            message: 'Proctoring session initialized',
+            config: {
+                enableFaceDetection: true,
+                enableTabMonitoring: true,
+                enableURLFiltering: true,
+                maxTabSwitches: 3,
+                violationThreshold: 80,
+            },
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to initialize proctoring session', details: error.message });
+    }
+});
+
+// 2️⃣ LOG VIOLATION - Record detected violation
+app.post('/api/proctoring/log-violation', async (req, res) => {
+    try {
+        const { sessionId, type, severity, details } = req.body;
+
+        if (!sessionId || !type) {
+            return res.status(400).json({ error: 'Missing required fields: sessionId, type' });
+        }
+
+        // Log violation in proctoring engine
+        const result = proctoringEngine.logViolation(sessionId, { type, severity, details });
+
+        // Store in database for audit trail (async, don't wait)
+        try {
+            await pool.query(
+                `INSERT INTO proctoring_violations 
+                (session_id, violation_type, severity, points, details, created_at)
+                VALUES (?, ?, ?, ?, ?, NOW())`,
+                [
+                    sessionId,
+                    type,
+                    severity || 'MEDIUM',
+                    result.violation.points,
+                    JSON.stringify(details || {}),
+                ]
+            );
+
+            // Update session record
+            await pool.query(
+                `UPDATE proctoring_sessions 
+                SET violation_score = ?, total_violations = ?, critical_violations = ?
+                WHERE id = ?`,
+                [
+                    result.sessionScore,
+                    proctoringEngine.getSessionStatus(sessionId)?.totalViolations || 0,
+                    proctoringEngine.getSessionStatus(sessionId)?.criticalViolations || 0,
+                    sessionId,
+                ]
+            );
+        } catch (dbErr) {
+            console.warn('⚠️ Failed to log violation to database:', dbErr.message);
+        }
+
+        // Emit socket event for real-time updates
+        io.emit('violation-logged', {
+            sessionId,
+            violation: result.violation,
+            action: result.action,
+        });
+
+        res.json({
+            success: true,
+            violation: result.violation,
+            action: result.action,
+            sessionScore: result.sessionScore,
+            recommendations: result.recommendations,
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to log violation', details: error.message });
+    }
+});
+
+// 3️⃣ GET SESSION STATUS - Get current violations and exam status
+app.get('/api/proctoring/session/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+
+        const status = proctoringEngine.getSessionStatus(sessionId);
+
+        if (!status) {
+            // Try to fetch from database
+            const [rows] = await pool.query(
+                'SELECT * FROM proctoring_sessions WHERE id = ?',
+                [sessionId]
+            );
+
+            if (!rows || rows.length === 0) {
+                return res.status(404).json({ error: 'Session not found' });
+            }
+
+            return res.json({
+                success: true,
+                session: rows[0],
+                violations: rows[0].violations ? JSON.parse(rows[0].violations) : [],
+            });
+        }
+
+        res.json({
+            success: true,
+            session: status,
+            violations: status.violations || [],
+            analytics: {
+                violationsByType: proctoringEngine.groupViolationsByType(status.violations || []),
+                severity: proctoringEngine.getSeverityRating(status.violationScore),
+            },
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get session status', details: error.message });
+    }
+});
+
+// 4️⃣ END EXAM - Complete exam and generate report
+app.post('/api/proctoring/end-exam', async (req, res) => {
+    try {
+        const { sessionId, studentId } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Missing sessionId' });
+        }
+
+        // Generate final report
+        const report = proctoringEngine.endExam(sessionId);
+
+        // Store report in database
+        try {
+            const [rows] = await pool.query(
+                `UPDATE proctoring_sessions 
+                SET end_time = NOW(), status = ?, violation_score = ?, is_flagged = ?
+                WHERE id = ?`,
+                [
+                    report.finalDecision === 'APPROVED' ? 'COMPLETED' : 'COMPLETED',
+                    report.violationScore,
+                    report.finalDecision !== 'APPROVED',
+                    sessionId,
+                ]
+            );
+
+            // Also update corresponding submission if exists
+            if (studentId) {
+                await pool.query(
+                    `UPDATE submissions 
+                    SET proctoring_video = ?, integrity_violation = ?, tab_switches = ?
+                    WHERE student_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                    LIMIT 1`,
+                    [
+                        `proctoring_${sessionId}`,
+                        report.finalDecision !== 'APPROVED' ? 1 : 0,
+                        report.violations?.filter(v => v.type === 'TAB_SWITCH').length || 0,
+                        studentId,
+                    ]
+                );
+            }
+        } catch (dbErr) {
+            console.warn('⚠️ Failed to store report:', dbErr.message);
+        }
+
+        // Emit socket event
+        io.emit('exam-ended', {
+            sessionId,
+            report,
+        });
+
+        res.json({
+            success: true,
+            report,
+            message: `Exam completed. Decision: ${report.finalDecision}`,
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to end exam', details: error.message });
+    }
+});
+
+// GET ANALYTICS - Get proctoring analytics for dashboard
+app.get('/api/proctoring/analytics', async (req, res) => {
+    try {
+        // Fetch from submissions table where violation data actually is
+        const [violationSummary] = await pool.query(`
+            SELECT 
+                COUNT(*) as total_submissions,
+                COUNT(CASE WHEN (tab_switches > 0 OR copy_paste_attempts > 0 OR camera_blocked_count > 0 OR phone_detection_count > 0) THEN 1 END) as flagged_count,
+                SUM(CASE WHEN tab_switches > 0 THEN 1 ELSE 0 END) as tab_switch_count,
+                SUM(CASE WHEN copy_paste_attempts > 0 THEN 1 ELSE 0 END) as copy_paste_count,
+                SUM(CASE WHEN camera_blocked_count > 0 THEN 1 ELSE 0 END) as camera_blocked_count,
+                SUM(CASE WHEN phone_detection_count > 0 THEN 1 ELSE 0 END) as phone_detection_count,
+                SUM(tab_switches + copy_paste_attempts + camera_blocked_count + phone_detection_count) as total_violation_points,
+                ROUND(AVG(tab_switches + copy_paste_attempts + camera_blocked_count + phone_detection_count), 2) as avg_violations_per_submission,
+                ROUND(AVG(tab_switches), 2) as avg_tab_switches,
+                ROUND(AVG(copy_paste_attempts), 2) as avg_copy_paste,
+                ROUND(AVG(camera_blocked_count), 2) as avg_camera_blocked,
+                ROUND(AVG(phone_detection_count), 2) as avg_phone_detection
+            FROM submissions 
+            WHERE status = 'submitted' AND submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        `);
+
+        const summary = violationSummary[0] || {};
+        const tabCount = summary.tab_switch_count || 0;
+        const copyCount = summary.copy_paste_count || 0;
+        const cameraCount = summary.camera_blocked_count || 0;
+        const phoneCount = summary.phone_detection_count || 0;
+        const totalPoints = summary.total_violation_points || 0;
+        
+        // Calculate average violation score (0-100 scale)
+        const totalSubs = summary.total_submissions || 1;
+        const avgViolationScore = Math.round((totalPoints / (totalSubs * 4)) * 100); // 4 = max violation types
+
+        const analytics = {
+            totalSessions: summary.total_submissions || 0,
+            completedSessions: summary.total_submissions || 0,
+            flaggedSessions: summary.flagged_count || 0,
+            averageViolationScore: Math.min(avgViolationScore, 100),
+            violationsByType: {
+                TABSWITCHES: tabCount,
+                COPYPASTE: copyCount,
+                CAMERABLOCKED: cameraCount,
+                PHONEDETECTION: phoneCount
+            },
+            severityDistribution: {
+                APPROVED: Math.max(0, (summary.total_submissions || 0) - (summary.flagged_count || 0)),
+                REQUIRES_REVIEW: summary.flagged_count || 0,
+                REJECTED_FLAGGED: 0
+            },
+            periodDays: 30,
+            lastUpdated: new Date().toISOString()
+        };
+
+        res.json({
+            success: true,
+            analytics,
+            message: 'Proctoring analytics retrieved from submissions',
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching analytics:', error.message);
+        res.status(500).json({ error: 'Failed to get analytics', details: error.message });
+    }
+});
+
+// PROCTORING ANALYTICS BY STUDENT
+app.get('/api/proctoring/analytics/by-student', async (req, res) => {
+    try {
+        // Query actual submission data with violation counts
+        const [students] = await pool.query(`
+            SELECT 
+                s.student_id,
+                u.name as student_name,
+                COUNT(DISTINCT s.id) as total_exams,
+                SUM(CASE WHEN (s.tab_switches > 0 OR s.copy_paste_attempts > 0 OR s.camera_blocked_count > 0 OR s.phone_detection_count > 0) THEN 1 ELSE 0 END) as flagged_exams,
+                ROUND(AVG(s.tab_switches), 2) as avg_tab_switches,
+                ROUND(AVG(s.copy_paste_attempts), 2) as avg_copy_paste,
+                ROUND(AVG(s.camera_blocked_count), 2) as avg_camera_blocked,
+                ROUND(AVG(s.phone_detection_count), 2) as avg_phone_detection,
+                SUM(s.tab_switches) as total_tab_switches,
+                SUM(s.copy_paste_attempts) as total_copy_paste,
+                SUM(s.camera_blocked_count) as total_camera_blocked,
+                SUM(s.phone_detection_count) as total_phone_detection,
+                MAX(s.submitted_at) as last_exam_date
+            FROM submissions s
+            LEFT JOIN users u ON s.student_id = u.id
+            WHERE s.submitted_at IS NOT NULL
+            GROUP BY s.student_id, u.name
+            ORDER BY (SUM(s.tab_switches) + SUM(s.copy_paste_attempts) + SUM(s.camera_blocked_count) + SUM(s.phone_detection_count)) DESC
+        `);
+
+        // Enrich with status indicators
+        const enrichedStudents = students.map((student) => {
+            const totalViolations = (student.total_tab_switches || 0) + 
+                                   (student.total_copy_paste || 0) + 
+                                   (student.total_camera_blocked || 0) + 
+                                   (student.total_phone_detection || 0);
+            
+            let status = '✅ CLEAN';
+            if (student.flagged_exams >= 3) {
+                status = '🚨 REPEAT VIOLATOR';
+            } else if (student.flagged_exams >= 2) {
+                status = '⚠️ FLAGGED';
+            } else if (student.flagged_exams >= 1) {
+                status = '⚡ CAUTION';
+            }
+
+            return {
+                student_id: student.student_id,
+                student_name: student.student_name || student.student_id,
+                total_exams: student.total_exams || 0,
+                flagged_exams: student.flagged_exams || 0,
+                total_violations: totalViolations,
+                violations: {
+                    tab_switches: student.total_tab_switches || 0,
+                    copy_paste: student.total_copy_paste || 0,
+                    camera_blocked: student.total_camera_blocked || 0,
+                    phone_detection: student.total_phone_detection || 0
+                },
+                averages: {
+                    avg_tab_switches: student.avg_tab_switches || 0,
+                    avg_copy_paste: student.avg_copy_paste || 0,
+                    avg_camera_blocked: student.avg_camera_blocked || 0,
+                    avg_phone_detection: student.avg_phone_detection || 0
+                },
+                last_exam_date: student.last_exam_date,
+                status: status
+            };
+        });
+
+        res.json({
+            success: true,
+            students: enrichedStudents,
+            totalStudents: enrichedStudents.length,
+            topViolators: enrichedStudents.slice(0, 10),
+            message: 'Student-wise proctoring analytics retrieved from submissions',
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching student analytics:', error);
+        res.status(500).json({ error: 'Failed to get student analytics', details: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+
+// Auto-delete old plagiarism reports (runs periodically)
+setInterval(async () => {
+    try {
+        const [result] = await pool.query(
+            'DELETE FROM plagiarism_reports WHERE appeal_status = "none" AND created_at < DATE_SUB(NOW(), INTERVAL 90 DAY)'
+        );
+        if (result.affectedRows > 0) {
+            console.log(`🧹 Auto-cleanup: Deleted ${result.affectedRows} old plagiarism reports`);
+        }
+    } catch (err) {
+        console.error('Plagiarism report cleanup error:', err.message);
+    }
+}, 7 * 24 * 60 * 60 * 1000); // Every 7 days
 
 // Auto-delete messages older than 24 hours (runs every 30 minutes)
 setInterval(async () => {
