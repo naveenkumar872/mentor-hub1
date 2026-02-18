@@ -793,6 +793,12 @@ function UploadProblems({ user }) {
         trackFaceLookaway: false
     })
 
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [allStudents, setAllStudents] = useState([])
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingProblemId, setAllocatingProblemId] = useState(null)
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
+
     // Check if SQL is selected
     const isSQLProblem = problem.type === 'SQL' || problem.language === 'SQL'
 
@@ -841,6 +847,47 @@ function UploadProblems({ user }) {
     useEffect(() => {
         fetchData()
     }, [user.id])
+
+    const fetchAllStudents = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/mentors/${user.id}/students`)
+            setAllStudents(Array.isArray(res.data) ? res.data : [])
+        } catch (e) { console.error(e) }
+    }
+
+    const openStudentAllocationModal = async (problemId) => {
+        setAllocatingProblemId(problemId)
+        await fetchAllStudents()
+
+        try {
+            const res = await axios.get(`${API_BASE}/tests/${problemId}/allocated-students`)
+            setSelectedStudents(res.data.studentIds || [])
+        } catch (e) {
+            console.error(e)
+            setSelectedStudents([])
+        }
+        setShowStudentAllocationModal(true)
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
+    }
+
+    const saveStudentAllocations = async () => {
+        try {
+            await axios.post(`${API_BASE}/tests/${allocatingProblemId}/allocate-students`, {
+                studentIds: selectedStudents
+            })
+            alert('Students assigned successfully!')
+            setShowStudentAllocationModal(false)
+        } catch (e) {
+            alert('Error assigning students: ' + (e.response?.data?.error || e.message))
+        }
+    }
 
     const handleCSVUpload = async (e) => {
         const file = e.target.files[0]
@@ -1185,6 +1232,13 @@ function UploadProblems({ user }) {
                                                 <ClipboardList size={14} /> Tests
                                             </button>
                                             <button
+                                                onClick={() => openStudentAllocationModal(p.id)}
+                                                className="btn-create-new"
+                                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.2)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                                            >
+                                                <Users size={14} /> Assign
+                                            </button>
+                                            <button
                                                 onClick={() => handleDelete(p.id)}
                                                 disabled={!canDelete(p)}
                                                 style={{
@@ -1207,6 +1261,155 @@ function UploadProblems({ user }) {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Student Allocation Modal */}
+                {showStudentAllocationModal && (
+                    <div className="modal-overlay" onClick={() => {
+                        setShowStudentAllocationModal(false)
+                        setStudentSearchTerm('')
+                    }}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '750px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                                <div className="modal-title-with-icon">
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Users size={20} color="white" />
+                                    </div>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h3>
+                                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this problem</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setStudentSearchTerm('')
+                                }} className="modal-close"><X size={20} /></button>
+                            </div>
+
+                            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search by name or batch..."
+                                        value={studentSearchTerm}
+                                        onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                            borderRadius: '10px',
+                                            background: 'var(--bg-card)',
+                                            border: '1px solid var(--border-color)',
+                                            color: 'var(--text-main)',
+                                            fontSize: '0.9rem'
+                                        }}
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const filtered = allStudents.filter(s =>
+                                            (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                            (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                        )
+                                        const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                        if (allSelected) {
+                                            setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                        } else {
+                                            setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                        }
+                                    }}
+                                    style={{
+                                        padding: '0.7rem 1.2rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    {allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                                </button>
+                            </div>
+
+                            <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                                    {allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).length === 0 ? (
+                                        <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                            <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                            <p>No students found matching your search.</p>
+                                        </div>
+                                    ) : (
+                                        allStudents.filter(s =>
+                                            (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                            (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                        ).map(student => (
+                                            <div
+                                                key={student.id}
+                                                onClick={() => toggleStudentSelection(student.id)}
+                                                style={{
+                                                    padding: '1rem',
+                                                    borderRadius: '1rem',
+                                                    background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                    border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '1rem',
+                                                    transition: 'all 0.2s',
+                                                    boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none',
+                                                    textAlign: 'left'
+                                                }}
+                                            >
+                                                <div style={{
+                                                    width: '40px', height: '40px', borderRadius: '50%',
+                                                    background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: '1rem', fontWeight: 700, color: 'white'
+                                                }}>
+                                                    {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {student.name || student.username}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                                        <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                            {student.batch || 'No Batch'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                                <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                    <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                                </div>
+                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <button className="btn-reset" onClick={() => {
+                                        setShowStudentAllocationModal(false)
+                                        setStudentSearchTerm('')
+                                    }}>Cancel</button>
+                                    <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                        Confirm Assignment
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Create Problem Modal */}
@@ -2624,13 +2827,14 @@ function MentorTestManager({ testType, user }) {
     const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
     const [selectedStudents, setSelectedStudents] = useState([])
     const [allocatingTestId, setAllocatingTestId] = useState(null)
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
 
     useEffect(() => {
         const fetchTests = async () => {
             try {
                 const endpoint = testType === 'aptitude' ? '/aptitude' :
-                                testType === 'global' ? '/global-tests' :
-                                testType === 'skill' ? '/skill-tests' : '/aptitude'
+                    testType === 'global' ? '/global-tests' :
+                        testType === 'skill' ? '/skill-tests' : '/aptitude'
                 const res = await axios.get(`${API_BASE}${endpoint}?status=live`)
                 setTests(Array.isArray(res.data) ? res.data : [])
             } catch (e) {
@@ -2645,7 +2849,7 @@ function MentorTestManager({ testType, user }) {
 
     const fetchAllStudents = async () => {
         try {
-            const res = await axios.get(`${API_BASE}/students`)
+            const res = await axios.get(`${API_BASE}/mentors/${user.id}/students`)
             setAllStudents(Array.isArray(res.data) ? res.data : [])
         } catch (e) {
             console.error('Error fetching students:', e)
@@ -2655,17 +2859,16 @@ function MentorTestManager({ testType, user }) {
     const openStudentAllocationModal = async (testId) => {
         await fetchAllStudents()
         setAllocatingTestId(testId)
-        
+
         // Load current allocations
         try {
             const res = await axios.get(`${API_BASE}/tests/${testId}/allocated-students`)
-            const allocated = res.data?.allocated_students || []
-            setSelectedStudents(allocated.map(s => s.student_id))
+            setSelectedStudents(res.data.studentIds || [])
         } catch (e) {
             console.error('Error loading allocations:', e)
             setSelectedStudents([])
         }
-        
+
         setShowStudentAllocationModal(true)
     }
 
@@ -2680,7 +2883,7 @@ function MentorTestManager({ testType, user }) {
     const saveStudentAllocations = async () => {
         try {
             await axios.post(`${API_BASE}/tests/${allocatingTestId}/allocate-students`, {
-                student_ids: selectedStudents
+                studentIds: selectedStudents
             })
             alert('Students allocated successfully!')
             setShowStudentAllocationModal(false)
@@ -2694,8 +2897,8 @@ function MentorTestManager({ testType, user }) {
     if (loading) return <div className="loading-spinner"></div>
 
     const testTypeLabel = testType === 'aptitude' ? 'Aptitude Tests' :
-                        testType === 'global' ? 'Global Tests' :
-                        testType === 'skill' ? 'Skill Tests' : 'Tests'
+        testType === 'global' ? 'Global Tests' :
+            testType === 'skill' ? 'Skill Tests' : 'Tests'
 
     return (
         <div>
@@ -2781,116 +2984,148 @@ function MentorTestManager({ testType, user }) {
             </div>
 
             {showStudentAllocationModal && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1500,
-                    backdropFilter: 'blur(5px)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)'
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
                 }}>
-                    <div style={{
-                        width: '100%',
-                        maxWidth: '600px',
-                        maxHeight: '80vh',
-                        overflow: 'auto',
-                        borderRadius: '16px',
-                        background: '#1e293b',
-                        border: '1px solid rgba(139,92,246,0.2)',
-                        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
-                        padding: '1.5rem'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Assign Students</h3>
-                            <button
-                                onClick={() => {
-                                    setShowStudentAllocationModal(false)
-                                    setSelectedStudents([])
-                                    setAllocatingTestId(null)
-                                }}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#cbd5e1',
-                                    fontSize: '1.5rem',
-                                    cursor: 'pointer',
-                                    padding: '0',
-                                    lineHeight: 1
-                                }}
-                            >
-                                ×
-                            </button>
-                        </div>
-
-                        <div style={{ marginBottom: '1.5rem', maxHeight: '400px', overflowY: 'auto' }}>
-                            {allStudents.map(student => (
-                                <div
-                                    key={student.id}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        padding: '0.75rem',
-                                        marginBottom: '0.5rem',
-                                        background: 'rgba(255,255,255,0.03)',
-                                        borderRadius: '8px',
-                                        border: selectedStudents.includes(student.id) ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.1)',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    onClick={() => toggleStudentSelection(student.id)}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedStudents.includes(student.id)}
-                                        onChange={() => toggleStudentSelection(student.id)}
-                                        style={{ marginRight: '0.75rem', cursor: 'pointer', accentColor: '#a855f7' }}
-                                    />
-                                    <div>
-                                        <div style={{ fontWeight: 600 }}>{student.username}</div>
-                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{student.email}</div>
-                                    </div>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '750px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <div className="modal-title-with-icon">
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Users size={20} color="white" />
                                 </div>
-                            ))}
+                                <div style={{ textAlign: 'left' }}>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this test</p>
+                                </div>
+                            </div>
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close"><X size={20} /></button>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                        <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.9rem'
+                                    }}
+                                />
+                            </div>
                             <button
                                 onClick={() => {
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.7rem 1.2rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                        <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                        <p>No students found matching your search.</p>
+                                    </div>
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1rem',
+                                                borderRadius: '1rem',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none',
+                                                textAlign: 'left'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '40px', height: '40px', borderRadius: '50%',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '1rem', fontWeight: 700, color: 'white'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                                    <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'No Batch'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn-reset" onClick={() => {
                                     setShowStudentAllocationModal(false)
-                                    setSelectedStudents([])
-                                    setAllocatingTestId(null)
-                                }}
-                                style={{
-                                    padding: '0.75rem 1.5rem',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    color: '#cbd5e1',
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    fontWeight: 600
-                                }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={saveStudentAllocations}
-                                style={{
-                                    padding: '0.75rem 1.5rem',
-                                    background: 'rgba(168, 85, 247, 0.2)',
-                                    border: '1px solid rgba(168, 85, 247, 0.5)',
-                                    color: '#e9d5ff',
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    fontWeight: 600
-                                }}
-                            >
-                                Assign {selectedStudents.length > 0 ? `(${selectedStudents.length})` : ''}
-                            </button>
+                                    setStudentSearchTerm('')
+                                }}>Cancel</button>
+                                <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                    Confirm Assignment
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

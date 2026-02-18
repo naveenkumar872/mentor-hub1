@@ -2199,6 +2199,14 @@ function GlobalTasks() {
         deadline: ''
     })
 
+    // Student allocation states
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [allStudents, setAllStudents] = useState([])
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingTaskId, setAllocatingTaskId] = useState(null)
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
+    const [taskSearchTerm, setTaskSearchTerm] = useState('')
+
     // AI Chatbot handler - auto-fills the task form
     const handleAIGenerate = (generated) => {
         setTask({
@@ -2225,6 +2233,50 @@ function GlobalTasks() {
     useEffect(() => {
         fetchTasks()
     }, [])
+
+    const fetchAllStudents = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/users?role=student`)
+            setAllStudents(Array.isArray(res.data) ? res.data : [])
+        } catch (e) { console.error('Error fetching students:', e) }
+    }
+
+    const openStudentAllocationModal = async (taskId) => {
+        setAllocatingTaskId(taskId)
+        setStudentSearchTerm('')
+        setSelectedStudents([])
+        await fetchAllStudents()
+
+        try {
+            const res = await axios.get(`${API_BASE}/tests/${taskId}/allocated-students`)
+            // Using studentIds from our standardized API response
+            setSelectedStudents(res.data.studentIds || [])
+        } catch (e) {
+            console.error(e)
+            setSelectedStudents([])
+        }
+        setShowStudentAllocationModal(true)
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
+    }
+
+    const saveStudentAllocations = async () => {
+        try {
+            await axios.post(`${API_BASE}/tests/${allocatingTaskId}/allocate-students`, {
+                studentIds: selectedStudents
+            })
+            alert('Students assigned successfully!')
+            setShowStudentAllocationModal(false)
+        } catch (e) {
+            alert('Error assigning students: ' + (e.response?.data?.error || e.message))
+        }
+    }
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -2323,7 +2375,26 @@ function GlobalTasks() {
                             </div>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ position: 'relative' }}>
+                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search tasks..."
+                                value={taskSearchTerm}
+                                onChange={(e) => setTaskSearchTerm(e.target.value)}
+                                style={{
+                                    padding: '0.75rem 1rem 0.75rem 2.5rem',
+                                    borderRadius: '0.75rem',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.9rem',
+                                    width: '220px',
+                                    outline: 'none'
+                                }}
+                            />
+                        </div>
                         <input type="file" ref={csvInputRef} accept=".csv" style={{ display: 'none' }} onChange={handleCSVUpload} />
                         <button
                             onClick={() => csvInputRef.current?.click()}
@@ -2405,14 +2476,20 @@ function GlobalTasks() {
 
             {/* Tasks Grid */}
             <div className="cards-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))' }}>
-                {tasks.length === 0 ? (
+                {tasks.filter(t =>
+                    (t.title || '').toLowerCase().includes(taskSearchTerm.toLowerCase()) ||
+                    (t.description || '').toLowerCase().includes(taskSearchTerm.toLowerCase())
+                ).length === 0 ? (
                     <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem', opacity: 0.5 }}>
                         <Globe size={64} style={{ marginBottom: '1rem', opacity: 0.3 }} />
-                        <h3>No Global Tasks Yet</h3>
-                        <p>Create your first global task to make it visible to all students!</p>
+                        <h3>{taskSearchTerm ? 'No matching tasks' : 'No Global Tasks Yet'}</h3>
+                        <p>{taskSearchTerm ? 'Try a different search term.' : 'Create your first global task to make it visible to all students!'}</p>
                     </div>
                 ) : (
-                    tasks.map(t => (
+                    tasks.filter(t =>
+                        (t.title || '').toLowerCase().includes(taskSearchTerm.toLowerCase()) ||
+                        (t.description || '').toLowerCase().includes(taskSearchTerm.toLowerCase())
+                    ).map(t => (
                         <div key={t.id} className="item-card glass" style={{
                             minHeight: '280px',
                             background: 'var(--bg-secondary)',
@@ -2458,6 +2535,27 @@ function GlobalTasks() {
                                     </span>
                                 </div>
                                 <button
+                                    onClick={() => openStudentAllocationModal(t.id)}
+                                    className="btn-create-new"
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        fontSize: '0.8rem',
+                                        background: 'rgba(139, 92, 246, 0.1)',
+                                        color: '#8b5cf6',
+                                        border: '1px solid rgba(139, 92, 246, 0.2)',
+                                        borderRadius: '8px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.4rem',
+                                        fontWeight: 600,
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.2)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)'}
+                                >
+                                    <Users size={16} /> Assign
+                                </button>
+                                <button
                                     onClick={() => handleDelete(t.id)}
                                     style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}
                                 >
@@ -2469,104 +2567,253 @@ function GlobalTasks() {
                 )}
             </div>
 
-            {/* Create Modal */}
-            {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-                        <div className="modal-header">
+            {showStudentAllocationModal && (
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
+                }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
                             <div className="modal-title-with-icon">
-                                <div style={{
-                                    width: '40px', height: '40px', borderRadius: '10px',
-                                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}>
-                                    <Globe size={20} color="white" />
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Users size={20} color="white" />
                                 </div>
-                                <h2>Create Global Task</h2>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this task</p>
+                                </div>
                             </div>
-                            <button onClick={() => setShowModal(false)} className="modal-close"><X size={20} /></button>
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close"><X size={20} /></button>
                         </div>
-                        <div className="modal-body premium-form">
-                            <form onSubmit={handleSubmit}>
-                                <div className="form-group">
-                                    <label className="form-label">Task Title</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g., Sentiment Analysis Challenge"
-                                        value={task.title}
-                                        onChange={(e) => setTask({ ...task, title: e.target.value })}
-                                        required
-                                    />
-                                </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                                    <div className="form-group">
-                                        <label className="form-label">Task Type</label>
-                                        <select
-                                            value={task.type}
-                                            onChange={(e) => setTask({ ...task, type: e.target.value })}
-                                        >
-                                            <option value="machine_learning">Machine Learning</option>
-                                            <option value="deep_learning">Deep Learning</option>
-                                            <option value="data_science">Data Science</option>
-                                            <option value="nlp">NLP</option>
-                                            <option value="computer_vision">Computer Vision</option>
-                                        </select>
+                        <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.9rem'
+                                    }}
+                                />
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.7rem 1.2rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                        <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                        <p>No students found matching your search.</p>
                                     </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Difficulty</label>
-                                        <select
-                                            value={task.difficulty}
-                                            onChange={(e) => setTask({ ...task, difficulty: e.target.value })}
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1rem',
+                                                borderRadius: '1rem',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none'
+                                            }}
                                         >
-                                            <option value="easy">Easy</option>
-                                            <option value="medium">Medium</option>
-                                            <option value="hard">Hard</option>
-                                        </select>
-                                    </div>
-                                </div>
+                                            <div style={{
+                                                width: '36px', height: '36px', borderRadius: '50%',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '0.9rem', fontWeight: 700, color: 'white'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'No Batch'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
 
-                                <div className="form-group">
-                                    <label className="form-label">Description</label>
-                                    <textarea
-                                        rows="4"
-                                        placeholder="Describe the task in detail..."
-                                        value={task.description}
-                                        onChange={(e) => setTask({ ...task, description: e.target.value })}
-                                        required
-                                    ></textarea>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Requirements (one per line)</label>
-                                    <textarea
-                                        rows="4"
-                                        placeholder="1. Data Preprocessing&#10;2. Model Training&#10;3. Evaluation Metrics"
-                                        value={task.requirements}
-                                        onChange={(e) => setTask({ ...task, requirements: e.target.value })}
-                                    ></textarea>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Deadline (Optional)</label>
-                                    <input
-                                        type="date"
-                                        value={task.deadline}
-                                        onChange={(e) => setTask({ ...task, deadline: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="form-actions">
-                                    <button type="button" className="btn-reset" onClick={() => setShowModal(false)}>Cancel</button>
-                                    <button type="submit" className="btn-create-new" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-                                        <Globe size={18} /> Create Global Task
-                                    </button>
-                                </div>
-                            </form>
+                        <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn-reset" onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setStudentSearchTerm('')
+                                }}>Cancel</button>
+                                <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                    Confirm Assignment
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Create Modal */}
+            {
+                showModal && (
+                    <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+                            <div className="modal-header">
+                                <div className="modal-title-with-icon">
+                                    <div style={{
+                                        width: '40px', height: '40px', borderRadius: '10px',
+                                        background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        <Globe size={20} color="white" />
+                                    </div>
+                                    <h2>Create Global Task</h2>
+                                </div>
+                                <button onClick={() => setShowModal(false)} className="modal-close"><X size={20} /></button>
+                            </div>
+                            <div className="modal-body premium-form">
+                                <form onSubmit={handleSubmit}>
+                                    <div className="form-group">
+                                        <label className="form-label">Task Title</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g., Sentiment Analysis Challenge"
+                                            value={task.title}
+                                            onChange={(e) => setTask({ ...task, title: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Task Type</label>
+                                            <select
+                                                value={task.type}
+                                                onChange={(e) => setTask({ ...task, type: e.target.value })}
+                                            >
+                                                <option value="machine_learning">Machine Learning</option>
+                                                <option value="deep_learning">Deep Learning</option>
+                                                <option value="data_science">Data Science</option>
+                                                <option value="nlp">NLP</option>
+                                                <option value="computer_vision">Computer Vision</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Difficulty</label>
+                                            <select
+                                                value={task.difficulty}
+                                                onChange={(e) => setTask({ ...task, difficulty: e.target.value })}
+                                            >
+                                                <option value="easy">Easy</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="hard">Hard</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Description</label>
+                                        <textarea
+                                            rows="4"
+                                            placeholder="Describe the task in detail..."
+                                            value={task.description}
+                                            onChange={(e) => setTask({ ...task, description: e.target.value })}
+                                            required
+                                        ></textarea>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Requirements (one per line)</label>
+                                        <textarea
+                                            rows="4"
+                                            placeholder="1. Data Preprocessing&#10;2. Model Training&#10;3. Evaluation Metrics"
+                                            value={task.requirements}
+                                            onChange={(e) => setTask({ ...task, requirements: e.target.value })}
+                                        ></textarea>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Deadline (Optional)</label>
+                                        <input
+                                            type="date"
+                                            value={task.deadline}
+                                            onChange={(e) => setTask({ ...task, deadline: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div className="form-actions">
+                                        <button type="button" className="btn-reset" onClick={() => setShowModal(false)}>Cancel</button>
+                                        <button type="submit" className="btn-create-new" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
+                                            <Globe size={18} /> Create Global Task
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
 
             {/* AI Chatbot for Task Generation */}
             <AIChatbot
@@ -2575,7 +2822,7 @@ function GlobalTasks() {
                 onClose={() => setShowAIChat(false)}
                 onGenerate={handleAIGenerate}
             />
-        </div>
+        </div >
     )
 }
 
@@ -2611,6 +2858,14 @@ function GlobalProblems() {
         detectMultipleFaces: false,
         trackFaceLookaway: false
     })
+
+    // Student allocation states
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [allStudents, setAllStudents] = useState([])
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingProblemId, setAllocatingProblemId] = useState(null)
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
+    const [problemSearchTerm, setProblemSearchTerm] = useState('')
 
     // Check if SQL is selected
     const isSQLProblem = problem.type === 'SQL' || problem.language === 'SQL'
@@ -2655,6 +2910,49 @@ function GlobalProblems() {
     useEffect(() => {
         fetchProblems()
     }, [])
+
+    const fetchAllStudents = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/users?role=student`)
+            setAllStudents(Array.isArray(res.data) ? res.data : [])
+        } catch (e) { console.error('Error fetching students:', e) }
+    }
+
+    const openStudentAllocationModal = async (problemId) => {
+        setAllocatingProblemId(problemId)
+        setStudentSearchTerm('')
+        setSelectedStudents([])
+        await fetchAllStudents()
+
+        try {
+            const res = await axios.get(`${API_BASE}/tests/${problemId}/allocated-students`)
+            setSelectedStudents(res.data.studentIds || [])
+        } catch (e) {
+            console.error(e)
+            setSelectedStudents([])
+        }
+        setShowStudentAllocationModal(true)
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
+    }
+
+    const saveStudentAllocations = async () => {
+        try {
+            await axios.post(`${API_BASE}/tests/${allocatingProblemId}/allocate-students`, {
+                studentIds: selectedStudents
+            })
+            alert('Students assigned successfully!')
+            setShowStudentAllocationModal(false)
+        } catch (e) {
+            alert('Error assigning students: ' + (e.response?.data?.error || e.message))
+        }
+    }
 
     const handleSubmit = async (e) => {
         e.preventDefault()
@@ -2773,7 +3071,11 @@ function GlobalProblems() {
     // Separate problems into Coding and SQL
     const codingProblems = problems.filter(p => p.language !== 'SQL' && p.type !== 'SQL')
     const sqlProblems = problems.filter(p => p.language === 'SQL' || p.type === 'SQL')
-    const displayedProblems = activeTab === 'coding' ? codingProblems : sqlProblems
+    const displayedProblems = (activeTab === 'coding' ? codingProblems : sqlProblems).filter(p =>
+        (p.title || '').toLowerCase().includes(problemSearchTerm.toLowerCase()) ||
+        (p.description || '').toLowerCase().includes(problemSearchTerm.toLowerCase()) ||
+        (p.language || '').toLowerCase().includes(problemSearchTerm.toLowerCase())
+    )
 
     return (
         <div className="animate-fadeIn">
@@ -2809,7 +3111,25 @@ function GlobalProblems() {
                             </div>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ position: 'relative' }}>
+                            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Search problems..."
+                                value={problemSearchTerm}
+                                onChange={(e) => setProblemSearchTerm(e.target.value)}
+                                style={{
+                                    padding: '0.75rem 1rem 0.75rem 2.5rem',
+                                    borderRadius: '1rem',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.9rem',
+                                    width: '250px'
+                                }}
+                            />
+                        </div>
                         <input type="file" accept=".csv" ref={csvInputRef} style={{ display: 'none' }} onChange={handleCSVUpload} />
                         <button
                             onClick={() => csvInputRef.current?.click()}
@@ -3049,6 +3369,27 @@ function GlobalProblems() {
                                         <ClipboardList size={14} /> Tests
                                     </button>
                                     <button
+                                        onClick={() => openStudentAllocationModal(p.id)}
+                                        className="btn-create-new"
+                                        style={{
+                                            padding: '0.5rem 1rem',
+                                            fontSize: '0.8rem',
+                                            background: 'rgba(139, 92, 246, 0.1)',
+                                            color: '#8b5cf6',
+                                            border: '1px solid rgba(139, 92, 246, 0.2)',
+                                            borderRadius: '8px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.4rem',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.2)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)'}
+                                    >
+                                        <Users size={16} /> Assign
+                                    </button>
+                                    <button
                                         onClick={() => handleDelete(p.id)}
                                         style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.8rem' }}
                                     >
@@ -3060,6 +3401,153 @@ function GlobalProblems() {
                     ))
                 )}
             </div>
+
+            {showStudentAllocationModal && (
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
+                }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <div className="modal-title-with-icon">
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Users size={20} color="white" />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this problem</p>
+                                </div>
+                            </div>
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close"><X size={20} /></button>
+                        </div>
+
+                        <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.9rem'
+                                    }}
+                                />
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.7rem 1.2rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                        <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                        <p>No students found matching your search.</p>
+                                    </div>
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1rem',
+                                                borderRadius: '1rem',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '36px', height: '36px', borderRadius: '50%',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '0.9rem', fontWeight: 700, color: 'white'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'No Batch'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn-reset" onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setStudentSearchTerm('')
+                                }}>Cancel</button>
+                                <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                    Confirm Assignment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Create Modal */}
             {showModal && (
@@ -3461,13 +3949,15 @@ function GlobalTestsAdmin() {
     const [editingId, setEditingId] = useState(null)
     const [sectionTab, setSectionTab] = useState('aptitude')
     const [managingTestCases, setManagingTestCases] = useState(null)
-    
+
     // Student allocation states
     const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
     const [allStudents, setAllStudents] = useState([])
     const [selectedStudents, setSelectedStudents] = useState([])
     const [allocatingTestId, setAllocatingTestId] = useState(null)
-    
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
+    const [testSearchTerm, setTestSearchTerm] = useState('') // New state for test search
+
     const [newTest, setNewTest] = useState({
         title: '',
         type: 'comprehensive',
@@ -3620,6 +4110,9 @@ function GlobalTestsAdmin() {
 
     const openStudentAllocationModal = async (testId) => {
         setAllocatingTestId(testId)
+        setStudentSearchTerm('')
+        setSelectedStudents([])
+        await fetchAllStudents()
         try {
             const response = await axios.get(`${API_BASE}/tests/${testId}/allocated-students`)
             setSelectedStudents(response.data.studentIds || [])
@@ -4060,6 +4553,12 @@ function GlobalTestsAdmin() {
 
     if (loading) return <div className="loading-spinner"></div>
 
+    const filteredTests = tests.filter(t =>
+        (t.title || '').toLowerCase().includes(testSearchTerm.toLowerCase()) ||
+        (t.description || '').toLowerCase().includes(testSearchTerm.toLowerCase()) ||
+        (t.type || '').toLowerCase().includes(testSearchTerm.toLowerCase())
+    )
+
     return (
         <div className="animate-fadeIn">
             {/* Hero – same style as Global Problems */}
@@ -4132,7 +4631,29 @@ function GlobalTestsAdmin() {
                 </div>
             </div>
 
-            {tests.length === 0 && !loading ? (
+            {/* Search Input for Tests */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
+                <div style={{ position: 'relative' }}>
+                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                        type="text"
+                        placeholder="Search tests..."
+                        value={testSearchTerm}
+                        onChange={(e) => setTestSearchTerm(e.target.value)}
+                        style={{
+                            padding: '0.75rem 1rem 0.75rem 2.5rem',
+                            borderRadius: '1rem',
+                            background: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-main)',
+                            fontSize: '0.9rem',
+                            width: '300px'
+                        }}
+                    />
+                </div>
+            </div>
+
+            {filteredTests.length === 0 && !loading ? (
                 <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.7 }}>
                     <ClipboardList size={64} style={{ marginBottom: '1rem', opacity: 0.3 }} />
                     <h3>No global tests yet</h3>
@@ -4141,7 +4662,7 @@ function GlobalTestsAdmin() {
                 </div>
             ) : (
                 <div className="problem-list-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))' }}>
-                    {tests.map(t => (
+                    {filteredTests.map(t => (
                         <div key={t.id} className="problem-card card glass" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2))', color: '#10b981', fontWeight: 700 }}>GLOBAL TEST</span>
@@ -4179,9 +4700,24 @@ function GlobalTestsAdmin() {
                                     <button
                                         type="button"
                                         onClick={() => openStudentAllocationModal(t.id)}
-                                        style={{ background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', color: '#d8b4fe', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        className="btn-create-new"
+                                        style={{
+                                            padding: '0.5rem 1rem',
+                                            fontSize: '0.8rem',
+                                            background: 'rgba(168, 85, 247, 0.1)',
+                                            color: '#d8b4fe',
+                                            border: '1px solid rgba(168, 85, 247, 0.2)',
+                                            borderRadius: '8px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.4rem',
+                                            fontWeight: 600,
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(168, 85, 247, 0.2)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(168, 85, 247, 0.1)'}
                                     >
-                                        👥 Assign
+                                        <Users size={16} /> Assign
                                     </button>
 
                                     {t.status === 'live' ? (
@@ -4217,119 +4753,147 @@ function GlobalTestsAdmin() {
             )}
 
             {showStudentAllocationModal && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1500,
-                    backdropFilter: 'blur(5px)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)'
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
                 }}>
-                    <div style={{
-                        width: '100%',
-                        maxWidth: '600px',
-                        maxHeight: '80vh',
-                        overflow: 'auto',
-                        borderRadius: '16px',
-                        background: '#1e293b',
-                        border: '1px solid rgba(139,92,246,0.2)',
-                        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
-                        padding: '1.5rem'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Assign Students</h3>
-                            <button
-                                onClick={() => {
-                                    setShowStudentAllocationModal(false);
-                                    setSelectedStudents([]);
-                                    setAllocatingTestId(null);
-                                }}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#cbd5e1',
-                                    fontSize: '1.5rem',
-                                    cursor: 'pointer',
-                                    padding: '0',
-                                    lineHeight: 1
-                                }}
-                            >
-                                ×
-                            </button>
-                        </div>
-
-                        <div style={{ marginBottom: '1.5rem', maxHeight: '400px', overflowY: 'auto' }}>
-                            {allStudents.map(student => (
-                                <div
-                                    key={student.id}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        padding: '0.75rem',
-                                        marginBottom: '0.5rem',
-                                        background: 'rgba(255,255,255,0.03)',
-                                        borderRadius: '8px',
-                                        border: selectedStudents.includes(student.id) ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.1)',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    onClick={() => toggleStudentSelection(student.id)}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedStudents.includes(student.id)}
-                                        onChange={() => toggleStudentSelection(student.id)}
-                                        style={{ marginRight: '0.75rem', cursor: 'pointer', accentColor: '#a855f7' }}
-                                    />
-                                    <div>
-                                        <div style={{ fontWeight: 600 }}>{student.username}</div>
-                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{student.email}</div>
-                                    </div>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <div className="modal-title-with-icon">
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Users size={20} color="white" />
                                 </div>
-                            ))}
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this global test</p>
+                                </div>
+                            </div>
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close"><X size={20} /></button>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                        <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.9rem'
+                                    }}
+                                />
+                            </div>
                             <button
                                 onClick={() => {
-                                    setShowStudentAllocationModal(false);
-                                    setSelectedStudents([]);
-                                    setAllocatingTestId(null);
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
                                 }}
                                 style={{
-                                    padding: '0.75rem 1.5rem',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    color: '#cbd5e1',
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    fontWeight: 600
-                                }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={saveStudentAllocations}
-                                style={{
-                                    padding: '0.75rem 1.5rem',
-                                    background: 'rgba(168, 85, 247, 0.2)',
-                                    border: '1px solid rgba(168, 85, 247, 0.5)',
-                                    color: '#e9d5ff',
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
+                                    padding: '0.7rem 1.2rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.85rem',
                                     fontWeight: 600,
-                                    transition: 'all 0.2s'
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
                                 }}
-                                onMouseOver={(e) => e.target.style.background = 'rgba(168, 85, 247, 0.3)'}
-                                onMouseOut={(e) => e.target.style.background = 'rgba(168, 85, 247, 0.2)'}
                             >
-                                Assign {selectedStudents.length > 0 ? `(${selectedStudents.length})` : ''}
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
                             </button>
+                        </div>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                        <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                        <p>No students found matching your search.</p>
+                                    </div>
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1rem',
+                                                borderRadius: '1rem',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '36px', height: '36px', borderRadius: '50%',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '0.9rem', fontWeight: 700, color: 'white'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'No Batch'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn-reset" onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setStudentSearchTerm('')
+                                }}>Cancel</button>
+                                <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                    Confirm Assignment
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -5042,12 +5606,13 @@ function AptitudeTestsAdmin() {
     const [submissions, setSubmissions] = useState([])
     const [uploading, setUploading] = useState(false)
     const csvInputRef = useRef(null)
-    
+
     // Student allocation state
     const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
     const [allStudents, setAllStudents] = useState([])
     const [selectedStudents, setSelectedStudents] = useState([])
     const [allocatingTestId, setAllocatingTestId] = useState(null)
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
 
     const [newTest, setNewTest] = useState({
         title: '',
@@ -6211,109 +6776,146 @@ function AptitudeTestsAdmin() {
                 </div>
             )}
 
-            {/* Student Allocation Modal */}
             {showStudentAllocationModal && (
-                <div className="modal-overlay" onClick={() => setShowStudentAllocationModal(false)}>
-                    <div
-                        className="modal-content"
-                        onClick={e => e.stopPropagation()}
-                        style={{ maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto' }}
-                    >
-                        <div className="modal-header">
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
+                }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
                             <div className="modal-title-with-icon">
-                                <div style={{
-                                    width: '40px',
-                                    height: '40px',
-                                    borderRadius: '10px',
-                                    background: 'linear-gradient(135deg, #a855f7, #9333ea)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #a855f7, #9333ea)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                     <Users size={20} color="white" />
                                 </div>
-                                <h2>Assign Test to Students</h2>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h2>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this aptitude test</p>
+                                </div>
                             </div>
-                            <button onClick={() => setShowStudentAllocationModal(false)} className="modal-close">
-                                <X size={20} />
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close"><X size={20} /></button>
+                        </div>
+
+                        <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.9rem'
+                                    }}
+                                />
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.7rem 1.2rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
                             </button>
                         </div>
-                        <div className="modal-body">
-                            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                                Select which students should take this test. {selectedStudents.length} student(s) selected.
-                            </p>
-                            <div style={{ 
-                                maxHeight: '400px', 
-                                overflowY: 'auto', 
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '10px',
-                                padding: '1rem'
-                            }}>
-                                {allStudents.length === 0 ? (
-                                    <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>No students found</p>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                        <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                        <p>No students found matching your search.</p>
+                                    </div>
                                 ) : (
-                                    allStudents.map(student => (
-                                        <div key={student.id} style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '1rem',
-                                            padding: '0.75rem',
-                                            borderRadius: '8px',
-                                            background: 'var(--bg-secondary)',
-                                            marginBottom: '0.5rem',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onClick={() => toggleStudentSelection(student.id)}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedStudents.includes(student.id)}
-                                                onChange={() => {}} // Handled by parent onClick
-                                                style={{ cursor: 'pointer', width: '18px', height: '18px' }}
-                                            />
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                                                    {student.name}
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1rem',
+                                                borderRadius: '1rem',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '36px', height: '36px', borderRadius: '50%',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '0.9rem', fontWeight: 700, color: 'white'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
                                                 </div>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                                    {student.email}
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'No Batch'}
+                                                    </span>
                                                 </div>
                                             </div>
+                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
                                         </div>
                                     ))
                                 )}
                             </div>
-                            <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
-                                <button
-                                    onClick={saveStudentAllocations}
-                                    style={{
-                                        flex: 1,
-                                        padding: '0.75rem',
-                                        background: '#a855f7',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '8px',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        fontSize: '0.95rem'
-                                    }}
-                                >
-                                    ✅ Save Allocations ({selectedStudents.length})
-                                </button>
-                                <button
-                                    onClick={() => setShowStudentAllocationModal(false)}
-                                    style={{
-                                        padding: '0.75rem 1.5rem',
-                                        background: 'var(--bg-secondary)',
-                                        color: 'var(--text-primary)',
-                                        border: '1px solid var(--border-color)',
-                                        borderRadius: '8px',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        fontSize: '0.95rem'
-                                    }}
-                                >
-                                    Cancel
+                        </div>
+
+                        <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn-reset" onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setStudentSearchTerm('')
+                                }}>Cancel</button>
+                                <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                    Confirm Assignment
                                 </button>
                             </div>
                         </div>
@@ -6804,9 +7406,9 @@ function AdminAnalyticsDashboard() {
 
                     {/* Search Bar */}
                     <div style={{ marginBottom: '1.5rem' }}>
-                        <input 
-                            type="text" 
-                            placeholder="🔍 Search student name or ID..." 
+                        <input
+                            type="text"
+                            placeholder="🔍 Search student name or ID..."
                             value={searchStudent}
                             onChange={(e) => setSearchStudent(e.target.value)}
                             style={{
@@ -6886,23 +7488,23 @@ function AdminAnalyticsDashboard() {
                                     {studentStats.students
                                         .filter(s => !searchStudent || s.student_name.toLowerCase().includes(searchStudent.toLowerCase()) || s.student_id.toLowerCase().includes(searchStudent.toLowerCase()))
                                         .map((student, i) => (
-                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                            <td style={{ padding: '0.6rem', fontWeight: 600 }}>
-                                                <div>{student.student_name}</div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{student.student_id}</div>
-                                            </td>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{student.total_exams}</td>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600, color: student.flagged_exams > 0 ? '#ef4444' : '#10b981' }}>{student.flagged_exams}</td>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
-                                                <span style={{ padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: student.pass_rate >= 80 ? 'rgba(16,185,129,0.12)' : student.pass_rate >= 50 ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)', color: student.pass_rate >= 80 ? '#10b981' : student.pass_rate >= 50 ? '#f59e0b' : '#ef4444' }}>{student.pass_rate}%</span>
-                                            </td>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 700, color: student.avg_score >= 60 ? '#ef4444' : student.avg_score >= 30 ? '#f59e0b' : '#10b981' }}>{student.avg_score}</td>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{student.total_violations}</td>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
-                                                <span style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 700, background: student.status.includes('CLEAN') ? 'rgba(16,185,129,0.15)' : student.status.includes('REPEAT') ? 'rgba(245,158,11,0.15)' : student.status.includes('DEFINITE') ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)', color: student.status.includes('CLEAN') ? '#10b981' : student.status.includes('REPEAT') ? '#f59e0b' : student.status.includes('DEFINITE') ? '#ef4444' : '#3b82f6' }}>{student.status}</span>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={{ padding: '0.6rem', fontWeight: 600 }}>
+                                                    <div>{student.student_name}</div>
+                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{student.student_id}</div>
+                                                </td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{student.total_exams}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600, color: student.flagged_exams > 0 ? '#ef4444' : '#10b981' }}>{student.flagged_exams}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                    <span style={{ padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600, background: student.pass_rate >= 80 ? 'rgba(16,185,129,0.12)' : student.pass_rate >= 50 ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)', color: student.pass_rate >= 80 ? '#10b981' : student.pass_rate >= 50 ? '#f59e0b' : '#ef4444' }}>{student.pass_rate}%</span>
+                                                </td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 700, color: student.avg_score >= 60 ? '#ef4444' : student.avg_score >= 30 ? '#f59e0b' : '#10b981' }}>{student.avg_score}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center', fontWeight: 600 }}>{student.total_violations}</td>
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                    <span style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 700, background: student.status.includes('CLEAN') ? 'rgba(16,185,129,0.15)' : student.status.includes('REPEAT') ? 'rgba(245,158,11,0.15)' : student.status.includes('DEFINITE') ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)', color: student.status.includes('CLEAN') ? '#10b981' : student.status.includes('REPEAT') ? '#f59e0b' : student.status.includes('DEFINITE') ? '#ef4444' : '#3b82f6' }}>{student.status}</span>
+                                                </td>
+                                            </tr>
+                                        ))}
                                 </tbody>
                             </table>
                         </div>

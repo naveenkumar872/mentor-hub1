@@ -264,7 +264,7 @@ export default function SkillTestPortal({ user }) {
                                 phoneDetectionCooldown.current = now;
                                 console.warn(`🚨 SUSPICIOUS DEVICE: ${deviceObj.class} (${(deviceObj.score * 100).toFixed(0)}%)`);
                                 // All these classes map to 'phone_detected' to increment the phone count in UI
-                                // logProctoringRef.current?.('phone_detected', `Suspicious activity: ${deviceObj.class} detected (${(deviceObj.score * 100).toFixed(0)}% confidence)`, 'high');
+                                logProctoringRef.current?.('phone_detected', `Suspicious activity: ${deviceObj.class} detected (${(deviceObj.score * 100).toFixed(0)}% confidence)`, 'high');
                             }
                         }
 
@@ -277,14 +277,14 @@ export default function SkillTestPortal({ user }) {
                             const now = Date.now();
                             if (now - phoneDetectionCooldown.current > PHONE_COOLDOWN_MS) {
                                 phoneDetectionCooldown.current = now;
-                                // logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
+                                logProctoringRef.current?.('phone_detected', `${suspiciousObjects[0].class} detected`, 'medium');
                             }
                         }
 
                         // Multiple people detection
                         const persons = predictions.filter(p => p.class === 'person' && p.score > 0.35);
                         if (persons.length > 1) {
-                            // logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
+                            logProctoringRef.current?.('phone_detected', `Multiple people detected (${persons.length} persons)`, 'high');
                         }
                     } catch (e) {
                         console.warn("Detection error:", e.message);

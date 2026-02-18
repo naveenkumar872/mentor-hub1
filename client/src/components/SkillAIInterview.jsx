@@ -23,6 +23,8 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
     const [history, setHistory] = useState([]);
     const [error, setError] = useState('');
     const [timeLeft, setTimeLeft] = useState(null);
+    const messagesEndRef = useRef(null);
+    const chatContainerRef = useRef(null);
     const recognitionRef = useRef(null);
     const synthRef = useRef(null);
     const timerRef = useRef(null);
@@ -203,8 +205,19 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
             setAvatarState('idle');
         } finally {
             setSubmitting(false);
+            scrollToBottom();
         }
     };
+
+    const scrollToBottom = () => {
+        setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [history, question, feedback]);
 
     if (loading) return <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Starting AI Interview...</div>;
 
@@ -235,163 +248,223 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
     }
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
-            {/* Left: Avatar + Controls */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                <AvatarInterviewer state={avatarState} size={220} />
-
-                {timeLeft !== null && (
-                    <div style={{
-                        padding: '6px 16px', borderRadius: '12px', fontSize: '14px', fontWeight: 600,
-                        background: timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(139,92,246,0.15)',
-                        color: timeLeft < 300 ? '#fca5a5' : '#a78bfa',
-                        border: '1px solid ' + (timeLeft < 300 ? 'rgba(239,68,68,0.4)' : 'rgba(139,92,246,0.3)'),
-                        marginBottom: '8px'
-                    }}>
-                        Time Left: {formatTime(timeLeft)}
+        <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', height: '700px', background: '#0f172a', borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+            {/* Left Sidebar: Interviewer Status & Stats */}
+            <div style={{ background: '#1e293b', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', padding: '24px', position: 'relative' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+                    <div style={{ position: 'relative' }}>
+                        <AvatarInterviewer state={avatarState} size={180} />
+                        <div style={{ position: 'absolute', bottom: '10px', right: '10px', width: '12px', height: '12px', borderRadius: '50%', background: avatarState === 'speaking' ? '#10b981' : avatarState === 'thinking' ? '#8b5cf6' : '#94a3b8', border: '2px solid #1e293b' }}></div>
                     </div>
-                )}
 
-                {/* Question Meta */}
-                <div style={{ textAlign: 'center' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#8b5cf6' }}>
-                        Question {questionNumber}/{totalQuestions}
-                    </span>
-                    {category && (
-                        <div style={{
-                            marginTop: '4px', padding: '2px 10px', borderRadius: '12px',
-                            background: 'rgba(139,92,246,0.15)', color: '#a78bfa', fontSize: '11px', fontWeight: 600, display: 'inline-block'
-                        }}>{category}</div>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc', marginBottom: '4px' }}>AI Interviewer</div>
+                        <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>{avatarState === 'speaking' ? 'Speaking...' : avatarState === 'thinking' ? 'Processing...' : 'Ready'}</div>
+                    </div>
+
+                    <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.05)', margin: '10px 0' }}></div>
+
+                    {timeLeft !== null && (
+                        <div style={{ width: '100%' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '8px', textTransform: 'uppercase' }}>Time Efficiency</div>
+                            <div style={{
+                                padding: '12px', borderRadius: '16px', fontSize: '20px', fontWeight: 900,
+                                background: timeLeft < 300 ? 'rgba(239,68,68,0.1)' : 'rgba(16, 185, 129, 0.1)',
+                                color: timeLeft < 300 ? '#fca5a5' : '#10b981',
+                                border: '1px solid ' + (timeLeft < 300 ? 'rgba(239,68,68,0.2)' : 'rgba(16, 185, 129, 0.2)'),
+                                textAlign: 'center', fontFamily: '"JetBrains Mono", monospace'
+                            }}>
+                                {formatTime(timeLeft)}
+                            </div>
+                        </div>
                     )}
+
+                    <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>PROGRESS</div>
+                            <div style={{ fontSize: '18px', fontWeight: 900, color: '#8b5cf6' }}>{questionNumber}/{totalQuestions}</div>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+                            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>DIFFICULTY</div>
+                            <div style={{ fontSize: '13px', fontWeight: 800, color: difficulty === 'hard' ? '#ef4444' : '#f59e0b', textTransform: 'uppercase' }}>{difficulty}</div>
+                        </div>
+                    </div>
                 </div>
 
-                {/* TTS Toggle */}
-                <button onClick={() => {
-                    const newVal = !ttsEnabled;
-                    setTtsEnabled(newVal);
-                    if (!newVal && synthRef.current) synthRef.current.cancel();
-                }} style={{
-                    padding: '8px 14px', background: ttsEnabled ? 'rgba(34,197,94,0.1)' : '#334155',
-                    border: '1px solid ' + (ttsEnabled ? 'rgba(34,197,94,0.3)' : '#475569'),
-                    borderRadius: '8px', cursor: 'pointer', fontSize: '12px', color: '#f1f5f9',
-                    display: 'flex', alignItems: 'center', gap: '6px'
-                }}>
-                    {ttsEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                    Voice {ttsEnabled ? 'On' : 'Off'}
-                </button>
-
-                {/* Previous Q&A History */}
-                {history.length > 0 && (
-                    <div style={{
-                        width: '100%', maxHeight: '200px', overflowY: 'auto',
-                        background: '#0f172a', borderRadius: '8px', padding: '10px', fontSize: '11px'
+                <div style={{ marginTop: 'auto' }}>
+                    <button onClick={() => setTtsEnabled(!ttsEnabled)} style={{
+                        width: '100%', padding: '12px', background: ttsEnabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.03)',
+                        border: '1px solid ' + (ttsEnabled ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)'),
+                        borderRadius: '12px', color: ttsEnabled ? '#10b981' : '#64748b', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', fontWeight: 700, fontSize: '13px'
                     }}>
-                        <div style={{ fontWeight: 600, marginBottom: '6px', color: '#94a3b8' }}>Previous Answers</div>
-                        {history.map((h, i) => (
-                            <div key={i} style={{ marginBottom: '8px', padding: '6px', background: '#1e293b', borderRadius: '4px' }}>
-                                <div style={{ fontWeight: 600, color: '#cbd5e1' }}>Q{i + 1}: {h.question.slice(0, 50)}...</div>
-                                <div style={{ color: h.score >= 7 ? '#22c55e' : h.score >= 5 ? '#f59e0b' : '#ef4444' }}>
-                                    Score: {h.score}/10
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                        {ttsEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                        {ttsEnabled ? 'VOICE ENABLED' : 'MUTE MODE'}
+                    </button>
+                </div>
             </div>
 
-            {/* Right: Question + Answer */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {error && (
-                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px', color: '#fca5a5', fontSize: '13px' }}>{error}</div>
-                )}
-
-                {/* Question */}
-                <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                        <MessageSquare size={18} color="#8b5cf6" />
-                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#8b5cf6' }}>Interviewer</span>
-                        {difficulty && (
-                            <span style={{
-                                padding: '2px 8px', borderRadius: '12px', fontSize: '11px',
-                                background: difficulty === 'hard' ? 'rgba(239,68,68,0.15)' : difficulty === 'medium' ? 'rgba(245,158,11,0.15)' : 'rgba(34,197,94,0.15)',
-                                color: difficulty === 'hard' ? '#f87171' : difficulty === 'medium' ? '#fbbf24' : '#34d399'
-                            }}>{difficulty}</span>
-                        )}
+            {/* Right Main Interface: Chat Area */}
+            <div style={{ display: 'flex', flexDirection: 'column', background: '#0f172a', position: 'relative' }}>
+                {/* Chat History Container */}
+                <div
+                    ref={chatContainerRef}
+                    style={{ flex: 1, overflowY: 'auto', padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px', scrollBehavior: 'smooth' }}
+                >
+                    {/* Welcome / Header */}
+                    <div style={{ paddingBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '10px' }}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#f8fafc', margin: 0 }}>Technical Assessment</h2>
+                        <p style={{ fontSize: '14px', color: '#64748b', margin: '4px 0 0' }}>Conducting focus session on {category || 'General Software Engineering'}</p>
                     </div>
-                    <p style={{ fontSize: '16px', lineHeight: 1.6, color: '#f1f5f9', margin: 0 }}>{question}</p>
-                    {!isSpeaking && ttsEnabled && (
-                        <button onClick={() => speakText(question)} style={{
-                            marginTop: '8px', background: 'none', border: 'none', cursor: 'pointer',
-                            color: '#8b5cf6', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px'
-                        }}>
-                            <Volume2 size={14} /> Replay
-                        </button>
+
+                    {/* History Messages */}
+                    {history.map((h, i) => (
+                        <React.Fragment key={i}>
+                            {/* Bot Question */}
+                            <div style={{ display: 'flex', gap: '12px', maxWidth: '85%' }}>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <MessageSquare size={16} color="white" />
+                                </div>
+                                <div style={{ background: '#1e293b', padding: '16px', borderRadius: '4px 20px 20px 20px', border: '1px solid rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: '15px', lineHeight: 1.6 }}>
+                                    {h.question}
+                                </div>
+                            </div>
+
+                            {/* User Answer */}
+                            <div style={{ display: 'flex', gap: '12px', maxWidth: '85%', alignSelf: 'flex-end', flexDirection: 'row-reverse' }}>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <div style={{ fontSize: '14px', fontWeight: 900, color: 'white' }}>Y</div>
+                                </div>
+                                <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '16px', borderRadius: '20px 4px 20px 20px', border: '1px solid rgba(16, 185, 129, 0.2)', color: '#f1f5f9', fontSize: '15px', lineHeight: 1.6 }}>
+                                    {h.answer}
+                                </div>
+                            </div>
+
+                            {/* Bot Feedback */}
+                            <div style={{ display: 'flex', gap: '12px', maxWidth: '75%', alignSelf: 'center' }}>
+                                <div style={{
+                                    background: h.score >= 7 ? 'rgba(34,197,94,0.05)' : 'rgba(245,158,11,0.05)',
+                                    padding: '12px 20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)',
+                                    display: 'flex', alignItems: 'center', gap: '12px'
+                                }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 900, color: h.score >= 7 ? '#10b981' : '#f59e0b', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '8px' }}>
+                                        SCORE: {h.score}/10
+                                    </div>
+                                    <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic' }}>{h.feedback}</div>
+                                </div>
+                            </div>
+                        </React.Fragment>
+                    ))}
+
+                    {/* Current Active Question */}
+                    {!feedback && !result && (
+                        <div style={{ display: 'flex', gap: '12px', maxWidth: '85%' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <MessageSquare size={16} color="white" />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ background: '#1e293b', padding: '16px', borderRadius: '4px 20px 20px 20px', border: '1px solid rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: '15px', lineHeight: 1.6, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+                                    {question}
+                                    {!isSpeaking && ttsEnabled && (
+                                        <button onClick={() => speakText(question)} style={{
+                                            marginTop: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer',
+                                            color: '#8b5cf6', fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px'
+                                        }}>
+                                            <Volume2 size={12} /> REPLAY AUDIO
+                                        </button>
+                                    )}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#475569', paddingLeft: '4px', fontWeight: 600 }}>WAITING FOR YOUR ANSWER</div>
+                            </div>
+                        </div>
                     )}
+
+                    {/* Error Overlay */}
+                    {error && (
+                        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '12px 20px', color: '#fca5a5', fontSize: '13px', alignSelf: 'center' }}>
+                            <strong>Error:</strong> {error}
+                        </div>
+                    )}
+
+                    {/* Feedback animation placeholder */}
+                    {feedback && !result && (
+                        <div style={{ display: 'flex', gap: '12px', maxWidth: '85%', opacity: 0.6 }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Loader2 size={16} className="animate-spin" color="white" />
+                            </div>
+                            <div style={{ background: '#0f172a', padding: '16px', color: '#475569', fontStyle: 'italic', fontSize: '14px' }}>
+                                Moving to next question...
+                            </div>
+                        </div>
+                    )}
+
+                    <div ref={messagesEndRef} />
                 </div>
 
-                {/* Feedback from previous answer */}
-                {feedback && (
-                    <div style={{
-                        background: feedback.score >= 7 ? 'rgba(34,197,94,0.1)' : feedback.score >= 5 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
-                        border: '1px solid ' + (feedback.score >= 7 ? 'rgba(34,197,94,0.3)' : feedback.score >= 5 ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'),
-                        borderRadius: '10px', padding: '16px'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <span style={{ fontWeight: 700, fontSize: '14px', color: '#f1f5f9' }}>Feedback</span>
-                            <span style={{
-                                fontWeight: 700, fontSize: '16px',
-                                color: feedback.score >= 7 ? '#22c55e' : feedback.score >= 5 ? '#d97706' : '#ef4444'
-                            }}>
-                                {feedback.score}/10
-                            </span>
+                {/* Input Area: Floating style like Gemini */}
+                <div style={{ padding: '0 32px 32px' }}>
+                    {!feedback && !result && (
+                        <div style={{
+                            background: '#1e293b', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.08)',
+                            boxShadow: '0 10px 40px rgba(0,0,0,0.4)', padding: '12px', transition: 'all 0.3s'
+                        }}>
+                            <textarea
+                                value={answer}
+                                onChange={e => setAnswer(e.target.value)}
+                                placeholder="Type your response here..."
+                                rows={2}
+                                style={{
+                                    width: '100%', background: 'transparent', border: 'none', color: '#f8fafc',
+                                    fontSize: '15px', lineHeight: 1.6, padding: '12px', resize: 'none', outline: 'none',
+                                    fontFamily: 'inherit'
+                                }}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        if (answer.trim() && !submitting) submitAnswer();
+                                    }
+                                }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 12px' }}>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button onClick={isListening ? stopListening : startListening} style={{
+                                        width: '40px', height: '40px', borderRadius: '50%', border: 'none', cursor: 'pointer',
+                                        background: isListening ? '#ef4444' : 'rgba(16, 185, 129, 0.1)',
+                                        color: isListening ? 'white' : '#10b981',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+                                        border: isListening ? 'none' : '1px solid rgba(16, 185, 129, 0.2)'
+                                    }}>
+                                        {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+                                    </button>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#64748b' }}></div>
+                                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>{answer.split(/\s+/).filter(Boolean).length} WORDS</span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={submitAnswer}
+                                    disabled={submitting || !answer.trim()}
+                                    style={{
+                                        padding: '10px 24px', background: '#8b5cf6', color: 'white', border: 'none',
+                                        borderRadius: '16px', cursor: 'pointer', fontWeight: 800, fontSize: '13px',
+                                        display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s',
+                                        opacity: (submitting || !answer.trim()) ? 0.3 : 1,
+                                        boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+                                    }}
+                                >
+                                    {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                                    SUBMIT
+                                </button>
+                            </div>
                         </div>
-                        <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>{feedback.feedback}</p>
-                        {!result && <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>Next question coming up...</p>}
-                    </div>
-                )}
-
-                {/* Answer Input */}
-                {!feedback && !result && (
-                    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '20px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                            <span style={{ fontWeight: 600, fontSize: '14px', color: '#f1f5f9' }}>Your Answer</span>
-                            <span style={{ fontSize: '12px', color: '#64748b' }}>
-                                {answer.split(/\s+/).filter(Boolean).length} words
-                            </span>
+                    )}
+                    {(feedback || result) && (
+                        <div style={{ textAlign: 'center', padding: '20px', color: '#475569', fontSize: '14px', fontWeight: 600, letterSpacing: '0.05em' }}>
+                            {result ? 'INTERVIEW COMPLETED' : 'EVALUATING RESPONSE...'}
                         </div>
-
-                        <textarea
-                            value={answer}
-                            onChange={e => setAnswer(e.target.value)}
-                            placeholder="Type your answer or use the microphone..."
-                            rows={6}
-                            style={{
-                                width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #475569',
-                                fontSize: '14px', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box',
-                                background: isListening ? 'rgba(34,197,94,0.1)' : '#0f172a', color: '#f1f5f9'
-                            }}
-                        />
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px' }}>
-                            <button onClick={isListening ? stopListening : startListening} style={{
-                                padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                                fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
-                                background: isListening ? '#ef4444' : '#22c55e', color: 'white'
-                            }}>
-                                {isListening ? <><MicOff size={16} /> Stop Recording</> : <><Mic size={16} /> Start Speaking</>}
-                            </button>
-
-                            <button onClick={submitAnswer} disabled={submitting || !answer.trim()} style={{
-                                padding: '10px 24px', background: '#8b5cf6', color: 'white', border: 'none',
-                                borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '14px',
-                                display: 'flex', alignItems: 'center', gap: '8px',
-                                opacity: (submitting || !answer.trim()) ? 0.5 : 1
-                            }}>
-                                {submitting ? <><Loader2 size={16} /> Evaluating...</> : <><Send size={16} /> Submit Answer</>}
-                            </button>
-                        </div>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
         </div>
     );
