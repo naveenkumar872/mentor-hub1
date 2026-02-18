@@ -4,7 +4,8 @@ import {
     Brain, Plus, Trash2, ToggleLeft, ToggleRight, Users, CheckCircle, XCircle,
     Eye, X, ChevronDown, ChevronUp, Settings, Tag, FileText, Code, Database,
     MessageSquare, Clock, Target, Search, Hash, BarChart2, Shield, Sparkles, Zap,
-    Camera, Mic, Maximize, ClipboardX, ScanFace, Video, Smartphone, Monitor
+    Camera, Mic, Maximize, ClipboardX, ScanFace, Video, Smartphone, Monitor,
+    Check, Bot
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -107,6 +108,7 @@ export default function SkillTestManager() {
     const [selectedStudents, setSelectedStudents] = useState([]);
     const [allocatingTestId, setAllocatingTestId] = useState(null);
     const [studentSearchTerm, setStudentSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => { loadTests(); }, []);
 
@@ -229,7 +231,29 @@ export default function SkillTestManager() {
 
     const stageColors = { passed: '#22c55e', failed: '#ef4444', in_progress: '#f59e0b', pending: '#6b7280' };
 
+    // Filtered tests based on search
+    const filteredTests = tests.filter(t =>
+        (t.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.skills || []).some(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
+    // Load attempts for a specific test
+    const loadAttempts = async (testId) => {
+        if (viewAttempts === testId) {
+            setViewAttempts(null);
+            return;
+        }
+        try {
+            const { data } = await axios.get(`${API}/api/skill-tests/${testId}/attempts`);
+            setAttempts(Array.isArray(data) ? data : []);
+            setViewAttempts(testId);
+        } catch (err) {
+            setError(err.response?.data?.error || err.message);
+            setAttempts([]);
+            setViewAttempts(testId);
+        }
+    };
 
     return (
         <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
@@ -612,6 +636,25 @@ export default function SkillTestManager() {
                 </div>
             )}
 
+            {/* Search Bar */}
+            {!showCreate && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                    <div style={{ position: 'relative' }}>
+                        <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                        <input
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Search assessments..."
+                            style={{
+                                padding: '10px 14px 10px 36px', borderRadius: '10px',
+                                border: '1px solid #475569', background: '#0f172a', color: '#f1f5f9',
+                                fontSize: '13px', width: '280px', outline: 'none'
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
             {/* Tests List */}
             {loading ? (
                 <div style={{ textAlign: 'center', padding: '60px', color: '#9ca3af' }}>
@@ -652,7 +695,7 @@ export default function SkillTestManager() {
                                     {test.description && <p style={{ margin: '0 0 12px', color: '#94a3b8', fontSize: '13px', lineHeight: '1.5' }}>{test.description}</p>}
 
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '12px' }}>
-                                        {test.skills.map(s => (
+                                        {(test.skills || []).map(s => (
                                             <span key={s} style={{
                                                 padding: '3px 10px', background: 'rgba(139,92,246,0.15)', color: '#a78bfa',
                                                 borderRadius: '20px', fontSize: '11px', fontWeight: 600,
@@ -672,7 +715,7 @@ export default function SkillTestManager() {
                                         <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#3b82f6', fontWeight: 600 }}>
                                             <Code size={12} /> {test.coding_count} Coding
                                         </span>
-                                        {test.config.interview.enabled && (
+                                        {test.config?.interview?.enabled && (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.8rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '20px', fontSize: '0.75rem', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                                                 <Bot size={14} /> AI Interview
                                             </div>

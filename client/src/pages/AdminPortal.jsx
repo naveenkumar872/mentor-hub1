@@ -3957,6 +3957,7 @@ function GlobalTestsAdmin() {
     const [allocatingTestId, setAllocatingTestId] = useState(null)
     const [studentSearchTerm, setStudentSearchTerm] = useState('')
     const [testSearchTerm, setTestSearchTerm] = useState('') // New state for test search
+    const [expandedTestId, setExpandedTestId] = useState(null) // For collapsible test cards
 
     const [newTest, setNewTest] = useState({
         title: '',
@@ -4661,94 +4662,267 @@ function GlobalTestsAdmin() {
                     <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>If you see 503, run: <code>node migrate_global_tests.js</code></p>
                 </div>
             ) : (
-                <div className="problem-list-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))' }}>
-                    {filteredTests.map(t => (
-                        <div key={t.id} className="problem-card card glass" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2))', color: '#10b981', fontWeight: 700 }}>GLOBAL TEST</span>
-                                <span style={{
-                                    fontSize: '0.65rem',
-                                    padding: '3px 8px',
-                                    borderRadius: '4px',
-                                    textTransform: 'uppercase',
-                                    fontWeight: 700,
-                                    background: t.status === 'live' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                    color: t.status === 'live' ? '#10b981' : '#ef4444',
-                                    border: t.status === 'live' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)'
-                                }}>
-                                    {t.status === 'live' ? 'LIVE' : 'ENDED'}
-                                </span>
-                            </div>
-                            <h3 style={{ margin: '0.75rem 0', fontSize: '1.2rem' }}>{t.title}</h3>
-                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: '1rem' }}>
-                                {t.description || 'Aptitude, Verbal, Logical, Coding, SQL'}
-                            </p>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                                {t.duration} min · {t.totalQuestions ?? 0} questions · Pass {t.passingScore}%
-                            </div>
-                            <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.type}</span>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => openEdit(t)}
-                                        style={{ background: '#1e3a8a', border: '1px solid #1d4ed8', color: '#93c5fd', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
-                                    >
-                                        <Eye size={14} /> View
-                                    </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {filteredTests.map(t => {
+                        const isExpanded = expandedTestId === t.id
+                        const sectionConfig = t.sectionConfig?.sections || []
+                        const enabledSections = sectionConfig.filter(s => s.enabled)
+                        const sectionLabels = enabledSections.map(s => s.id.charAt(0).toUpperCase() + s.id.slice(1)).join(', ')
 
-                                    <button
-                                        type="button"
-                                        onClick={() => openStudentAllocationModal(t.id)}
-                                        className="btn-create-new"
-                                        style={{
-                                            padding: '0.5rem 1rem',
-                                            fontSize: '0.8rem',
-                                            background: 'rgba(168, 85, 247, 0.1)',
-                                            color: '#d8b4fe',
-                                            border: '1px solid rgba(168, 85, 247, 0.2)',
-                                            borderRadius: '8px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.4rem',
-                                            fontWeight: 600,
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(168, 85, 247, 0.2)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(168, 85, 247, 0.1)'}
-                                    >
-                                        <Users size={16} /> Assign
-                                    </button>
+                        return (
+                            <div key={t.id} style={{
+                                background: 'var(--bg-secondary)',
+                                border: `1px solid ${isExpanded ? 'rgba(99, 102, 241, 0.4)' : 'var(--border-color)'}`,
+                                borderRadius: '16px',
+                                overflow: 'hidden',
+                                transition: 'all 0.3s ease',
+                                boxShadow: isExpanded ? '0 8px 32px rgba(99, 102, 241, 0.15)' : '0 2px 8px rgba(0,0,0,0.1)'
+                            }}>
+                                {/* Card Header - Always Visible */}
+                                <div
+                                    onClick={() => setExpandedTestId(isExpanded ? null : t.id)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '1rem',
+                                        padding: '1.25rem 1.5rem',
+                                        cursor: 'pointer',
+                                        transition: 'background 0.2s',
+                                        background: isExpanded ? 'rgba(99, 102, 241, 0.05)' : 'transparent'
+                                    }}
+                                >
+                                    {/* Status indicator */}
+                                    <div style={{
+                                        width: '10px',
+                                        height: '10px',
+                                        borderRadius: '50%',
+                                        background: t.status === 'live' ? '#10b981' : '#ef4444',
+                                        boxShadow: `0 0 8px ${t.status === 'live' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                        flexShrink: 0
+                                    }} />
 
-                                    {t.status === 'live' ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleUpdateStatus(t.id, 'draft')}
-                                            style={{ background: '#451a03', border: '1px solid #b45309', color: '#fbbf24', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
-                                        >
-                                            <XCircle size={14} /> End
-                                        </button>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleUpdateStatus(t.id, 'live')}
-                                            style={{ background: '#064e3b', border: '1px solid #059669', color: '#6ee7b7', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
-                                        >
-                                            <CheckCircle size={14} /> Activate
-                                        </button>
-                                    )}
+                                    {/* Title & type */}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+                                            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</h3>
+                                            <span style={{
+                                                fontSize: '0.65rem',
+                                                padding: '2px 8px',
+                                                borderRadius: '4px',
+                                                textTransform: 'uppercase',
+                                                fontWeight: 700,
+                                                background: t.status === 'live' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                                color: t.status === 'live' ? '#10b981' : '#ef4444',
+                                                border: t.status === 'live' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)',
+                                                flexShrink: 0
+                                            }}>
+                                                {t.status === 'live' ? 'LIVE' : 'ENDED'}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                <Clock size={12} /> {t.duration} min
+                                            </span>
+                                            <span>·</span>
+                                            <span>{t.totalQuestions ?? 0} questions</span>
+                                            <span>·</span>
+                                            <span>Pass {t.passingScore}%</span>
+                                            {sectionLabels && (
+                                                <>
+                                                    <span>·</span>
+                                                    <span style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{sectionLabels}</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
 
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDelete(t.id)}
-                                        style={{ background: '#450a0a', border: '1px solid #991b1b', color: '#f87171', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
-                                    >
-                                        <Trash2 size={14} /> Delete
-                                    </button>
+                                    {/* Expand/Collapse icon */}
+                                    <div style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '8px',
+                                        background: 'var(--bg-card)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'transform 0.3s',
+                                        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)',
+                                        flexShrink: 0
+                                    }}>
+                                        <ChevronRight size={16} style={{ color: 'var(--text-muted)', transform: 'rotate(90deg)' }} />
+                                    </div>
                                 </div>
+
+                                {/* Expanded content */}
+                                {isExpanded && (
+                                    <div style={{
+                                        borderTop: '1px solid var(--border-color)',
+                                        padding: '1.25rem 1.5rem',
+                                        animation: 'fadeIn 0.2s ease'
+                                    }}>
+                                        {/* Description */}
+                                        {t.description && (
+                                            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: '0 0 1rem' }}>
+                                                {t.description}
+                                            </p>
+                                        )}
+
+                                        {/* Section details grid */}
+                                        {enabledSections.length > 0 && (
+                                            <div style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: `repeat(${Math.min(enabledSections.length, 5)}, 1fr)`,
+                                                gap: '0.75rem',
+                                                marginBottom: '1.25rem'
+                                            }}>
+                                                {enabledSections.map(sec => {
+                                                    const sectionColors = {
+                                                        aptitude: { bg: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: 'rgba(59, 130, 246, 0.2)' },
+                                                        verbal: { bg: 'rgba(139, 92, 246, 0.1)', color: '#a78bfa', border: 'rgba(139, 92, 246, 0.2)' },
+                                                        logical: { bg: 'rgba(6, 182, 212, 0.1)', color: '#22d3ee', border: 'rgba(6, 182, 212, 0.2)' },
+                                                        coding: { bg: 'rgba(16, 185, 129, 0.1)', color: '#34d399', border: 'rgba(16, 185, 129, 0.2)' },
+                                                        sql: { bg: 'rgba(245, 158, 11, 0.1)', color: '#fbbf24', border: 'rgba(245, 158, 11, 0.2)' }
+                                                    }
+                                                    const sc = sectionColors[sec.id] || sectionColors.aptitude
+                                                    return (
+                                                        <div key={sec.id} style={{
+                                                            padding: '0.75rem',
+                                                            background: sc.bg,
+                                                            border: `1px solid ${sc.border}`,
+                                                            borderRadius: '10px',
+                                                            textAlign: 'center'
+                                                        }}>
+                                                            <div style={{ fontSize: '0.7rem', fontWeight: 600, color: sc.color, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.3rem' }}>
+                                                                {sec.id}
+                                                            </div>
+                                                            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                                                                {sec.questionsCount || 0}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                                                {sec.timeMinutes || 0} min
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Meta row: type, dates, max attempts */}
+                                        <div style={{
+                                            display: 'flex',
+                                            flexWrap: 'wrap',
+                                            gap: '0.75rem',
+                                            marginBottom: '1.25rem',
+                                            fontSize: '0.8rem',
+                                            color: 'var(--text-muted)'
+                                        }}>
+                                            <span style={{ padding: '0.3rem 0.75rem', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                                Type: <strong style={{ color: 'var(--text-main)' }}>{t.type || 'Comprehensive'}</strong>
+                                            </span>
+                                            <span style={{ padding: '0.3rem 0.75rem', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                                Difficulty: <strong style={{ color: { Easy: '#10b981', Medium: '#f59e0b', Hard: '#ef4444' }[t.difficulty] || 'var(--text-main)' }}>{t.difficulty || 'Medium'}</strong>
+                                            </span>
+                                            <span style={{ padding: '0.3rem 0.75rem', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                                Max Attempts: <strong style={{ color: 'var(--text-main)' }}>{t.maxAttempts || 1}</strong>
+                                            </span>
+                                            {t.startTime && (
+                                                <span style={{ padding: '0.3rem 0.75rem', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                                    Start: <strong style={{ color: 'var(--text-main)' }}>{new Date(t.startTime).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                            {t.deadline && (
+                                                <span style={{ padding: '0.3rem 0.75rem', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                                    Deadline: <strong style={{ color: 'var(--text-main)' }}>{new Date(t.deadline).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '0.6rem',
+                                            flexWrap: 'wrap',
+                                            paddingTop: '1rem',
+                                            borderTop: '1px solid var(--border-color)'
+                                        }}>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); openEdit(t); }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                    padding: '0.6rem 1.2rem', borderRadius: '10px', cursor: 'pointer',
+                                                    fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s',
+                                                    background: 'rgba(59, 130, 246, 0.1)', color: '#93c5fd',
+                                                    border: '1px solid rgba(59, 130, 246, 0.25)'
+                                                }}
+                                            >
+                                                <Eye size={14} /> View / Edit
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); openStudentAllocationModal(t.id); }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                    padding: '0.6rem 1.2rem', borderRadius: '10px', cursor: 'pointer',
+                                                    fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s',
+                                                    background: 'rgba(168, 85, 247, 0.1)', color: '#d8b4fe',
+                                                    border: '1px solid rgba(168, 85, 247, 0.25)'
+                                                }}
+                                            >
+                                                <Users size={14} /> Assign Students
+                                            </button>
+
+                                            {t.status === 'live' ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleUpdateStatus(t.id, 'draft'); }}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                        padding: '0.6rem 1.2rem', borderRadius: '10px', cursor: 'pointer',
+                                                        fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s',
+                                                        background: 'rgba(245, 158, 11, 0.1)', color: '#fbbf24',
+                                                        border: '1px solid rgba(245, 158, 11, 0.25)'
+                                                    }}
+                                                >
+                                                    <XCircle size={14} /> End Test
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleUpdateStatus(t.id, 'live'); }}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                        padding: '0.6rem 1.2rem', borderRadius: '10px', cursor: 'pointer',
+                                                        fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s',
+                                                        background: 'rgba(16, 185, 129, 0.1)', color: '#6ee7b7',
+                                                        border: '1px solid rgba(16, 185, 129, 0.25)'
+                                                    }}
+                                                >
+                                                    <CheckCircle size={14} /> Activate
+                                                </button>
+                                            )}
+
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                    padding: '0.6rem 1.2rem', borderRadius: '10px', cursor: 'pointer',
+                                                    fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.2s',
+                                                    background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5',
+                                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                                    marginLeft: 'auto'
+                                                }}
+                                            >
+                                                <Trash2 size={14} /> Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             )}
 
