@@ -102,6 +102,11 @@ export default function SkillTestManager() {
     const [skillSearch, setSkillSearch] = useState('');
     const [expandedCategory, setExpandedCategory] = useState(null);
     const [error, setError] = useState('');
+    const [allStudents, setAllStudents] = useState([]);
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false);
+    const [selectedStudents, setSelectedStudents] = useState([]);
+    const [allocatingTestId, setAllocatingTestId] = useState(null);
+    const [studentSearchTerm, setStudentSearchTerm] = useState('');
 
     useEffect(() => { loadTests(); }, []);
 
@@ -153,13 +158,50 @@ export default function SkillTestManager() {
         }
     };
 
-    const loadAttempts = async (testId) => {
+    const fetchAllStudents = async () => {
         try {
-            const { data } = await axios.get(`${API}/api/skill-tests/${testId}/attempts`);
-            setAttempts(data);
-            setViewAttempts(testId);
-        } catch (err) {
-            setError(err.message);
+            const { data } = await axios.get(`${API}/api/users?role=student`);
+            setAllStudents(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('Error fetching students:', e);
+            setAllStudents([]);
+        }
+    };
+
+    const openStudentAllocationModal = async (testId) => {
+        await fetchAllStudents();
+        setAllocatingTestId(testId);
+
+        try {
+            const { data } = await axios.get(`${API}/api/tests/${testId}/allocated-students`);
+            setSelectedStudents(data.studentIds || []);
+        } catch (e) {
+            console.error('Error loading allocations:', e);
+            setSelectedStudents([]);
+        }
+
+        setShowStudentAllocationModal(true);
+    };
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        );
+    };
+
+    const saveStudentAllocations = async () => {
+        try {
+            await axios.post(`${API}/api/tests/${allocatingTestId}/allocate-students`, {
+                studentIds: selectedStudents
+            });
+            setShowStudentAllocationModal(false);
+            setSelectedStudents([]);
+            setAllocatingTestId(null);
+            loadTests();
+        } catch (e) {
+            setError('Error saving allocations: ' + (e.response?.data?.error || e.message));
         }
     };
 
@@ -549,7 +591,6 @@ export default function SkillTestManager() {
                             <span><Code size={13} style={{ verticalAlign: 'middle' }} /> {form.coding_count} Coding</span>
                             <span><Database size={13} style={{ verticalAlign: 'middle' }} /> {form.sql_count} SQL</span>
                             <span><MessageSquare size={13} style={{ verticalAlign: 'middle' }} /> {form.interview_count} Interview</span>
-                            <span><MessageSquare size={13} style={{ verticalAlign: 'middle' }} /> {form.interview_count} Interview</span>
                             <span><Clock size={13} style={{ verticalAlign: 'middle' }} /> {form.mcq_duration_minutes}m+{form.coding_duration_minutes}m+{form.sql_duration_minutes}m+{form.interview_duration_minutes}m</span>
                             <span style={{ color: { easy: '#22c55e', medium: '#f59e0b', hard: '#ef4444', mixed: '#8b5cf6' }[form.difficulty_level] }}>
                                 <Target size={13} style={{ verticalAlign: 'middle' }} /> {form.difficulty_level}
@@ -578,27 +619,18 @@ export default function SkillTestManager() {
                     <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                     <p style={{ fontSize: '14px', fontWeight: 500 }}>Loading assessments...</p>
                 </div>
-            ) : tests.length === 0 ? (
-                <div style={{
-                    textAlign: 'center', padding: '60px', color: '#94a3b8',
-                    background: '#1e293b', borderRadius: '16px', border: '2px dashed #334155'
-                }}>
-                    <div style={{
-                        width: '64px', height: '64px', borderRadius: '16px', margin: '0 auto 16px',
-                        background: 'rgba(139,92,246,0.15)', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center'
-                    }}>
-                        <Brain size={32} color="#8b5cf6" />
-                    </div>
-                    <p style={{ fontSize: '16px', fontWeight: 700, color: '#e2e8f0', margin: '0 0 6px' }}>No assessments yet</p>
-                    <p style={{ fontSize: '13px', margin: 0 }}>Click "Create Test" above to build your first skill assessment</p>
+            ) : filteredTests.length === 0 ? (
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '5rem', background: 'var(--bg-card)', borderRadius: '20px', border: '1px dashed var(--border-color)' }}>
+                    <Brain size={48} style={{ color: 'var(--text-muted)', marginBottom: '1rem', opacity: 0.3 }} />
+                    <h3 style={{ color: 'var(--text-main)' }}>No tests found</h3>
+                    <p style={{ color: 'var(--text-muted)' }}>{searchTerm ? 'Try a different search term' : 'Create your first skill test to get started'}</p>
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 600, padding: '0 4px' }}>
-                        {tests.length} assessment{tests.length !== 1 ? 's' : ''}
+                        {filteredTests.length} assessment{filteredTests.length !== 1 ? 's' : ''}
                     </div>
-                    {tests.map(test => (
+                    {filteredTests.map(test => (
                         <div key={test.id} style={{
                             background: '#1e293b', border: '1px solid #334155', borderRadius: '14px',
                             padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
@@ -640,6 +672,11 @@ export default function SkillTestManager() {
                                         <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#3b82f6', fontWeight: 600 }}>
                                             <Code size={12} /> {test.coding_count} Coding
                                         </span>
+                                        {test.config.interview.enabled && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.8rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '20px', fontSize: '0.75rem', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                                                <Bot size={14} /> AI Interview
+                                            </div>
+                                        )}
                                         <span style={{ color: '#475569' }}>|</span>
                                         <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#10b981', fontWeight: 600 }}>
                                             <Database size={12} /> {test.sql_count} SQL
@@ -678,6 +715,28 @@ export default function SkillTestManager() {
                                         padding: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
                                         borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s'
                                     }}><Eye size={16} color="#34d399" /></button>
+                                    <button
+                                        onClick={() => openStudentAllocationModal(test.id)}
+                                        title="Assign Students"
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            padding: '0.6rem 1rem',
+                                            background: 'rgba(167, 139, 250, 0.1)',
+                                            color: '#a78bfa',
+                                            border: '1px solid rgba(167, 139, 250, 0.2)',
+                                            borderRadius: '10px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(167, 139, 250, 0.2)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(167, 139, 250, 0.1)'}
+                                    >
+                                        <Users size={16} /> Assign
+                                    </button>
                                     <button onClick={() => toggleTest(test.id)} title={test.is_active ? 'Deactivate' : 'Activate'} style={{
                                         padding: '8px', background: test.is_active ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
                                         border: '1px solid ' + (test.is_active ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'),
@@ -761,6 +820,249 @@ export default function SkillTestManager() {
                             )}
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Student Allocation Modal */}
+            {showStudentAllocationModal && (
+                <div className="modal-overlay" onClick={() => setShowStudentAllocationModal(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+                        maxWidth: '800px',
+                        maxHeight: '90vh',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        borderRadius: '24px',
+                        overflow: 'hidden',
+                        padding: 0,
+                        border: '1px solid var(--border-color)',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}>
+                        <div className="modal-header" style={{
+                            padding: '1.5rem 2rem',
+                            borderBottom: '1px solid var(--border-color)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: 'var(--bg-card)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '14px',
+                                    background: 'linear-gradient(135deg, #a78bfa, #8b5cf6)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    boxShadow: '0 8px 16px rgba(167, 139, 250, 0.2)'
+                                }}>
+                                    <Users size={24} color="white" />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--text-main)', fontWeight: 800 }}>Assign Students</h2>
+                                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>Manage student participation for this skill test</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowStudentAllocationModal(false)} className="modal-close" style={{ background: 'var(--bg-secondary)' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div style={{
+                            padding: '1.25rem 2rem',
+                            background: 'var(--bg-secondary)',
+                            borderBottom: '1px solid var(--border-color)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '1.5rem'
+                        }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by student name, username or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.85rem 1rem 0.85rem 2.75rem',
+                                        borderRadius: '12px',
+                                        border: '1px solid var(--border-color)',
+                                        background: 'var(--bg-card)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.95rem',
+                                        outline: 'none',
+                                        transition: 'all 0.2s',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                                    }}
+                                />
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    );
+                                    const allInFilteredSelected = filtered.every(s => selectedStudents.includes(s.id));
+                                    if (allInFilteredSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.find(s => s.id === id)));
+                                    } else {
+                                        const newIds = filtered.map(s => s.id).filter(id => !selectedStudents.includes(id));
+                                        setSelectedStudents(prev => [...prev, ...newIds]);
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.85rem 1.5rem',
+                                    background: 'var(--bg-card)',
+                                    color: 'var(--text-main)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '12px',
+                                    fontWeight: 600,
+                                    fontSize: '0.9rem',
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{
+                            padding: '2rem',
+                            overflowY: 'auto',
+                            maxHeight: '50vh',
+                            background: 'var(--bg-card)'
+                        }}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                                gap: '1rem'
+                            }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
+                                        <Users size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} />
+                                        <p>No students found matching your search.</p>
+                                    </div>
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                padding: '1rem',
+                                                borderRadius: '16px',
+                                                background: selectedStudents.includes(student.id) ? 'rgba(167, 139, 250, 0.1)' : 'var(--bg-secondary)',
+                                                border: `2px solid ${selectedStudents.includes(student.id) ? '#a78bfa' : 'transparent'}`,
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                position: 'relative',
+                                                overflow: 'hidden'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '44px',
+                                                height: '44px',
+                                                borderRadius: '12px',
+                                                background: selectedStudents.includes(student.id) ? '#a78bfa' : 'var(--bg-card)',
+                                                color: selectedStudents.includes(student.id) ? 'white' : 'var(--primary)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '1.1rem',
+                                                fontWeight: 800,
+                                                boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+                                                    <span style={{ padding: '2px 6px', background: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'General'}
+                                                    </span>
+                                                    <span>•</span>
+                                                    <span>{student.email?.split('@')[0]}</span>
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && (
+                                                <div style={{
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    background: '#a78bfa',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    color: 'white',
+                                                    boxShadow: '0 2px 4px rgba(167, 139, 250, 0.4)'
+                                                }}>
+                                                    <Check size={14} strokeWidth={3} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modal-footer" style={{
+                            padding: '1.5rem 2rem',
+                            borderTop: '1px solid var(--border-color)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: 'var(--bg-card)'
+                        }}>
+                            <div style={{ color: 'var(--text-main)' }}>
+                                <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '1.25rem' }}>{selectedStudents.length}</span>
+                                <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)' }}>students selected</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button
+                                    onClick={() => setShowStudentAllocationModal(false)}
+                                    className="btn-reset"
+                                    style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', fontWeight: 600 }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={saveStudentAllocations}
+                                    style={{
+                                        padding: '0.75rem 2.5rem',
+                                        background: 'var(--primary)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        fontWeight: 700,
+                                        fontSize: '1rem',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 8px 20px var(--primary-alpha)',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                                >
+                                    Confirm Assignments
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

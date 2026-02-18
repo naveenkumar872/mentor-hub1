@@ -15,7 +15,7 @@ const {
     evaluateInterviewAnswer,
     evaluateSQLQuery,
     generateFinalReport
-} = require('./ai_service');
+} = require(path.join(__dirname, 'ai_service')); // Robust path resolution for casing consistency
 
 function registerSkillTestRoutes(app, pool) {
 
@@ -153,13 +153,39 @@ function registerSkillTestRoutes(app, pool) {
         }
     });
 
-    // Get all skill tests
+    // Get all skill tests (optionally filtered by status)
+    app.get('/api/skill-tests', async (req, res) => {
+        try {
+            const { status } = req.query;
+            let query = 'SELECT * FROM skill_tests';
+            const params = [];
+
+            if (status === 'live') {
+                query += ' WHERE is_active = 1';
+            }
+
+            query += ' ORDER BY created_at DESC';
+            const [rows] = await pool.query(query, params);
+
+            const parsed = rows.map(r => ({
+                ...r,
+                skills: typeof r.skills === 'string' ? JSON.parse(r.skills) : r.skills,
+                status: r.is_active ? 'live' : 'ended' // Add status field for frontend consistency
+            }));
+            res.json(parsed);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // Get all skill tests (admin view)
     app.get('/api/skill-tests/all', async (req, res) => {
         try {
             const [rows] = await pool.query('SELECT * FROM skill_tests ORDER BY created_at DESC');
             const parsed = rows.map(r => ({
                 ...r,
-                skills: typeof r.skills === 'string' ? JSON.parse(r.skills) : r.skills
+                skills: typeof r.skills === 'string' ? JSON.parse(r.skills) : r.skills,
+                status: r.is_active ? 'live' : 'ended'
             }));
             res.json(parsed);
         } catch (err) {
@@ -648,13 +674,10 @@ function registerSkillTestRoutes(app, pool) {
         }
     });
 
-    // Code execution - uses temp files and child_process for supported languages
-    app.post('/api/skill-tests/coding/run', async (req, res) => {
-        try {
-            const { code, language, input_data } = req.body;
-            if (!code || !language) return res.status(400).json({ success: false, error: 'Code and language are required' });
-
-            const tmpDir = path.join(os.tmpdir(), 'skill_test_code_' + Date.now());
+    // Helper for code execution
+    async function executeCode(code, language, input) {
+        return new Promise((resolve) => {
+            const tmpDir = path.join(os.tmpdir(), 'skill_test_code_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
             fs.mkdirSync(tmpDir, { recursive: true });
 
             let fileName, runCmd;
@@ -665,37 +688,46 @@ function registerSkillTestRoutes(app, pool) {
                 fileName = 'solution.js';
                 runCmd = `node "${path.join(tmpDir, fileName)}"`;
             } else {
-                // Fallback: return a message for unsupported languages
-                fs.rmSync(tmpDir, { recursive: true, force: true });
-                return res.json({ success: true, output: `[Note: ${language} execution not available on this server. Your code has been saved and will be evaluated on submission.]` });
+                try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { }
+                // For unsupported languages, we can't verify, so we might mark as pending or manual review.
+                // For now, return a special flag so submission can decide.
+                return resolve({ success: true, output: `[${language} execution not supported on this server]`, unsupported: true });
             }
 
             fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
-
-            // Write input file if provided
             const inputFile = path.join(tmpDir, 'input.txt');
-            fs.writeFileSync(inputFile, input_data || '', 'utf-8');
+            fs.writeFileSync(inputFile, input || '', 'utf-8');
 
             const fullCmd = `${runCmd} < "${inputFile}"`;
 
-            exec(fullCmd, { timeout: 15000, maxBuffer: 1024 * 512, cwd: tmpDir }, (error, stdout, stderr) => {
-                // Cleanup
+            exec(fullCmd, { timeout: 5000, maxBuffer: 1024 * 512, cwd: tmpDir }, (error, stdout, stderr) => {
                 try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { }
 
                 if (error && error.killed) {
-                    return res.json({ success: false, output: '', error: 'Time Limit Exceeded (15s)' });
+                    resolve({ success: false, output: '', error: 'Time Limit Exceeded (5s)' });
+                } else if (error) {
+                    resolve({ success: false, output: stdout || '', error: stderr || error.message });
+                } else {
+                    resolve({ success: true, output: stdout ? stdout.trim() : '', error: stderr || '' });
                 }
-                if (error) {
-                    return res.json({ success: false, output: stdout || '', error: stderr || error.message });
-                }
-                res.json({ success: true, output: stdout || '(No output)', error: stderr || '' });
             });
+        });
+    }
+
+    // Code execution - uses temp files and child_process for supported languages
+    app.post('/api/skill-tests/coding/run', async (req, res) => {
+        try {
+            const { code, language, input_data } = req.body;
+            if (!code || !language) return res.status(400).json({ success: false, error: 'Code and language are required' });
+
+            const result = await executeCode(code, language, input_data);
+            res.json(result);
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
     });
 
-    // Submit a single coding problem - accepts problemId, code, language from frontend
+    // Submit a single coding problem - verify against test cases
     app.post('/api/skill-tests/coding/submit', async (req, res) => {
         try {
             const { attemptId, problemId, code, language } = req.body;
@@ -705,21 +737,68 @@ function registerSkillTestRoutes(app, pool) {
             if (attempts.length === 0) return res.status(404).json({ error: 'Attempt not found' });
 
             const attempt = attempts[0];
+            const codingProblems = attempt.coding_problems ? (typeof attempt.coding_problems === 'string' ? JSON.parse(attempt.coding_problems) : attempt.coding_problems) : [];
+            const problem = codingProblems.find(p => String(p.id) === String(problemId));
+
+            if (!problem) return res.status(404).json({ error: 'Problem not found in this attempt' });
+
+            const testCases = problem.test_cases || [];
+            let allPassed = true;
+            const testResults = [];
+
+            // Execute against all test cases
+            for (let i = 0; i < testCases.length; i++) {
+                const tc = testCases[i];
+                const result = await executeCode(code, language, tc.input);
+
+                if (result.unsupported) {
+                    // If language is not supported, we default to passed (or pending)
+                    testResults.push({ name: `Test Case ${i + 1}`, passed: true, output: 'Language not supported for auto-eval' });
+                    continue;
+                }
+
+                if (!result.success && !result.error && !result.output) {
+                    // Empty result?
+                    result.success = true;
+                }
+
+                // Simple trim comparison
+                const actual = (result.output || '').trim();
+                const expected = (tc.expected_output || '').trim();
+                const passed = result.success && actual === expected;
+
+                if (!passed) allPassed = false;
+                testResults.push({
+                    name: `Test Case ${i + 1}`,
+                    passed,
+                    expected,
+                    actual: passed ? actual : (result.error || actual)
+                });
+            }
+
+            // If no test cases (generative error?), assume passed if run successfully
+            if (testCases.length === 0) allPassed = true;
+
             const currentSubmissions = attempt.coding_submissions ? (typeof attempt.coding_submissions === 'string' ? JSON.parse(attempt.coding_submissions) : attempt.coding_submissions) : {};
 
-            // Store the submission for this problem
-            currentSubmissions[String(problemId)] = { code, language, submitted_at: new Date().toISOString(), passed: true };
+            // Store results
+            currentSubmissions[String(problemId)] = {
+                code,
+                language,
+                submitted_at: new Date().toISOString(),
+                passed: allPassed,
+                test_results: testResults
+            };
 
             await pool.query(
                 'UPDATE skill_test_attempts SET coding_submissions = ? WHERE id = ?',
                 [JSON.stringify(currentSubmissions), attemptId]
             );
 
-            // Return success with all_passed = true so the frontend marks this problem as solved
             res.json({
                 success: true,
-                all_passed: true,
-                test_results: [{ passed: true, name: 'Submission accepted' }]
+                all_passed: allPassed,
+                test_results: testResults
             });
         } catch (err) {
             res.status(500).json({ error: err.message });
@@ -740,8 +819,8 @@ function registerSkillTestRoutes(app, pool) {
             const codingProblems = typeof attempt.coding_problems === 'string' ? JSON.parse(attempt.coding_problems) : (attempt.coding_problems || []);
             const numProblems = codingProblems.length;
 
-            const submittedCount = Object.keys(codingSubmissions).length;
-            const score = numProblems > 0 ? (submittedCount / numProblems) * 100 : 0;
+            const passedCount = Object.values(codingSubmissions).filter(s => s.passed).length;
+            const score = numProblems > 0 ? (passedCount / numProblems) * 100 : 0;
             const passed = score >= attempt.coding_passing_score;
 
             if (!passed) {
@@ -757,14 +836,14 @@ function registerSkillTestRoutes(app, pool) {
                         attempt.test_title || 'Skill Test',
                         skills,
                         mcqStats,
-                        { score, solved: submittedCount, total: numProblems, passed: false, problemDetails: codingProblems.map(p => ({ title: p.title, solved: !!codingSubmissions[String(p.id)] })) },
+                        { score, solved: passedCount, total: numProblems, passed: false, problemDetails: codingProblems.map(p => ({ title: p.title, solved: codingSubmissions[String(p.id)]?.passed === true })) },
                         { score: 0, solved: 0, total: 0, passed: false, problemDetails: [] },
                         { avgScore: 0, answered: 0, total: 0, passed: false, highlights: [] },
                         attempt.mcq_violations || 0
                     );
                 } catch (reportErr) {
                     console.error('Report generation failed on coding failure:', reportErr.message);
-                    report = { overall_rating: 'Needs Improvement', summary: `Scored ${Math.round(score)}% on coding (${submittedCount}/${numProblems} solved). Below passing score of ${attempt.coding_passing_score}%.` };
+                    report = { overall_rating: 'Needs Improvement', summary: `Scored ${Math.round(score)}% on coding (${passedCount}/${numProblems} solved). Below passing score of ${attempt.coding_passing_score}%.` };
                 }
 
                 await pool.query(
@@ -783,7 +862,7 @@ function registerSkillTestRoutes(app, pool) {
                 );
             }
 
-            res.json({ success: true, score, passed, solved: submittedCount, total: numProblems, nextStage: passed ? 'sql' : null });
+            res.json({ success: true, score, passed, solved: passedCount, total: numProblems, nextStage: passed ? 'sql' : null });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
@@ -812,8 +891,10 @@ function registerSkillTestRoutes(app, pool) {
             const existingSubmissions = attempt.sql_submissions ? (typeof attempt.sql_submissions === 'string' ? JSON.parse(attempt.sql_submissions) : attempt.sql_submissions) : {};
 
             if (attempt.sql_problems) {
+                const tableNames = getSandboxTableNames(testId);
                 return res.json({
                     problems: typeof attempt.sql_problems === 'string' ? JSON.parse(attempt.sql_problems) : attempt.sql_problems,
+                    tables: tableNames,
                     existing_submissions: existingSubmissions,
                     duration_minutes: attempt.sql_duration_minutes || null
                 });
@@ -838,6 +919,7 @@ function registerSkillTestRoutes(app, pool) {
 
             res.json({
                 problems,
+                tables: tableNames,
                 existing_submissions: {},
                 duration_minutes: attempt.sql_duration_minutes || null
             });
@@ -956,12 +1038,40 @@ function registerSkillTestRoutes(app, pool) {
             const passed = evaluation.passed;
             const feedback = evaluation.feedback || (passed ? '✅ Correct!' : '❌ Incorrect query.');
 
+            // Get actual and expected results for comparison
+            let actual = null;
+            let expected = null;
+
+            try {
+                const [aRows, aFields] = await pool.query(sqlQuery);
+                actual = {
+                    rows: aRows.slice(0, 10),
+                    columns: aFields ? aFields.map(f => f.name) : []
+                };
+
+                if (problem.reference_query) {
+                    const [eRows, eFields] = await pool.query(problem.reference_query);
+                    expected = {
+                        rows: eRows.slice(0, 10),
+                        columns: eFields ? eFields.map(f => f.name) : []
+                    };
+                }
+            } catch (queryErr) {
+                actual = { error: queryErr.message };
+            }
+
             // Store the submission result
             const currentSubmissions = attempt.sql_submissions ? (typeof attempt.sql_submissions === 'string' ? JSON.parse(attempt.sql_submissions) : attempt.sql_submissions) : {};
-            currentSubmissions[String(problemId)] = { query: sqlQuery, submitted_at: new Date().toISOString(), passed };
+            currentSubmissions[String(problemId)] = {
+                query: sqlQuery,
+                submitted_at: new Date().toISOString(),
+                passed,
+                expected,
+                actual
+            };
             await pool.query('UPDATE skill_test_attempts SET sql_submissions = ? WHERE id = ?', [JSON.stringify(currentSubmissions), attemptId]);
 
-            res.json({ success: true, passed, feedback });
+            res.json({ success: true, passed, feedback, expected, actual });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
@@ -981,8 +1091,8 @@ function registerSkillTestRoutes(app, pool) {
             const sqlProblems = typeof attempt.sql_problems === 'string' ? JSON.parse(attempt.sql_problems) : (attempt.sql_problems || []);
             const numProblems = sqlProblems.length;
 
-            const submittedCount = Object.keys(sqlSubmissions).length;
-            const score = numProblems > 0 ? (submittedCount / numProblems) * 100 : 0;
+            const passedCount = Object.values(sqlSubmissions).filter(s => s.passed).length;
+            const score = numProblems > 0 ? (passedCount / numProblems) * 100 : 0;
             const passed = score >= attempt.sql_passing_score;
 
             if (!passed) {
@@ -999,13 +1109,13 @@ function registerSkillTestRoutes(app, pool) {
                         skills,
                         mcqStats,
                         codingStats,
-                        { score, solved: submittedCount, total: numProblems, passed: false, problemDetails: sqlProblems.map(p => ({ title: p.title, solved: !!sqlSubmissions[String(p.id)] })) },
+                        { score, solved: passedCount, total: numProblems, passed: false, problemDetails: sqlProblems.map(p => ({ title: p.title, solved: sqlSubmissions[String(p.id)]?.passed === true })) },
                         { avgScore: 0, answered: 0, total: 0, passed: false, highlights: [] },
                         attempt.mcq_violations || 0
                     );
                 } catch (reportErr) {
                     console.error('Report generation failed on SQL failure:', reportErr.message);
-                    report = { overall_rating: 'Needs Improvement', summary: `Scored ${Math.round(score)}% on SQL (${submittedCount}/${numProblems} solved). Below passing score of ${attempt.sql_passing_score}%.` };
+                    report = { overall_rating: 'Needs Improvement', summary: `Scored ${Math.round(score)}% on SQL (${passedCount}/${numProblems} solved). Below passing score of ${attempt.sql_passing_score}%.` };
                 }
 
                 await pool.query(
@@ -1024,7 +1134,7 @@ function registerSkillTestRoutes(app, pool) {
                 );
             }
 
-            res.json({ success: true, score, passed, solved: submittedCount, total: numProblems, nextStage: passed ? 'interview' : null });
+            res.json({ success: true, score, passed, solved: passedCount, total: numProblems, nextStage: passed ? 'interview' : null });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }

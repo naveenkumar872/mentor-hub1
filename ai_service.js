@@ -168,18 +168,31 @@ function generateFallbackMCQ(skills, count) {
     const questions = [];
     for (let i = 0; i < Math.min(count, skills.length * 3); i++) {
         const skill = skills[i % skills.length];
+
+        // Base options
+        const optionsList = [
+            `A fundamental principle of ${skill}`, // Correct
+            `A framework commonly used with ${skill}`,
+            `A design pattern in ${skill}`,
+            `A tool used alongside ${skill}`
+        ];
+
+        // Shuffle options and find new index of the correct answer
+        const correctOpt = optionsList[0];
+        const shuffled = optionsList
+            .map(value => ({ value, sort: Math.random() }))
+            .sort((a, b) => a.sort - b.sort)
+            .map(({ value }) => value);
+
+        const correctIdx = shuffled.indexOf(correctOpt);
+
         questions.push({
             id: i + 1,
             question: `Which of the following best describes a core concept of ${skill}?`,
             skill,
             difficulty: i % 3 === 0 ? 'easy' : i % 3 === 1 ? 'medium' : 'hard',
-            options: [
-                `A fundamental principle of ${skill}`,
-                `A framework commonly used with ${skill}`,
-                `A design pattern in ${skill}`,
-                `A tool used alongside ${skill}`
-            ],
-            correct_answer: 0,
+            options: shuffled,
+            correct_answer: correctIdx,
             explanation: `This is a fundamental concept in ${skill}.`
         });
     }
@@ -631,35 +644,42 @@ Return ONLY a valid JSON array.`
         if (problems && Array.isArray(problems) && problems.length > 0) {
             return problems.slice(0, count);
         }
-        return getDefaultSQLProblems(count);
+        return getDefaultSQLProblems(count, tables);
     } catch (err) {
         console.error('SQL generation failed:', err.message);
-        return getDefaultSQLProblems(count);
+        return getDefaultSQLProblems(count, tables);
     }
 }
 
-function getDefaultSQLProblems(count = 3) {
+function getDefaultSQLProblems(count = 3, tables = null) {
+    const t = tables || {
+        employees: 'employees',
+        departments: 'departments',
+        projects: 'projects',
+        orders: 'orders'
+    };
+
     const allProblems = [
         {
             id: 1, title: 'Employee Salary Report', difficulty: 'easy',
-            description: 'Find all employees who earn more than the average salary. Display their name, department, and salary. Order by salary descending.',
+            description: `Find all employees in the ${t.employees} table who earn more than the average salary. Display their name, department, and salary. Order by salary descending.`,
             hint: 'Use a subquery with AVG() to calculate the average salary.',
             expected_columns: ['name', 'department', 'salary'],
-            reference_query: 'SELECT name, department, salary FROM employees WHERE salary > (SELECT AVG(salary) FROM employees) ORDER BY salary DESC'
+            reference_query: `SELECT name, department, salary FROM ${t.employees} WHERE salary > (SELECT AVG(salary) FROM ${t.employees}) ORDER BY salary DESC`
         },
         {
             id: 2, title: 'Department Statistics', difficulty: 'medium',
-            description: 'Show each department with the count of employees and average salary. Only include departments with more than 1 employee. Order by average salary descending.',
+            description: `Using the ${t.employees} table, show each department with the count of employees and average salary. Only include departments with more than 1 employee. Order by average salary descending.`,
             hint: 'Use GROUP BY with HAVING clause.',
             expected_columns: ['department', 'employee_count', 'avg_salary'],
-            reference_query: 'SELECT department, COUNT(*) as employee_count, ROUND(AVG(salary), 2) as avg_salary FROM employees GROUP BY department HAVING COUNT(*) > 1 ORDER BY avg_salary DESC'
+            reference_query: `SELECT department, COUNT(*) as employee_count, ROUND(AVG(salary), 2) as avg_salary FROM ${t.employees} GROUP BY department HAVING COUNT(*) > 1 ORDER BY avg_salary DESC`
         },
         {
             id: 3, title: 'Top Revenue Products', difficulty: 'hard',
-            description: 'Find the top 3 products by total revenue (quantity * price). Show product name, total quantity sold, and total revenue.',
+            description: `Using the ${t.orders} table, find the top 3 products by total revenue (quantity * price). Show product name, total quantity sold, and total revenue.`,
             hint: 'Use GROUP BY with aggregate functions and LIMIT.',
             expected_columns: ['product', 'total_quantity', 'total_revenue'],
-            reference_query: 'SELECT product, SUM(quantity) as total_quantity, SUM(quantity * price) as total_revenue FROM orders GROUP BY product ORDER BY total_revenue DESC LIMIT 3'
+            reference_query: `SELECT product, SUM(quantity) as total_quantity, SUM(quantity * price) as total_revenue FROM ${t.orders} GROUP BY product ORDER BY total_revenue DESC LIMIT 3`
         }
     ];
     return allProblems.slice(0, Math.min(count, allProblems.length));
@@ -891,24 +911,24 @@ async function evaluateSQLQuery(problem, studentQuery) {
     const messages = [
         {
             role: 'system',
-            content: `You are an expert SQL evaluator. Compare a student's SQL query against a reference solution.
-
-The database has tables with the following schemas (table names may include a test prefix like st5_):
-- employees table (id INT, name TEXT, department TEXT, salary DECIMAL, hire_date DATE, manager_id INT)
-- departments table (id INT, name TEXT, budget DECIMAL, location TEXT)
-- projects table (id INT, name TEXT, department_id INT, start_date DATE, end_date DATE, status TEXT)
-- orders table (id INT, customer_name TEXT, product TEXT, quantity INT, price DECIMAL, order_date DATE)
-
-The reference query uses the correct table names. The student's query MUST use the same table names as the reference query.
-
-Evaluate if the student's query would produce the SAME result as the reference query.
-Consider: column names/aliases, filtering logic, joins, grouping, ordering, aggregations, and correct table names.
-Minor differences in style are OK (e.g., different alias names, explicit vs implicit joins) as long as the OUTPUT would be equivalent.
-
-Return ONLY a valid JSON object with:
-- "passed": boolean (true if the query is functionally correct)
-- "feedback": string (detailed explanation of what's right/wrong)
-- "score": number 0-100 (partial credit possible)`
+            content: `You are a pedagogical SQL evaluator and mentor. Your goal is to help a student identify errors in their SQL query WITHOUT revealing the reference solution or the correct query.
+    
+    CRITICAL RULES:
+    1. NEVER include the reference query or the correct SQL syntax in your feedback.
+    2. NEVER explicitly say "use HAVING..." or "use JOIN...". Instead, say "Check your filtering conditions for groups" or "Ensure you are correctly combining tables".
+    3. Describe the logical mismatch. (e.g., "Your query returns employees who work in 'HR', but the problem asks for those who do NOT.")
+    4. If the student made a simple typo, point to the area rather than giving the fix.
+    5. Always focus on why the result set would be different (rows missing, extra rows, wrong data).
+    
+    Evaluation Criteria:
+    - passed: true/false (Functionally equivalent to reference)
+    - feedback: Constructive, mentor-like feedback that guides the student.
+    - score: 0-100 based on how close they are.
+    
+    Return ONLY a valid JSON object with:
+    - "passed": boolean
+    - "feedback": string
+    - "score": number`
         },
         {
             role: 'user',

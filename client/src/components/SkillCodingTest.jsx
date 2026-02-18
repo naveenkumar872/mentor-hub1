@@ -75,19 +75,24 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
             const initCode = {};
             const initLang = {};
             (data.problems || []).forEach(p => {
-                const defaultLang = 'python';
-                let starter = '';
+                const submission = (data.existing_submissions || {})[String(p.id)];
 
-                if (p.starter_code && typeof p.starter_code === 'object') {
-                    starter = p.starter_code[defaultLang] || getDefaultStarter(p, defaultLang);
-                } else if (typeof p.starter_code === 'string') {
-                    starter = p.starter_code;
+                if (submission) {
+                    initCode[p.id] = submission.code;
+                    initLang[p.id] = submission.language || 'python';
                 } else {
-                    starter = getDefaultStarter(p, defaultLang);
+                    const defaultLang = 'python';
+                    let starter = '';
+                    if (p.starter_code && typeof p.starter_code === 'object') {
+                        starter = p.starter_code[defaultLang] || getDefaultStarter(p, defaultLang);
+                    } else if (typeof p.starter_code === 'string') {
+                        starter = p.starter_code;
+                    } else {
+                        starter = getDefaultStarter(p, defaultLang);
+                    }
+                    initCode[p.id] = starter;
+                    initLang[p.id] = defaultLang;
                 }
-
-                initCode[p.id] = starter;
-                initLang[p.id] = defaultLang;
             });
             setCode(initCode);
             setLanguage(initLang);
@@ -108,6 +113,11 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
         if (lang === 'c') return `#include <stdio.h>\n#include <stdlib.h>\n\nvoid solution() {\n    // Write your code here\n}\n\nint main() {\n    // Driver code\n    return 0;\n}\n`;
         if (lang === 'cpp') return `#include <iostream>\n#include <vector>\n#include <string>\nusing namespace std;\n\nvoid solution() {\n    // Write your code here\n}\n\nint main() {\n    // Driver code\n    return 0;\n}\n`;
         return `// ${title}\n`;
+    };
+
+    const truncate = (str, len = 50) => {
+        if (!str) return '';
+        return str.length > len ? str.substring(0, len) + '...' : str;
     };
 
     const runCode = async () => {
@@ -143,9 +153,13 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
                 language: language[p.id] || 'python'
             });
             setTestResults(data.test_results || []);
-            if (data.all_passed) {
-                setSubmissions(prev => ({ ...prev, [String(p.id)]: true }));
-            }
+            setSubmissions(prev => ({
+                ...prev,
+                [String(p.id)]: {
+                    passed: data.all_passed,
+                    test_results: data.test_results
+                }
+            }));
         } catch (err) {
             setError(err.response?.data?.error || err.message);
         } finally {
@@ -276,15 +290,32 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
             {/* Problem Navigator */}
             <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
                 {problems.map((pr, idx) => {
-                    const isSolved = submissions[String(pr.id)];
+                    const submission = submissions[String(pr.id)];
+                    const isSolved = submission?.passed;
+                    const isFailed = submission && !submission.passed; // attempted but failed
+
+                    let bg = '#334155';
+                    if (idx === currentIdx) bg = '#8b5cf6'; // Active (Purple)
+                    else if (isSolved) bg = '#22c55e';      // Solved (Green)
+                    else if (isFailed) bg = '#ef4444';      // Failed (Red)
+
                     return (
-                        <button key={idx} onClick={() => { setCurrentIdx(idx); setOutput(''); setTestResults(null); }} style={{
+                        <button key={idx} onClick={() => {
+                            setCurrentIdx(idx);
+                            setOutput('');
+                            // Verify if it's the current problem's results
+                            if (submissions[String(pr.id)]) {
+                                setTestResults(submissions[String(pr.id)].test_results || null);
+                            } else {
+                                setTestResults(null);
+                            }
+                        }} style={{
                             padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer',
                             fontWeight: 600, fontSize: '12px',
-                            background: idx === currentIdx ? '#8b5cf6' : isSolved ? '#22c55e' : '#334155',
-                            color: (idx === currentIdx || isSolved) ? 'white' : '#94a3b8'
+                            background: bg,
+                            color: 'white'
                         }}>
-                            P{idx + 1} {isSolved ? '✓' : ''}
+                            P{idx + 1} {isSolved ? '✓' : (isFailed ? '✗' : '')}
                         </button>
                     );
                 })}
@@ -337,8 +368,17 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
                         {/* Test Results */}
                         {testResults && (
                             <div style={{ marginTop: '16px', background: '#0f172a', border: '2px solid #334155', borderRadius: '8px', padding: '12px' }}>
-                                <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '10px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    ✓ Test Results
+                                <h4 style={{
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    marginBottom: '10px',
+                                    color: testResults.every(r => r.passed) ? '#10b981' : '#ef4444',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}>
+                                    {testResults.every(r => r.passed) ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                                    Test Results
                                 </h4>
                                 <div style={{ display: 'grid', gap: '8px' }}>
                                     {testResults.map((tr, i) => (
@@ -349,9 +389,20 @@ export default function SkillCodingTest({ attemptId, attemptData, onComplete, on
                                             borderRadius: '6px', fontSize: '12px', color: '#cbd5e1'
                                         }}>
                                             {tr.passed ? <CheckCircle size={16} color="#22c55e" /> : <XCircle size={16} color="#ef4444" />}
-                                            <span style={{ flex: 1 }}>
-                                                <strong>Test Case {i + 1}:</strong> {tr.passed ? '✓ Passed' : '✗ Failed'}
-                                            </span>
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span><strong>Test Case {tr.name || i + 1}:</strong> {tr.passed ? '✓ Passed' : '✗ Failed'}</span>
+                                                {!tr.passed && tr.expected && tr.actual && (
+                                                    <div style={{ fontSize: '11px', background: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '4px', marginTop: '4px' }}>
+                                                        <div style={{ color: '#ef4444' }}>Exp: {truncate(tr.expected)}</div>
+                                                        <div style={{ color: '#fca5a5' }}>Act: {truncate(tr.actual)}</div>
+                                                    </div>
+                                                )}
+                                                {!tr.passed && tr.output && !tr.expected && (
+                                                    <div style={{ fontSize: '11px', fontFamily: 'monospace', color: '#fca5a5' }}>
+                                                        {truncate(tr.output)}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
