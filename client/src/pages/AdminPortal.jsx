@@ -3461,6 +3461,13 @@ function GlobalTestsAdmin() {
     const [editingId, setEditingId] = useState(null)
     const [sectionTab, setSectionTab] = useState('aptitude')
     const [managingTestCases, setManagingTestCases] = useState(null)
+    
+    // Student allocation states
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [allStudents, setAllStudents] = useState([])
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingTestId, setAllocatingTestId] = useState(null)
+    
     const [newTest, setNewTest] = useState({
         title: '',
         type: 'comprehensive',
@@ -3602,7 +3609,50 @@ function GlobalTestsAdmin() {
         } catch (_) { setSubmissions([]) }
     }
 
-    useEffect(() => { fetchTests(); fetchSubmissions() }, [])
+    const fetchAllStudents = async () => {
+        try {
+            const response = await axios.get(`${API_BASE}/users?role=student`)
+            setAllStudents(response.data || [])
+        } catch (error) {
+            console.error('Error fetching students:', error)
+        }
+    }
+
+    const openStudentAllocationModal = async (testId) => {
+        setAllocatingTestId(testId)
+        try {
+            const response = await axios.get(`${API_BASE}/tests/${testId}/allocated-students`)
+            setSelectedStudents(response.data.studentIds || [])
+        } catch (error) {
+            setSelectedStudents([])
+        }
+        setShowStudentAllocationModal(true)
+    }
+
+    const saveStudentAllocations = async () => {
+        if (!allocatingTestId) return
+        try {
+            await axios.post(`${API_BASE}/tests/${allocatingTestId}/allocate-students`, {
+                studentIds: selectedStudents
+            })
+            alert(`✅ Test allocated to ${selectedStudents.length} student(s)`)
+            setShowStudentAllocationModal(false)
+            setSelectedStudents([])
+            setAllocatingTestId(null)
+        } catch (error) {
+            alert('❌ Error allocating test: ' + error.response?.data?.error || error.message)
+        }
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
+    }
+
+    useEffect(() => { fetchTests(); fetchSubmissions(); fetchAllStudents() }, [])
 
     const updateSectionConfig = (sectionId, field, value) => {
         setNewTest(prev => ({
@@ -4126,6 +4176,14 @@ function GlobalTestsAdmin() {
                                         <Eye size={14} /> View
                                     </button>
 
+                                    <button
+                                        type="button"
+                                        onClick={() => openStudentAllocationModal(t.id)}
+                                        style={{ background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', color: '#d8b4fe', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                        👥 Assign
+                                    </button>
+
                                     {t.status === 'live' ? (
                                         <button
                                             type="button"
@@ -4155,6 +4213,125 @@ function GlobalTestsAdmin() {
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {showStudentAllocationModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1500,
+                    backdropFilter: 'blur(5px)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)'
+                }}>
+                    <div style={{
+                        width: '100%',
+                        maxWidth: '600px',
+                        maxHeight: '80vh',
+                        overflow: 'auto',
+                        borderRadius: '16px',
+                        background: '#1e293b',
+                        border: '1px solid rgba(139,92,246,0.2)',
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+                        padding: '1.5rem'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Assign Students</h3>
+                            <button
+                                onClick={() => {
+                                    setShowStudentAllocationModal(false);
+                                    setSelectedStudents([]);
+                                    setAllocatingTestId(null);
+                                }}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#cbd5e1',
+                                    fontSize: '1.5rem',
+                                    cursor: 'pointer',
+                                    padding: '0',
+                                    lineHeight: 1
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div style={{ marginBottom: '1.5rem', maxHeight: '400px', overflowY: 'auto' }}>
+                            {allStudents.map(student => (
+                                <div
+                                    key={student.id}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '0.75rem',
+                                        marginBottom: '0.5rem',
+                                        background: 'rgba(255,255,255,0.03)',
+                                        borderRadius: '8px',
+                                        border: selectedStudents.includes(student.id) ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onClick={() => toggleStudentSelection(student.id)}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedStudents.includes(student.id)}
+                                        onChange={() => toggleStudentSelection(student.id)}
+                                        style={{ marginRight: '0.75rem', cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    <div>
+                                        <div style={{ fontWeight: 600 }}>{student.username}</div>
+                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{student.email}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => {
+                                    setShowStudentAllocationModal(false);
+                                    setSelectedStudents([]);
+                                    setAllocatingTestId(null);
+                                }}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    color: '#cbd5e1',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={saveStudentAllocations}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: 'rgba(168, 85, 247, 0.2)',
+                                    border: '1px solid rgba(168, 85, 247, 0.5)',
+                                    color: '#e9d5ff',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseOver={(e) => e.target.style.background = 'rgba(168, 85, 247, 0.3)'}
+                                onMouseOut={(e) => e.target.style.background = 'rgba(168, 85, 247, 0.2)'}
+                            >
+                                Assign {selectedStudents.length > 0 ? `(${selectedStudents.length})` : ''}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -4865,6 +5042,12 @@ function AptitudeTestsAdmin() {
     const [submissions, setSubmissions] = useState([])
     const [uploading, setUploading] = useState(false)
     const csvInputRef = useRef(null)
+    
+    // Student allocation state
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [allStudents, setAllStudents] = useState([])
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingTestId, setAllocatingTestId] = useState(null)
 
     const [newTest, setNewTest] = useState({
         title: '',
@@ -4890,7 +5073,17 @@ function AptitudeTestsAdmin() {
     useEffect(() => {
         fetchTests()
         fetchSubmissions()
+        fetchAllStudents()
     }, [])
+
+    const fetchAllStudents = async () => {
+        try {
+            const response = await axios.get(`${API_BASE}/users?role=student`)
+            setAllStudents(response.data || [])
+        } catch (error) {
+            console.error('Error fetching students:', error)
+        }
+    }
 
     const fetchTests = async () => {
         try {
@@ -4910,6 +5103,40 @@ function AptitudeTestsAdmin() {
         } catch (error) {
             console.error('Error fetching submissions:', error)
         }
+    }
+
+    const openStudentAllocationModal = async (testId) => {
+        setAllocatingTestId(testId)
+        try {
+            const response = await axios.get(`${API_BASE}/aptitude/${testId}/allocated-students`)
+            setSelectedStudents(response.data.studentIds || [])
+        } catch (error) {
+            setSelectedStudents([])
+        }
+        setShowStudentAllocationModal(true)
+    }
+
+    const saveStudentAllocations = async () => {
+        if (!allocatingTestId) return
+        try {
+            await axios.post(`${API_BASE}/aptitude/${allocatingTestId}/allocate-students`, {
+                studentIds: selectedStudents
+            })
+            alert(`✅ Test allocated to ${selectedStudents.length} student(s)`)
+            setShowStudentAllocationModal(false)
+            setSelectedStudents([])
+            setAllocatingTestId(null)
+        } catch (error) {
+            alert('❌ Error allocating test: ' + error.response?.data?.error || error.message)
+        }
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
     }
 
     const handleGenerateQuestions = async () => {
@@ -5248,7 +5475,7 @@ function AptitudeTestsAdmin() {
                                         </span>
                                     </td>
                                     <td>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             <button
                                                 onClick={() => {
                                                     setSelectedTest(test)
@@ -5265,6 +5492,22 @@ function AptitudeTestsAdmin() {
                                                 }}
                                             >
                                                 View
+                                            </button>
+                                            <button
+                                                onClick={() => openStudentAllocationModal(test.id)}
+                                                style={{
+                                                    padding: '0.4rem 0.8rem',
+                                                    background: 'rgba(168, 85, 247, 0.1)',
+                                                    border: '1px solid rgba(168, 85, 247, 0.3)',
+                                                    borderRadius: '6px',
+                                                    color: '#a855f7',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.8rem',
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                                title="Assign this test to specific students"
+                                            >
+                                                👥 Assign
                                             </button>
                                             <button
                                                 onClick={() => handleToggleStatus(test)}
@@ -5962,6 +6205,116 @@ function AptitudeTestsAdmin() {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Student Allocation Modal */}
+            {showStudentAllocationModal && (
+                <div className="modal-overlay" onClick={() => setShowStudentAllocationModal(false)}>
+                    <div
+                        className="modal-content"
+                        onClick={e => e.stopPropagation()}
+                        style={{ maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto' }}
+                    >
+                        <div className="modal-header">
+                            <div className="modal-title-with-icon">
+                                <div style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, #a855f7, #9333ea)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <Users size={20} color="white" />
+                                </div>
+                                <h2>Assign Test to Students</h2>
+                            </div>
+                            <button onClick={() => setShowStudentAllocationModal(false)} className="modal-close">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                                Select which students should take this test. {selectedStudents.length} student(s) selected.
+                            </p>
+                            <div style={{ 
+                                maxHeight: '400px', 
+                                overflowY: 'auto', 
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '10px',
+                                padding: '1rem'
+                            }}>
+                                {allStudents.length === 0 ? (
+                                    <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>No students found</p>
+                                ) : (
+                                    allStudents.map(student => (
+                                        <div key={student.id} style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '1rem',
+                                            padding: '0.75rem',
+                                            borderRadius: '8px',
+                                            background: 'var(--bg-secondary)',
+                                            marginBottom: '0.5rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        onClick={() => toggleStudentSelection(student.id)}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedStudents.includes(student.id)}
+                                                onChange={() => {}} // Handled by parent onClick
+                                                style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+                                            />
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                                                    {student.name}
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                    {student.email}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
+                                <button
+                                    onClick={saveStudentAllocations}
+                                    style={{
+                                        flex: 1,
+                                        padding: '0.75rem',
+                                        background: '#a855f7',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem'
+                                    }}
+                                >
+                                    ✅ Save Allocations ({selectedStudents.length})
+                                </button>
+                                <button
+                                    onClick={() => setShowStudentAllocationModal(false)}
+                                    style={{
+                                        padding: '0.75rem 1.5rem',
+                                        background: 'var(--bg-secondary)',
+                                        color: 'var(--text-primary)',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: '8px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
                             </div>
                         </div>
                     </div>

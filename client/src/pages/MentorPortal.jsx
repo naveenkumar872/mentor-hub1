@@ -54,6 +54,18 @@ function MentorPortal() {
                 setTitle(t('upload_problems'))
                 setSubtitle(t('create_problems_subtitle'))
                 break
+            case 'aptitude-tests':
+                setTitle(t('aptitude_tests'))
+                setSubtitle('Manage and assign aptitude tests to students')
+                break
+            case 'global-tests':
+                setTitle(t('global_complete_tests'))
+                setSubtitle('Manage and assign comprehensive tests to students')
+                break
+            case 'skill-tests':
+                setTitle('Skill Tests')
+                setSubtitle('Manage and assign skill assessments to students')
+                break
             case 'leaderboard':
                 setTitle(t('leaderboard'))
                 setSubtitle(t('student_rankings'))
@@ -88,7 +100,10 @@ function MentorPortal() {
             defaultExpanded: false,
             children: [
                 { path: '/mentor/upload-tasks', label: t('upload_ml_tasks'), icon: <Upload size={20} /> },
-                { path: '/mentor/upload-problems', label: t('upload_problems'), icon: <FileCode size={20} /> }
+                { path: '/mentor/upload-problems', label: t('upload_problems'), icon: <FileCode size={20} /> },
+                { path: '/mentor/aptitude-tests', label: t('aptitude_tests'), icon: <Target size={20} /> },
+                { path: '/mentor/global-tests', label: t('global_complete_tests'), icon: <ClipboardList size={20} /> },
+                { path: '/mentor/skill-tests', label: 'Skill Tests', icon: <Brain size={20} /> }
             ]
         },
         {
@@ -111,6 +126,9 @@ function MentorPortal() {
                 <Route path="/" element={<Dashboard user={user} />} />
                 <Route path="/upload-tasks" element={<UploadTasks user={user} />} />
                 <Route path="/upload-problems" element={<UploadProblems user={user} />} />
+                <Route path="/aptitude-tests" element={<AptitudeTestsMentor user={user} />} />
+                <Route path="/global-tests" element={<GlobalTestsMentor user={user} />} />
+                <Route path="/skill-tests" element={<SkillTestsMentor user={user} />} />
                 <Route path="/leaderboard" element={<Leaderboard user={user} />} />
                 <Route path="/all-submissions" element={<AllSubmissions user={user} />} />
                 <Route path="/analytics" element={<MentorAnalytics user={user} />} />
@@ -2596,6 +2614,301 @@ function MentorAnalytics({ user }) {
             )}
         </div>
     )
+}
+
+// Mentor Test Management Component - Reusable for any test type
+function MentorTestManager({ testType, user }) {
+    const [tests, setTests] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [allStudents, setAllStudents] = useState([])
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingTestId, setAllocatingTestId] = useState(null)
+
+    useEffect(() => {
+        const fetchTests = async () => {
+            try {
+                const endpoint = testType === 'aptitude' ? '/aptitude' :
+                                testType === 'global' ? '/global-tests' :
+                                testType === 'skill' ? '/skill-tests' : '/aptitude'
+                const res = await axios.get(`${API_BASE}${endpoint}?status=live`)
+                setTests(Array.isArray(res.data) ? res.data : [])
+            } catch (e) {
+                console.error(e)
+                setTests([])
+            } finally {
+                setLoading(false)
+            }
+        }
+        fetchTests()
+    }, [testType])
+
+    const fetchAllStudents = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/students`)
+            setAllStudents(Array.isArray(res.data) ? res.data : [])
+        } catch (e) {
+            console.error('Error fetching students:', e)
+        }
+    }
+
+    const openStudentAllocationModal = async (testId) => {
+        await fetchAllStudents()
+        setAllocatingTestId(testId)
+        
+        // Load current allocations
+        try {
+            const res = await axios.get(`${API_BASE}/tests/${testId}/allocated-students`)
+            const allocated = res.data?.allocated_students || []
+            setSelectedStudents(allocated.map(s => s.student_id))
+        } catch (e) {
+            console.error('Error loading allocations:', e)
+            setSelectedStudents([])
+        }
+        
+        setShowStudentAllocationModal(true)
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
+    }
+
+    const saveStudentAllocations = async () => {
+        try {
+            await axios.post(`${API_BASE}/tests/${allocatingTestId}/allocate-students`, {
+                student_ids: selectedStudents
+            })
+            alert('Students allocated successfully!')
+            setShowStudentAllocationModal(false)
+            setSelectedStudents([])
+            setAllocatingTestId(null)
+        } catch (e) {
+            alert('Error saving allocations: ' + (e.response?.data?.error || e.message))
+        }
+    }
+
+    if (loading) return <div className="loading-spinner"></div>
+
+    const testTypeLabel = testType === 'aptitude' ? 'Aptitude Tests' :
+                        testType === 'global' ? 'Global Tests' :
+                        testType === 'skill' ? 'Skill Tests' : 'Tests'
+
+    return (
+        <div>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+                gap: '1.5rem'
+            }}>
+                {tests.length === 0 ? (
+                    <div style={{
+                        textAlign: 'center',
+                        padding: '2rem',
+                        color: 'var(--text-muted)',
+                        gridColumn: '1 / -1'
+                    }}>
+                        No {testTypeLabel} found
+                    </div>
+                ) : (
+                    tests.map(test => (
+                        <div key={test.id} style={{
+                            background: 'var(--bg-secondary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '12px',
+                            padding: '1.5rem',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                                <span style={{
+                                    fontSize: '0.65rem',
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    background: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#60a5fa',
+                                    fontWeight: 700
+                                }}>
+                                    {testTypeLabel.toUpperCase()}
+                                </span>
+                                <span style={{
+                                    fontSize: '0.65rem',
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    background: test.status === 'live' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                    color: test.status === 'live' ? '#10b981' : '#ef4444',
+                                    fontWeight: 700
+                                }}>
+                                    {test.status === 'live' ? 'LIVE' : 'ENDED'}
+                                </span>
+                            </div>
+                            <h3 style={{ margin: '0.5rem 0', fontSize: '1.1rem' }}>{test.title}</h3>
+                            <p style={{
+                                fontSize: '0.85rem',
+                                color: 'var(--text-muted)',
+                                marginBottom: '1rem',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden'
+                            }}>
+                                {test.description || 'No description'}
+                            </p>
+                            <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                <button
+                                    onClick={() => openStudentAllocationModal(test.id)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.75rem',
+                                        background: 'rgba(168, 85, 247, 0.1)',
+                                        border: '1px solid rgba(168, 85, 247, 0.3)',
+                                        color: '#d8b4fe',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        fontSize: '0.9rem'
+                                    }}
+                                >
+                                    👥 Assign Students
+                                </button>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {showStudentAllocationModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1500,
+                    backdropFilter: 'blur(5px)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)'
+                }}>
+                    <div style={{
+                        width: '100%',
+                        maxWidth: '600px',
+                        maxHeight: '80vh',
+                        overflow: 'auto',
+                        borderRadius: '16px',
+                        background: '#1e293b',
+                        border: '1px solid rgba(139,92,246,0.2)',
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+                        padding: '1.5rem'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Assign Students</h3>
+                            <button
+                                onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setSelectedStudents([])
+                                    setAllocatingTestId(null)
+                                }}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#cbd5e1',
+                                    fontSize: '1.5rem',
+                                    cursor: 'pointer',
+                                    padding: '0',
+                                    lineHeight: 1
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div style={{ marginBottom: '1.5rem', maxHeight: '400px', overflowY: 'auto' }}>
+                            {allStudents.map(student => (
+                                <div
+                                    key={student.id}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '0.75rem',
+                                        marginBottom: '0.5rem',
+                                        background: 'rgba(255,255,255,0.03)',
+                                        borderRadius: '8px',
+                                        border: selectedStudents.includes(student.id) ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.1)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onClick={() => toggleStudentSelection(student.id)}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedStudents.includes(student.id)}
+                                        onChange={() => toggleStudentSelection(student.id)}
+                                        style={{ marginRight: '0.75rem', cursor: 'pointer', accentColor: '#a855f7' }}
+                                    />
+                                    <div>
+                                        <div style={{ fontWeight: 600 }}>{student.username}</div>
+                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{student.email}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setSelectedStudents([])
+                                    setAllocatingTestId(null)
+                                }}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    color: '#cbd5e1',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={saveStudentAllocations}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    background: 'rgba(168, 85, 247, 0.2)',
+                                    border: '1px solid rgba(168, 85, 247, 0.5)',
+                                    color: '#e9d5ff',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                }}
+                            >
+                                Assign {selectedStudents.length > 0 ? `(${selectedStudents.length})` : ''}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function AptitudeTestsMentor({ user }) {
+    return <MentorTestManager testType="aptitude" user={user} />
+}
+
+function GlobalTestsMentor({ user }) {
+    return <MentorTestManager testType="global" user={user} />
+}
+
+function SkillTestsMentor({ user }) {
+    return <MentorTestManager testType="skill" user={user} />
 }
 
 export default MentorPortal

@@ -2556,6 +2556,106 @@ app.get('/api/aptitude-submissions/:id', async (req, res) => {
     }
 });
 
+// ==================== TEST STUDENT ALLOCATIONS ====================
+
+// Allocate students to a test
+app.post('/api/aptitude/:testId/allocate-students', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { testId } = req.params;
+        const { studentIds } = req.body; // Array of student IDs
+
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ error: 'studentIds must be a non-empty array' });
+        }
+
+        await connection.beginTransaction();
+
+        // Delete existing allocations for this test
+        await connection.query('DELETE FROM test_student_allocations WHERE test_id = ?', [testId]);
+
+        // Insert new allocations
+        const allocationIds = studentIds.map((_, i) => `alloc-${testId}-${i}-${Date.now()}`);
+        const values = studentIds.map((studentId, i) => [allocationIds[i], testId, studentId]);
+
+        if (values.length > 0) {
+            await connection.query(
+                'INSERT INTO test_student_allocations (id, test_id, student_id) VALUES ?',
+                [values]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, allocatedCount: studentIds.length });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Allocation error:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Get students allocated to a test
+app.get('/api/aptitude/:testId/allocated-students', async (req, res) => {
+    try {
+        const { testId } = req.params;
+
+        const [allocations] = await pool.query(
+            'SELECT student_id FROM test_student_allocations WHERE test_id = ?',
+            [testId]
+        );
+
+        const studentIds = allocations.map(a => a.student_id);
+        res.json({ testId, studentIds, count: studentIds.length });
+
+    } catch (error) {
+        console.error('Error getting allocations:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get tests allocated to a student
+app.get('/api/aptitude/allocated-to/:studentId', async (req, res) => {
+    try {
+        const { studentId } = req.params;
+
+        const [allocations] = await pool.query(`
+            SELECT DISTINCT t.* 
+            FROM test_student_allocations tsa
+            JOIN aptitude_tests t ON tsa.test_id = t.id
+            WHERE tsa.student_id = ? AND t.status = 'live'
+            ORDER BY t.created_at DESC
+        `, [studentId]);
+
+        const tests = allocations.map(t => ({
+            id: t.id,
+            title: t.title,
+            type: t.type,
+            difficulty: t.difficulty,
+            duration: t.duration,
+            totalQuestions: t.total_questions,
+            passingScore: t.passing_score,
+            maxTabSwitches: t.max_tab_switches || 3,
+            maxAttempts: t.max_attempts || 1,
+            startTime: t.start_time ? new Date(t.start_time).toISOString() : null,
+            deadline: t.deadline ? new Date(t.deadline).toISOString() : null,
+            description: t.description || '',
+            status: t.status,
+            createdBy: t.created_by,
+            createdAt: t.created_at,
+            questionCount: t.total_questions
+        }));
+
+        res.json(tests);
+
+    } catch (error) {
+        console.error('Error getting allocated tests:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ==================== GLOBAL COMPLETE TESTS (Aptitude, Verbal, Logical, Coding, SQL) ====================
 
 const SECTIONS = ['aptitude', 'verbal', 'logical', 'coding', 'sql'];
@@ -3282,6 +3382,108 @@ app.get('/api/global-test-submissions/:id/report', async (req, res) => {
         if (error.message && error.message.includes("doesn't exist")) {
             return res.status(503).json({ error: 'Global tests not set up. Run: node migrate_global_tests.js' });
         }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== GENERIC TEST ALLOCATION ENDPOINTS (All Test Types) ====================
+
+// Allocate students to ANY test type (aptitude, global, skill, etc.)
+app.post('/api/tests/:testId/allocate-students', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { testId } = req.params;
+        const { studentIds } = req.body;
+
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ error: 'studentIds must be a non-empty array' });
+        }
+
+        await connection.beginTransaction();
+
+        // Delete existing allocations for this test
+        await connection.query('DELETE FROM test_student_allocations WHERE test_id = ?', [testId]);
+
+        // Insert new allocations
+        const allocationIds = studentIds.map((_, i) => `alloc-${testId}-${i}-${Date.now()}`);
+        const values = studentIds.map((studentId, i) => [allocationIds[i], testId, studentId]);
+
+        if (values.length > 0) {
+            await connection.query(
+                'INSERT INTO test_student_allocations (id, test_id, student_id) VALUES ?',
+                [values]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, allocatedCount: studentIds.length });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Allocation error:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Get students allocated to ANY test
+app.get('/api/tests/:testId/allocated-students', async (req, res) => {
+    try {
+        const { testId } = req.params;
+
+        const [allocations] = await pool.query(
+            'SELECT student_id FROM test_student_allocations WHERE test_id = ?',
+            [testId]
+        );
+
+        const studentIds = allocations.map(a => a.student_id);
+        res.json({ testId, studentIds, count: studentIds.length });
+
+    } catch (error) {
+        console.error('Error getting allocations:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get all tests allocated to a student (any type)
+app.get('/api/tests/allocated-to/:studentId', async (req, res) => {
+    try {
+        const { studentId } = req.params;
+
+        // Get test IDs allocated to this student
+        const [allocations] = await pool.query(
+            'SELECT test_id FROM test_student_allocations WHERE student_id = ?',
+            [studentId]
+        );
+
+        const testIds = allocations.map(a => a.test_id);
+        
+        // Get details from appropriate tables (aptitude, global_tests, etc.)
+        let allTests = [];
+
+        if (testIds.length > 0) {
+            const placeholders = testIds.map(() => '?').join(',');
+            
+            // Get from aptitude tests
+            const [aptTests] = await pool.query(
+                `SELECT id, title, 'aptitude' as type FROM aptitude_tests WHERE id IN (${placeholders}) AND status = 'live'`,
+                testIds
+            );
+            allTests = allTests.concat(aptTests);
+
+            // Get from global tests
+            const [globalTests] = await pool.query(
+                `SELECT id, title, 'global' as type FROM global_tests WHERE id IN (${placeholders}) AND status = 'live'`,
+                testIds
+            );
+            allTests = allTests.concat(globalTests);
+        }
+
+        res.json(allTests);
+
+    } catch (error) {
+        console.error('Error getting allocated tests:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -8082,11 +8284,38 @@ setInterval(async () => {
     }
 }, 30 * 60 * 1000); // Every 30 minutes
 
-httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
-    console.log('🔌 WebSocket ready for real-time updates');
-    console.log('📚 Student Portal: http://127.0.0.1:3000/#/student');
-    console.log('👨‍🏫 Mentor Portal: http://127.0.0.1:3000/#/mentor');
-    console.log('🛡️ Admin Portal: http://127.0.0.1:3000/#/admin');
-    console.log('⏰ Message auto-cleanup: every 30 min (24hr expiry)');
-});
+// Create test_student_allocations table if not exists
+async function ensureTestAllocationsTable() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS test_student_allocations (
+                id VARCHAR(50) PRIMARY KEY,
+                test_id VARCHAR(50) NOT NULL,
+                student_id VARCHAR(50) NOT NULL,
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (test_id) REFERENCES aptitude_tests(id) ON DELETE CASCADE,
+                FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE KEY unique_allocation (test_id, student_id),
+                INDEX idx_test_id (test_id),
+                INDEX idx_student_id (student_id)
+            )
+        `);
+        console.log('✅ test_student_allocations table ready');
+    } catch (error) {
+        console.error('⚠️ Error creating test_student_allocations table:', error.message);
+    }
+}
+
+// Start server
+(async () => {
+    await ensureTestAllocationsTable();
+    
+    httpServer.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
+        console.log('🔌 WebSocket ready for real-time updates');
+        console.log('📚 Student Portal: http://127.0.0.1:3000/#/student');
+        console.log('👨‍🏫 Mentor Portal: http://127.0.0.1:3000/#/mentor');
+        console.log('🛡️ Admin Portal: http://127.0.0.1:3000/#/admin');
+        console.log('⏰ Message auto-cleanup: every 30 min (24hr expiry)');
+    });
+})();

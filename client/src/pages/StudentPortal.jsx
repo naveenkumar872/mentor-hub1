@@ -2491,11 +2491,38 @@ function GlobalTests({ user }) {
     useEffect(() => {
         const fetchTests = async () => {
             try {
-                const res = await axios.get(`${API_BASE}/global-tests?status=live`)
-                setTests(Array.isArray(res.data) ? res.data : [])
+                const allTestsResponse = await axios.get(`${API_BASE}/global-tests?status=live`)
+                const allocatedResponse = await axios.get(`${API_BASE}/tests/allocated-to/${user.id}`)
+                
+                const allTests = Array.isArray(allTestsResponse.data) ? allTestsResponse.data : []
+                const allocatedTests = Array.isArray(allocatedResponse.data) ? allocatedResponse.data : []
+                
+                // Determine which tests should be visible
+                const visibleTests = allTests.filter(test => {
+                    const testAllocationInfo = allocatedTests.find(a => a.test_id === test.id)
+                    
+                    // If test has no allocations, show to everyone
+                    if (!testAllocationInfo || !testAllocationInfo.has_allocations) {
+                        return true
+                    }
+                    
+                    // If test has allocations, only show if student is allocated
+                    return testAllocationInfo.is_allocated_to_student
+                })
+                
+                setTests(visibleTests)
             } catch (e) {
                 if (e.response?.status === 503) setTests([])
-                else console.error(e)
+                else {
+                    console.error(e)
+                    // Fallback: show all tests if allocation check fails
+                    try {
+                        const res = await axios.get(`${API_BASE}/global-tests?status=live`)
+                        setTests(Array.isArray(res.data) ? res.data : [])
+                    } catch (_) {
+                        setTests([])
+                    }
+                }
             } finally {
                 setLoading(false)
             }
@@ -2880,8 +2907,42 @@ function AptitudeTests({ user }) {
 
     const fetchTests = async () => {
         try {
-            const response = await axios.get(`${API_BASE}/aptitude?status=live`)
-            setTests(response.data)
+            // Get all live tests
+            const allTestsResponse = await axios.get(`${API_BASE}/aptitude?status=live`)
+            let visibleTests = allTestsResponse.data
+
+            // Get tests specifically allocated to this student
+            try {
+                const allocatedResponse = await axios.get(`${API_BASE}/aptitude/allocated-to/${user.id}`)
+                const allocatedTestIds = new Set(allocatedResponse.data.map(t => t.id))
+
+                // Filter tests: show only if:
+                // 1. Test has no allocations (show to everyone)
+                // 2. Test has allocations AND student is in the list
+                visibleTests = await Promise.all(
+                    allTestsResponse.data.map(async (test) => {
+                        try {
+                            // Check if this test has any allocations
+                            const allocResponse = await axios.get(`${API_BASE}/aptitude/${test.id}/allocated-students`)
+                            const hasAllocations = allocResponse.data.count > 0
+
+                            // If no allocations, show to everyone
+                            if (!hasAllocations) return test
+
+                            // If has allocations, only show if student is allocated
+                            return allocatedTestIds.has(test.id) ? test : null
+                        } catch {
+                            return test // If error checking allocations, show test
+                        }
+                    })
+                )
+                visibleTests = visibleTests.filter(t => t !== null)
+            } catch (error) {
+                // If error getting allocated tests, show all (backward compatibility)
+                console.warn('Could not fetch allocated tests, showing all live tests')
+            }
+
+            setTests(visibleTests)
             setLoading(false)
         } catch (error) {
             console.error('Error fetching tests:', error)
