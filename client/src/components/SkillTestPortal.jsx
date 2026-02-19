@@ -409,6 +409,15 @@ export default function SkillTestPortal({ user }) {
     const startTest = async (testId) => {
         try {
             setError('');
+            // Reset proctoring stats for new attempt
+            setProctoringStats({
+                violationCount: 0,
+                tabSwitchCount: 0,
+                cameraBlocks: 0,
+                phoneDetections: 0,
+                fullscreenExits: 0,
+                cameraActive: !!cameraStream
+            });
             const { data } = await axios.post(`${API}/api/skill-tests/${testId}/start`, {
                 studentId: user?.id || user?.email || 'student',
                 studentName: user?.name || user?.username || 'Student'
@@ -423,6 +432,15 @@ export default function SkillTestPortal({ user }) {
     const resumeTest = async (attemptId) => {
         try {
             setError('');
+            // Reset client-side proctoring stats when resuming (server has actual counts)
+            setProctoringStats({
+                violationCount: 0,
+                tabSwitchCount: 0,
+                cameraBlocks: 0,
+                phoneDetections: 0,
+                fullscreenExits: 0,
+                cameraActive: !!cameraStream
+            });
             setActiveAttempt(attemptId);
             await loadAttemptData(attemptId);
         } catch (err) {
@@ -479,6 +497,15 @@ export default function SkillTestPortal({ user }) {
         setActiveAttempt(null);
         setAttemptData(null);
         setCurrentView('list');
+        // Reset proctoring stats when going back to list
+        setProctoringStats({
+            violationCount: 0,
+            tabSwitchCount: 0,
+            cameraBlocks: 0,
+            phoneDetections: 0,
+            fullscreenExits: 0,
+            cameraActive: false
+        });
         loadTests();
     };
 

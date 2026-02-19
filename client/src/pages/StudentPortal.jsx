@@ -18,6 +18,10 @@ import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
 import GlobalReportModal from '@/components/GlobalReportModal'
 import Editor from '@monaco-editor/react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RPieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar as RRadar, BarChart as RBarChart, Bar, Legend } from 'recharts'
+// Advanced Features Components
+import { GamificationProfile, AchievementBadges, GamificationLeaderboard } from '@/components/GamificationComponents'
+import { RiskScoreCard, RecommendationsPanel } from '@/components/AnalyticsComponents'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -135,7 +139,8 @@ function StudentPortal() {
             children: [
                 { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
                 { path: '/student/skill-submissions', label: 'Skill Submissions', icon: <Target size={20} /> },
-                { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> }
+                { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> },
+                { path: '/student/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> }
             ]
         },
         { path: '/student/messaging', label: 'Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
@@ -153,6 +158,7 @@ function StudentPortal() {
                 <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
                 <Route path="/analytics" element={<StudentAnalytics user={user} />} />
+                <Route path="/leaderboard" element={<GamificationLeaderboard limit={100} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
             </Routes>
         </DashboardLayout>
@@ -175,7 +181,6 @@ function Dashboard({ user }) {
             })
     }, [user.id])
 
-    // Format time ago
     const formatTimeAgo = (dateString) => {
         const date = new Date(dateString)
         const now = new Date()
@@ -183,211 +188,298 @@ function Dashboard({ user }) {
         const diffMins = Math.floor(diffMs / 60000)
         const diffHours = Math.floor(diffMs / 3600000)
         const diffDays = Math.floor(diffMs / 86400000)
-
         if (diffMins < 1) return 'Just now'
-        if (diffMins < 60) return `${diffMins} min ago`
-        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-        if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+        if (diffMins < 60) return `${diffMins}m ago`
+        if (diffHours < 24) return `${diffHours}h ago`
+        if (diffDays < 7) return `${diffDays}d ago`
         return date.toLocaleDateString()
     }
 
-    if (loading) return <div className="loading-spinner"></div>
-    if (!stats) return <div>Error loading stats</div>
+    if (loading) return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+            <div className="loading-spinner"></div>
+        </div>
+    )
+    if (!stats) return <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Unable to load dashboard data</div>
+
+    // Chart data
+    const trendData = stats.submissionTrends && stats.submissionTrends.length > 0
+        ? stats.submissionTrends
+        : (() => {
+            const days = []
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(); d.setDate(d.getDate() - i)
+                days.push({ date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), count: 0 })
+            }
+            return days
+        })()
+
+    const completionData = [
+        { name: 'Tasks', completed: stats.completedTasks, total: stats.totalTasks },
+        { name: 'Coding', completed: stats.completedProblems, total: stats.totalProblems },
+        { name: 'Aptitude', completed: stats.completedAptitude, total: stats.totalAptitude }
+    ]
+
+    const pieData = [
+        { name: 'Tasks', value: stats.completedTasks || 0, color: '#3b82f6' },
+        { name: 'Code', value: stats.completedProblems || 0, color: '#10b981' },
+        { name: 'Aptitude', value: stats.completedAptitude || 0, color: '#a78bfa' },
+        { name: 'Remaining', value: Math.max(0, (stats.totalTasks - stats.completedTasks) + (stats.totalProblems - stats.completedProblems) + (stats.totalAptitude - stats.completedAptitude)), color: 'rgba(100,116,139,0.2)' }
+    ].filter(d => d.value > 0)
+
+    const radarData = [
+        { subject: 'Task Score', A: stats.avgTaskScore || 0 },
+        { subject: 'Code Score', A: stats.avgProblemScore || 0 },
+        { subject: 'Tasks Done', A: stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0 },
+        { subject: 'Code Done', A: stats.totalProblems > 0 ? Math.round((stats.completedProblems / stats.totalProblems) * 100) : 0 },
+        { subject: 'Aptitude', A: stats.totalAptitude > 0 ? Math.round((stats.completedAptitude / stats.totalAptitude) * 100) : 0 }
+    ]
+
+    const totalDone = stats.completedTasks + stats.completedProblems + stats.completedAptitude
+    const totalAll = stats.totalTasks + stats.totalProblems + stats.totalAptitude
+    const overallPct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0
+
+    // Circular Progress helper
+    const CircleProgress = ({ pct, size = 52, strokeWidth = 5, color }) => {
+        const r = (size - strokeWidth) / 2
+        const circ = 2 * Math.PI * r
+        const offset = circ - (Math.min(pct, 100) / 100) * circ
+        return (
+            <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth={strokeWidth} />
+                <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease' }} />
+            </svg>
+        )
+    }
+
+    const ChartTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="dash-tooltip">
+                    <div className="dash-tooltip-label">{label}</div>
+                    {payload.map((p, i) => (
+                        <div key={i} className="dash-tooltip-value" style={{ color: p.color || p.stroke || '#818cf8' }}>{p.name}: {p.value}</div>
+                    ))}
+                </div>
+            )
+        }
+        return null
+    }
+
+    const scoreColors = ['#3b82f6', '#10b981', '#a78bfa']
 
     return (
-        <div className="dashboard-container animate-fadeIn">
-            {/* Top Stats Row - 5 Cards */}
-            <div className="dashboard-stats-grid">
-                {/* Tasks Completed */}
-                <div className="dashboard-stat-card stat-card-blue">
-                    <div className="stat-card-inner">
-                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
-                            <ClipboardList size={24} color="#fff" />
+        <div className="sdash">
+            {/* Row 1: Stats Cards */}
+            <div className="sdash-stats">
+                {[
+                    { label: 'Tasks', done: stats.completedTasks, total: stats.totalTasks, icon: <ClipboardList size={20} />, color: '#3b82f6', gradient: 'linear-gradient(135deg, #1e40af, #3b82f6)' },
+                    { label: 'Problems', done: stats.completedProblems, total: stats.totalProblems, icon: <Code size={20} />, color: '#10b981', gradient: 'linear-gradient(135deg, #047857, #10b981)' },
+                    { label: 'Aptitude', done: stats.completedAptitude, total: stats.totalAptitude, icon: <Brain size={20} />, color: '#a78bfa', gradient: 'linear-gradient(135deg, #6d28d9, #a78bfa)' },
+                    { label: 'Task Score', done: stats.avgTaskScore, total: 100, icon: <Award size={20} />, color: '#f472b6', gradient: 'linear-gradient(135deg, #be185d, #f472b6)', suffix: '%' },
+                    { label: 'Code Score', done: stats.avgProblemScore, total: 100, icon: <Target size={20} />, color: '#fbbf24', gradient: 'linear-gradient(135deg, #d97706, #fbbf24)', suffix: '%' },
+                    { label: 'Overall', done: overallPct, total: 100, icon: <TrendingUp size={20} />, color: '#06b6d4', gradient: 'linear-gradient(135deg, #0e7490, #06b6d4)', suffix: '%' }
+                ].map((s, i) => {
+                    const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0
+                    return (
+                        <div key={i} className="sdash-stat-card">
+                            <div className="sdash-stat-ring">
+                                <CircleProgress pct={pct} color={s.color} />
+                                <div className="sdash-stat-icon" style={{ background: s.gradient }}>
+                                    {React.cloneElement(s.icon, { color: '#fff', size: 18 })}
+                                </div>
+                            </div>
+                            <div className="sdash-stat-info">
+                                <div className="sdash-stat-val">{s.done}{s.suffix || ''}{!s.suffix && <span className="sdash-stat-dim">/{s.total}</span>}</div>
+                                <div className="sdash-stat-lbl">{s.label}</div>
+                            </div>
                         </div>
-                        <div className="stat-content">
-                            <div className="stat-number">{stats.completedTasks}</div>
-                            <div className="stat-label-text">Tasks Completed</div>
-                        </div>
+                    )
+                })}
+            </div>
+
+            {/* Row 2: Main charts */}
+            <div className="sdash-row2">
+                {/* Submission Activity - Area Chart */}
+                <div className="sdash-card sdash-grow">
+                    <div className="sdash-card-head">
+                        <h3><TrendingUp size={16} color="#818cf8" /> Activity</h3>
+                        <span className="sdash-badge-sm" style={{ color: '#818cf8', background: 'rgba(129,140,248,0.12)' }}>7 Days</span>
+                    </div>
+                    <div style={{ width: '100%', height: 200, marginTop: 8 }}>
+                        <ResponsiveContainer>
+                            <AreaChart data={trendData} margin={{ top: 5, right: 8, left: -25, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#818cf8" stopOpacity={0.35} />
+                                        <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
+                                <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                <Tooltip content={<ChartTooltip />} />
+                                <Area type="monotone" dataKey="count" name="Submissions" stroke="#818cf8" strokeWidth={2.5} fill="url(#aGrad)" dot={{ r: 3, fill: '#818cf8', stroke: '#1e1b4b', strokeWidth: 2 }} activeDot={{ r: 5 }} />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
 
-                {/* Problems Solved */}
-                <div className="dashboard-stat-card stat-card-green">
-                    <div className="stat-card-inner">
-                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #047857, #10b981)' }}>
-                            <Code size={24} color="#fff" />
-                        </div>
-                        <div className="stat-content">
-                            <div className="stat-number">{stats.completedProblems}</div>
-                            <div className="stat-label-text">Problems Solved</div>
-                        </div>
+                {/* Progress Bar Chart */}
+                <div className="sdash-card">
+                    <div className="sdash-card-head">
+                        <h3><BarChart3 size={16} color="#10b981" /> Progress</h3>
                     </div>
-                </div>
-
-                {/* Avg Task Score */}
-                <div className="dashboard-stat-card stat-card-pink">
-                    <div className="stat-card-inner">
-                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #be185d, #ec4899)' }}>
-                            <Award size={24} color="#fff" />
-                        </div>
-                        <div className="stat-content">
-                            <div className="stat-number">{stats.avgTaskScore}%</div>
-                            <div className="stat-label-text">Avg Task Score</div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Avg Problem Score */}
-                <div className="dashboard-stat-card stat-card-emerald">
-                    <div className="stat-card-inner">
-                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #059669, #34d399)' }}>
-                            <Target size={24} color="#fff" />
-                        </div>
-                        <div className="stat-content">
-                            <div className="stat-number">{stats.avgProblemScore}%</div>
-                            <div className="stat-label-text">Avg Problem Score</div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Aptitude Taken */}
-                <div className="dashboard-stat-card stat-card-purple">
-                    <div className="stat-card-inner">
-                        <div className="stat-icon-box" style={{ background: 'linear-gradient(135deg, #6d28d9, #8b5cf6)' }}>
-                            <Brain size={24} color="#fff" />
-                        </div>
-                        <div className="stat-content">
-                            <div className="stat-number">{stats.completedAptitude}</div>
-                            <div className="stat-label-text">Aptitude Taken</div>
-                        </div>
+                    <div style={{ width: '100%', height: 200, marginTop: 8 }}>
+                        <ResponsiveContainer>
+                            <RBarChart data={completionData} margin={{ top: 5, right: 8, left: -25, bottom: 0 }} barGap={4} barSize={22}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
+                                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                <Tooltip content={<ChartTooltip />} />
+                                <Bar dataKey="completed" name="Completed" radius={[4, 4, 0, 0]} fill="#10b981" />
+                                <Bar dataKey="total" name="Total" radius={[4, 4, 0, 0]} fill="rgba(100,116,139,0.25)" />
+                            </RBarChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
             </div>
 
-            {/* Three Column Layout */}
-            <div className="dashboard-main-grid">
-                {/* My Skill Profile */}
-                <div className="dashboard-panel">
-                    <h3 className="panel-title">
-                        <BarChart3 size={18} color="#8b5cf6" /> My Skill Profile
-                    </h3>
-
-                    <div className="skill-progress-container">
-                        {/* Task Skills */}
-                        <div className="skill-item">
-                            <div className="skill-header">
-                                <span className="skill-name">ML Tasks</span>
-                                <span className="skill-count" style={{ color: '#3b82f6' }}>{stats.completedTasks}/{stats.totalTasks}</span>
-                            </div>
-                            <div className="skill-bar" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>
-                                <div className="skill-fill" style={{
-                                    width: `${stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0}%`,
-                                    background: 'linear-gradient(90deg, #2563eb, #3b82f6)'
-                                }} />
-                            </div>
+            {/* Row 3: Donut + Radar + Gamification */}
+            <div className="sdash-row3">
+                {/* Donut chart */}
+                <div className="sdash-card sdash-center-card">
+                    <div className="sdash-card-head">
+                        <h3><PieChart size={16} color="#a78bfa" /> Completion</h3>
+                    </div>
+                    <div style={{ width: '100%', height: 175, position: 'relative', marginTop: 4 }}>
+                        <ResponsiveContainer>
+                            <RPieChart>
+                                <Pie data={pieData.length > 0 ? pieData : [{ name: 'No Data', value: 1, color: 'rgba(100,116,139,0.2)' }]} cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                                    {(pieData.length > 0 ? pieData : [{ name: 'No Data', value: 1, color: 'rgba(100,116,139,0.2)' }]).map((e, i) => <Cell key={i} fill={e.color} />)}
+                                </Pie>
+                                <Tooltip content={<ChartTooltip />} />
+                            </RPieChart>
+                        </ResponsiveContainer>
+                        <div className="sdash-donut-center">
+                            <span className="sdash-donut-pct">{overallPct}%</span>
+                            <span className="sdash-donut-sub">Done</span>
                         </div>
+                    </div>
+                    <div className="sdash-legend">
+                        {[{ l: 'Tasks', c: '#3b82f6' }, { l: 'Code', c: '#10b981' }, { l: 'Aptitude', c: '#a78bfa' }].map(x => (
+                            <span key={x.l} className="sdash-legend-item"><span className="sdash-legend-dot" style={{ background: x.c }} />{x.l}</span>
+                        ))}
+                    </div>
+                </div>
 
-                        {/* Coding Skills */}
-                        <div className="skill-item">
-                            <div className="skill-header">
-                                <span className="skill-name">Coding Problems</span>
-                                <span className="skill-count" style={{ color: '#10b981' }}>{stats.completedProblems}/{stats.totalProblems}</span>
-                            </div>
-                            <div className="skill-bar" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>
-                                <div className="skill-fill" style={{
-                                    width: `${stats.totalProblems > 0 ? (stats.completedProblems / stats.totalProblems) * 100 : 0}%`,
-                                    background: 'linear-gradient(90deg, #059669, #10b981)'
-                                }} />
-                            </div>
-                        </div>
+                {/* Radar */}
+                <div className="sdash-card sdash-center-card">
+                    <div className="sdash-card-head">
+                        <h3><Radar size={16} color="#f472b6" /> Skill Radar</h3>
+                    </div>
+                    <div style={{ width: '100%', height: 210, marginTop: 4 }}>
+                        <ResponsiveContainer>
+                            <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="68%">
+                                <PolarGrid stroke="rgba(148,163,184,0.1)" />
+                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
+                                <RRadar name="Score" dataKey="A" stroke="#f472b6" fill="#f472b6" fillOpacity={0.15} strokeWidth={2} dot={{ r: 3, fill: '#f472b6' }} />
+                            </RadarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
 
-                        {/* Aptitude Skills */}
-                        <div className="skill-item">
-                            <div className="skill-header">
-                                <span className="skill-name">Aptitude Tests</span>
-                                <span className="skill-count" style={{ color: '#8b5cf6' }}>{stats.completedAptitude}/{stats.totalAptitude}</span>
+                {/* Gamification Card */}
+                <div className="sdash-card sdash-gami-card">
+                    <GamificationProfile studentId={user?.id || user?.userId} />
+                </div>
+            </div>
+
+            {/* Row 4: Risk + Skills + Recent + Leaderboard */}
+            <div className="sdash-row4">
+                {/* Risk Assessment */}
+                <div className="sdash-card">
+                    <RiskScoreCard studentId={user?.id || user?.userId} />
+                </div>
+
+                {/* Skill Bars */}
+                <div className="sdash-card">
+                    <div className="sdash-card-head">
+                        <h3><Layers size={16} color="#8b5cf6" /> Skills</h3>
+                    </div>
+                    <div className="sdash-skills">
+                        {[
+                            { name: 'ML Tasks', done: stats.completedTasks, total: stats.totalTasks, color: '#3b82f6' },
+                            { name: 'Coding', done: stats.completedProblems, total: stats.totalProblems, color: '#10b981' },
+                            { name: 'Aptitude', done: stats.completedAptitude, total: stats.totalAptitude, color: '#a78bfa' }
+                        ].map((s, i) => (
+                            <div key={i} className="sdash-skill-row">
+                                <div className="sdash-skill-label">
+                                    <span>{s.name}</span>
+                                    <span style={{ color: s.color, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{s.done}/{s.total}</span>
+                                </div>
+                                <div className="sdash-skill-track">
+                                    <div className="sdash-skill-fill" style={{ width: `${s.total > 0 ? (s.done / s.total) * 100 : 0}%`, background: `linear-gradient(90deg, ${s.color}cc, ${s.color})` }} />
+                                </div>
                             </div>
-                            <div className="skill-bar" style={{ background: 'rgba(139, 92, 246, 0.15)' }}>
-                                <div className="skill-fill" style={{
-                                    width: `${stats.totalAptitude > 0 ? (stats.completedAptitude / stats.totalAptitude) * 100 : 0}%`,
-                                    background: 'linear-gradient(90deg, #7c3aed, #8b5cf6)'
-                                }} />
+                        ))}
+                        <div className="sdash-skill-row" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                            <div className="sdash-skill-label">
+                                <span style={{ fontWeight: 600 }}>Total Submissions</span>
+                                <span style={{ color: '#06b6d4', fontWeight: 700 }}>{stats.totalSubmissions || 0}</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Recent Submissions */}
-                <div className="dashboard-panel">
-                    <div className="panel-header">
-                        <h3 className="panel-title" style={{ margin: 0 }}>
-                            <Clock size={18} color="#3b82f6" /> Recent Submissions
-                        </h3>
-                        <button
-                            onClick={() => window.location.href = '/student/submissions'}
-                            className="view-all-btn"
-                        >
-                            View All →
-                        </button>
+                <div className="sdash-card">
+                    <div className="sdash-card-head">
+                        <h3><Clock size={16} color="#3b82f6" /> Recent</h3>
+                        <button onClick={() => window.location.href = '/student/submissions'} className="view-all-btn">All →</button>
                     </div>
-
-                    <div className="submissions-list">
+                    <div className="submissions-list" style={{ maxHeight: 240 }}>
                         {stats.recentSubmissions && stats.recentSubmissions.length > 0 ? (
                             stats.recentSubmissions.map((sub, idx) => (
                                 <div key={idx} className="submission-item">
                                     <div className="submission-icon">
-                                        <Code size={20} color="#3b82f6" />
+                                        <Code size={16} color="#3b82f6" />
                                     </div>
                                     <div className="submission-info">
                                         <div className="submission-title">{sub.title}</div>
-                                        <div className="submission-meta">
-                                            {formatTimeAgo(sub.time)} • Score: {sub.score}/100
-                                        </div>
+                                        <div className="submission-meta">{formatTimeAgo(sub.time)} · {sub.score}/100</div>
                                     </div>
-                                    <span className={`submission-status ${sub.status}`}>
-                                        {sub.status}
-                                    </span>
+                                    <span className={`submission-status ${sub.status}`}>{sub.status}</span>
                                 </div>
                             ))
                         ) : (
-                            <div className="empty-state-small">
-                                <Code size={32} color="var(--text-muted)" />
-                                No submissions yet
-                            </div>
+                            <div className="empty-state-small"><Code size={28} color="var(--text-muted)" />No submissions</div>
                         )}
                     </div>
                 </div>
 
                 {/* Leaderboard */}
-                <div className="dashboard-panel">
-                    <h3 className="panel-title">
-                        <Trophy size={18} color="#fbbf24" /> Leaderboard
-                    </h3>
-
-                    <div className="leaderboard-list">
+                <div className="sdash-card">
+                    <div className="sdash-card-head">
+                        <h3><Trophy size={16} color="#fbbf24" /> Leaderboard</h3>
+                    </div>
+                    <div className="leaderboard-list" style={{ maxHeight: 240 }}>
                         {stats.leaderboard && stats.leaderboard.length > 0 ? (
-                            stats.leaderboard.slice(0, 5).map((student, idx) => (
-                                <div key={idx} className={`leaderboard-item ${student.studentId === user.id ? 'current-user' : ''}`}>
-                                    <div className={`rank-badge rank-${idx + 1}`}>
-                                        {student.rank}
-                                    </div>
+                            stats.leaderboard.slice(0, 5).map((s, idx) => (
+                                <div key={idx} className={`leaderboard-item ${s.studentId === user.id ? 'current-user' : ''}`}>
+                                    <div className={`rank-badge rank-${idx + 1}`}>{s.rank}</div>
                                     <div className="leaderboard-info">
-                                        <div className="leaderboard-name">{student.name}</div>
-                                        <div className="leaderboard-stats">
-                                            {student.taskCount} tasks • {student.codeCount} code • {student.aptitudeCount} aptitude
-                                        </div>
+                                        <div className="leaderboard-name">{s.name}</div>
+                                        <div className="leaderboard-stats">{s.taskCount}T · {s.codeCount}C · {s.aptitudeCount}A</div>
                                     </div>
                                     <div className={`leaderboard-score rank-${idx + 1}-score`}>
-                                        {student.avgScore}%
-                                        <span className="score-label">Avg Score</span>
+                                        {s.avgScore}%
                                     </div>
                                 </div>
                             ))
                         ) : (
-                            <div className="empty-state-small">
-                                <Trophy size={32} color="var(--text-muted)" />
-                                No leaderboard data
-                            </div>
+                            <div className="empty-state-small"><Trophy size={28} color="var(--text-muted)" />No data yet</div>
                         )}
                     </div>
                 </div>
@@ -937,17 +1029,39 @@ function Assignments({ user }) {
     const [activeProblem, setActiveProblem] = useState(null)
     const [useProctoredEditor, setUseProctoredEditor] = useState(false)
     const [activeTab, setActiveTab] = useState('coding') // 'coding' or 'sql'
+    const [attemptCounts, setAttemptCounts] = useState({}) // { problemId: count }
+
+    const fetchAttemptCounts = async (problemList) => {
+        const counts = {}
+        await Promise.all(problemList.map(async (p) => {
+            try {
+                const res = await axios.get(`${API_BASE}/submissions/count?studentId=${user.id}&problemId=${p.id}`)
+                counts[p.id] = res.data.attemptCount || 0
+            } catch (e) {
+                counts[p.id] = 0
+            }
+        }))
+        setAttemptCounts(counts)
+    }
 
     useEffect(() => {
         axios.get(`${API_BASE}/students/${user.id}/problems`)
             .then(res => {
-                setProblems(res.data)
+                const data = res.data
+                setProblems(data)
                 setLoading(false)
+                fetchAttemptCounts(data)
             })
             .catch(err => setLoading(false))
     }, [user.id])
 
     const handleSolve = (problem) => {
+        const maxAttempts = problem.maxAttempts || problem.max_attempts || 0
+        const used = attemptCounts[problem.id] || 0
+        if (maxAttempts > 0 && used >= maxAttempts) {
+            alert(`You have used all ${maxAttempts} attempt(s) for this problem.`)
+            return
+        }
         setActiveProblem(problem)
         // Check if this problem has proctoring enabled
         setUseProctoredEditor(problem.proctoring?.enabled === true)
@@ -956,6 +1070,8 @@ function Assignments({ user }) {
     const handleClose = () => {
         setActiveProblem(null)
         setUseProctoredEditor(false)
+        // Refresh attempt counts after closing editor
+        fetchAttemptCounts(problems)
     }
 
     // Separate problems into Coding and SQL
@@ -1013,9 +1129,48 @@ function Assignments({ user }) {
                 </div>
             )}
 
+            {/* Attempt Info */}
+            {(() => {
+                const maxAttempts = problem.maxAttempts || problem.max_attempts || 0
+                const used = attemptCounts[problem.id] || 0
+                const exhausted = maxAttempts > 0 && used >= maxAttempts
+                return (
+                    <div style={{
+                        padding: '0.5rem 0.75rem',
+                        background: exhausted ? 'rgba(239, 68, 68, 0.08)' : 'rgba(139, 92, 246, 0.08)',
+                        borderRadius: '8px',
+                        marginBottom: '0.75rem',
+                        border: `1px solid ${exhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(139, 92, 246, 0.15)'}`
+                    }}>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: exhausted ? '#ef4444' : '#8b5cf6', fontWeight: 600 }}>
+                            🔄 Attempts: {used}{maxAttempts > 0 ? `/${maxAttempts}` : ''} {exhausted ? '(Limit Reached)' : maxAttempts > 0 ? `(${maxAttempts - used} remaining)` : '(Unlimited)'}
+                        </p>
+                    </div>
+                )
+            })()}
+
             <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
                 <span className={`difficulty-badge ${problem.difficulty?.toLowerCase()}`}>{problem.difficulty}</span>
-                <button onClick={() => handleSolve(problem)} className="btn-create-new" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}><Play size={16} /> Solve</button>
+                {(() => {
+                    const maxAttempts = problem.maxAttempts || problem.max_attempts || 0
+                    const used = attemptCounts[problem.id] || 0
+                    const exhausted = maxAttempts > 0 && used >= maxAttempts
+                    return (
+                        <button
+                            onClick={() => handleSolve(problem)}
+                            className="btn-create-new"
+                            disabled={exhausted}
+                            style={{
+                                padding: '0.5rem 1rem',
+                                fontSize: '0.85rem',
+                                opacity: exhausted ? 0.5 : 1,
+                                cursor: exhausted ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            <Play size={16} /> {exhausted ? 'No Attempts Left' : 'Solve'}
+                        </button>
+                    )
+                })()}
             </div>
         </div>
     )
@@ -1335,8 +1490,14 @@ function CodeEditorModal({ problem, user, onClose }) {
             setStatus('done')
             if (document.fullscreenElement) document.exitFullscreen()
         } catch (error) {
-            setResult({ status: 'rejected', score: 0, feedback: 'Submission failed.' })
-            setStatus('error')
+            if (error.response?.status === 403 && error.response?.data?.error === 'Attempt limit reached') {
+                setResult({ status: 'rejected', score: 0, feedback: error.response.data.message || 'You have used all attempts for this problem.' })
+                setStatus('done')
+                if (document.fullscreenElement) document.exitFullscreen()
+            } else {
+                setResult({ status: 'rejected', score: 0, feedback: 'Submission failed.' })
+                setStatus('error')
+            }
         }
     }
 

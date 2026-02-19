@@ -22,6 +22,12 @@ const { cacheManager } = require('./utils/cache');
 // Plagiarism detection import
 const plagiarismDetector = require('./plagiarism_detector');
 
+// Advanced Features Services
+const PlagiarismDetector = require('./services/plagiarism_detector');
+const GamificationService = require('./services/gamification_service');
+const PredictiveAnalyticsService = require('./services/analytics_service');
+const ViolationScoringService = require('./services/violation_scoring_service');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -158,9 +164,21 @@ const pool = mysql.createPool({
 
 // Test DB Connection
 pool.getConnection()
-    .then(connection => {
+    .then(async (connection) => {
         console.log('✅ Connected to MySQL Database (SSL Enabled)');
         connection.release();
+
+        // Ensure max_attempts column exists on problems table
+        try {
+            await pool.query(`ALTER TABLE problems ADD COLUMN max_attempts INT DEFAULT 0`);
+            console.log('✅ Added max_attempts column to problems table');
+        } catch (e) {
+            if (e.code === 'ER_DUP_FIELDNAME' || (e.message && e.message.includes('Duplicate column'))) {
+                // Column already exists — fine
+            } else {
+                console.warn('⚠️ Could not add max_attempts to problems:', e.message);
+            }
+        }
     })
     .catch(err => {
         console.error('❌ Database Connection Failed:', err.message);
@@ -168,6 +186,20 @@ pool.getConnection()
             console.error('   Hint: SSL Handshake failed. Check your network or certificates.');
         }
     });
+
+// Initialize Advanced Features Services
+const plagiarismService = new PlagiarismDetector(pool);
+const gamificationService = new GamificationService(pool);
+const analyticsService = new PredictiveAnalyticsService(pool);
+const violationService = new ViolationScoringService(pool);
+
+// Expose services globally for use in routes
+global.advancedServices = {
+    plagiarismService,
+    gamificationService,
+    analyticsService,
+    violationService
+};
 
 // Middleware - CORS configuration
 const allowedOrigins = [
@@ -520,6 +552,7 @@ app.get('/api/problems', async (req, res) => {
                 ? p.completed_by_students.split(',').filter(s => s)
                 : [],
             completionCount: p.completion_count || 0,
+            maxAttempts: p.max_attempts || 0,
             proctoring: {
                 enabled: p.enable_proctoring === 'true',
                 videoAudio: p.enable_video_audio === 'true',
@@ -572,6 +605,7 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
                 expectedQueryResult: p.expected_query_result,
                 createdAt: p.created_at,
                 completedBy: completions.map(c => c.student_id),
+                maxAttempts: p.max_attempts || 0,
                 proctoring: {
                     enabled: p.enable_proctoring === 'true',
                     videoAudio: p.enable_video_audio === 'true',
@@ -604,13 +638,15 @@ app.post('/api/problems', async (req, res) => {
             enableProctoring, enableVideoAudio, disableCopyPaste,
             trackTabSwitches, maxTabSwitches,
             // Face detection settings
-            enableFaceDetection, detectMultipleFaces, trackFaceLookaway
+            enableFaceDetection, detectMultipleFaces, trackFaceLookaway,
+            // Attempt limit
+            maxAttempts
         } = req.body;
         const createdAt = new Date();
 
         await pool.query(
-            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches, enable_face_detection, detect_multiple_faces, track_face_lookaway) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3, enableFaceDetection ? 'true' : 'false', detectMultipleFaces ? 'true' : 'false', trackFaceLookaway ? 'true' : 'false']
+            `INSERT INTO problems (id, mentor_id, title, description, sample_input, expected_output, sql_schema, expected_query_result, difficulty, type, language, status, created_at, enable_proctoring, enable_video_audio, disable_copy_paste, track_tab_switches, max_tab_switches, enable_face_detection, detect_multiple_faces, track_face_lookaway, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [problemId, mentorId, title, description, sampleInput || '', expectedOutput || '', sqlSchema || null, expectedQueryResult || null, difficulty, type, language, status || 'live', createdAt, enableProctoring ? 'true' : 'false', enableVideoAudio ? 'true' : 'false', disableCopyPaste ? 'true' : 'false', trackTabSwitches ? 'true' : 'false', maxTabSwitches || 3, enableFaceDetection ? 'true' : 'false', detectMultipleFaces ? 'true' : 'false', trackFaceLookaway ? 'true' : 'false', parseInt(maxAttempts) || 0]
         );
 
         res.json({
@@ -621,6 +657,69 @@ app.post('/api/problems', async (req, res) => {
         });
     } catch (error) {
         console.error('Problem Create Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update problem (supports partial update)
+app.put('/api/problems/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        const allowedFields = {
+            title: 'title',
+            description: 'description',
+            sampleInput: 'sample_input',
+            expectedOutput: 'expected_output',
+            sqlSchema: 'sql_schema',
+            expectedQueryResult: 'expected_query_result',
+            difficulty: 'difficulty',
+            type: 'type',
+            language: 'language',
+            status: 'status',
+            deadline: 'deadline',
+            maxAttempts: 'max_attempts',
+            enableProctoring: 'enable_proctoring',
+            enableVideoAudio: 'enable_video_audio',
+            disableCopyPaste: 'disable_copy_paste',
+            trackTabSwitches: 'track_tab_switches',
+            maxTabSwitches: 'max_tab_switches',
+            enableFaceDetection: 'enable_face_detection',
+            detectMultipleFaces: 'detect_multiple_faces',
+            trackFaceLookaway: 'track_face_lookaway'
+        };
+
+        const setClauses = [];
+        const values = [];
+
+        for (const [key, dbCol] of Object.entries(allowedFields)) {
+            if (updates[key] !== undefined) {
+                setClauses.push(`${dbCol} = ?`);
+                // Handle boolean fields stored as 'true'/'false' strings
+                const boolFields = ['enableProctoring', 'enableVideoAudio', 'disableCopyPaste', 'trackTabSwitches', 'enableFaceDetection', 'detectMultipleFaces', 'trackFaceLookaway'];
+                if (boolFields.includes(key)) {
+                    values.push(updates[key] ? 'true' : 'false');
+                } else if (key === 'maxAttempts') {
+                    values.push(parseInt(updates[key]) || 0);
+                } else if (key === 'maxTabSwitches') {
+                    values.push(parseInt(updates[key]) || 3);
+                } else {
+                    values.push(updates[key]);
+                }
+            }
+        }
+
+        if (setClauses.length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+
+        values.push(id);
+        await pool.query(`UPDATE problems SET ${setClauses.join(', ')} WHERE id = ?`, values);
+
+        const [updated] = await pool.query('SELECT * FROM problems WHERE id = ?', [id]);
+        res.json(updated[0] || { success: true });
+    } catch (error) {
+        console.error('Problem Update Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -897,6 +996,23 @@ app.post('/api/submissions/ml-task', async (req, res) => {
     }
 });
 
+// Get submission count for a student on a specific problem (for attempt tracking)
+app.get('/api/submissions/count', async (req, res) => {
+    try {
+        const { studentId, problemId } = req.query;
+        if (!studentId || !problemId) {
+            return res.status(400).json({ error: 'studentId and problemId are required' });
+        }
+        const [[{ attemptCount }]] = await pool.query(
+            'SELECT COUNT(*) as attemptCount FROM submissions WHERE student_id = ? AND problem_id = ?',
+            [studentId, problemId]
+        );
+        res.json({ attemptCount });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Create submission (AI-evaluated code submission)
 app.post('/api/submissions', async (req, res) => {
     try {
@@ -913,6 +1029,23 @@ app.post('/api/submissions', async (req, res) => {
                 const p = probs[0];
                 problemTitle = p.title;
                 problemContext = `Problem: ${p.title}\nDescription: ${p.description}\nDifficulty: ${p.difficulty}\nSample Input: ${p.sample_input || 'N/A'}\nExpected Output: ${p.expected_output || 'N/A'}`;
+
+                // Enforce max_attempts limit
+                const maxAttempts = parseInt(p.max_attempts) || 0;
+                if (maxAttempts > 0) {
+                    const [[{ attemptCount }]] = await pool.query(
+                        'SELECT COUNT(*) as attemptCount FROM submissions WHERE student_id = ? AND problem_id = ?',
+                        [studentId, problemId]
+                    );
+                    if (attemptCount >= maxAttempts) {
+                        return res.status(403).json({
+                            error: 'Attempt limit reached',
+                            message: `You have used all ${maxAttempts} attempt(s) for this problem.`,
+                            attemptCount,
+                            maxAttempts
+                        });
+                    }
+                }
             }
         }
 
@@ -1398,7 +1531,26 @@ app.post('/api/submissions/proctored', optionalFileUpload, async (req, res) => {
         let problemDetails = null;
         if (problemId) {
             const [problems] = await pool.query('SELECT * FROM problems WHERE id = ?', [problemId]);
-            if (problems.length > 0) problemDetails = problems[0];
+            if (problems.length > 0) {
+                problemDetails = problems[0];
+
+                // Enforce max_attempts limit
+                const maxAttempts = parseInt(problemDetails.max_attempts) || 0;
+                if (maxAttempts > 0) {
+                    const [[{ attemptCount }]] = await pool.query(
+                        'SELECT COUNT(*) as attemptCount FROM submissions WHERE student_id = ? AND problem_id = ?',
+                        [studentId, problemId]
+                    );
+                    if (attemptCount >= maxAttempts) {
+                        return res.status(403).json({
+                            error: 'Attempt limit reached',
+                            message: `You have used all ${maxAttempts} attempt(s) for this problem.`,
+                            attemptCount,
+                            maxAttempts
+                        });
+                    }
+                }
+            }
         }
 
         // SQL-Specific Evaluation or AI Code Evaluation
@@ -8376,6 +8528,10 @@ async function ensureTestAllocationsTable() {
 // Start server
 (async () => {
     await ensureTestAllocationsTable();
+
+    // Register Advanced Features Routes
+    const advancedFeaturesRouter = require('./routes/advanced_features');
+    app.use('/api', advancedFeaturesRouter(pool, PlagiarismDetector, GamificationService, PredictiveAnalyticsService, ViolationScoringService));
 
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);

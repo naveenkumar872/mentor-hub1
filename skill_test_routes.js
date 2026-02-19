@@ -692,43 +692,81 @@ function registerSkillTestRoutes(app, pool) {
         }
     });
 
-    // Helper for code execution
+    // Helper for code execution - supports all 5 languages via local subprocess
     async function executeCode(code, language, input) {
+        const lang = (language || '').toLowerCase();
+
         return new Promise((resolve) => {
             const tmpDir = path.join(os.tmpdir(), 'skill_test_code_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
             fs.mkdirSync(tmpDir, { recursive: true });
 
-            let fileName, runCmd;
-            if (language === 'python') {
-                fileName = 'solution.py';
-                runCmd = `python "${path.join(tmpDir, fileName)}"`;
-            } else if (language === 'javascript') {
-                fileName = 'solution.js';
-                runCmd = `node "${path.join(tmpDir, fileName)}"`;
-            } else {
-                try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { }
-                // For unsupported languages, we can't verify, so we might mark as pending or manual review.
-                // For now, return a special flag so submission can decide.
-                return resolve({ success: true, output: `[${language} execution not supported on this server]`, unsupported: true });
-            }
-
-            fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
             const inputFile = path.join(tmpDir, 'input.txt');
             fs.writeFileSync(inputFile, input || '', 'utf-8');
 
-            const fullCmd = `${runCmd} < "${inputFile}"`;
+            let fileName, compileCmd, runCmd;
 
-            exec(fullCmd, { timeout: 5000, maxBuffer: 1024 * 512, cwd: tmpDir }, (error, stdout, stderr) => {
+            if (lang === 'python') {
+                fileName = 'solution.py';
+                fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
+                compileCmd = null;
+                runCmd = `python "${path.join(tmpDir, fileName)}" < "${inputFile}"`;
+            } else if (lang === 'javascript') {
+                fileName = 'solution.js';
+                fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
+                compileCmd = null;
+                runCmd = `node "${path.join(tmpDir, fileName)}" < "${inputFile}"`;
+            } else if (lang === 'java') {
+                // Extract public class name or use Main
+                const classMatch = code.match(/public\s+class\s+(\w+)/);
+                const className = classMatch ? classMatch[1] : 'Main';
+                fileName = className + '.java';
+                fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
+                compileCmd = `javac "${path.join(tmpDir, fileName)}"`;
+                runCmd = `java -cp "${tmpDir}" ${className} < "${inputFile}"`;
+            } else if (lang === 'c') {
+                fileName = 'solution.c';
+                const outFile = path.join(tmpDir, 'solution.exe');
+                fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
+                compileCmd = `gcc "${path.join(tmpDir, fileName)}" -o "${outFile}" -lm`;
+                runCmd = `"${outFile}" < "${inputFile}"`;
+            } else if (lang === 'cpp' || lang === 'c++') {
+                fileName = 'solution.cpp';
+                const outFile = path.join(tmpDir, 'solution.exe');
+                fs.writeFileSync(path.join(tmpDir, fileName), code, 'utf-8');
+                compileCmd = `g++ "${path.join(tmpDir, fileName)}" -o "${outFile}" -lm`;
+                runCmd = `"${outFile}" < "${inputFile}"`;
+            } else {
                 try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { }
+                return resolve({ success: false, output: '', error: `Language '${language}' is not supported. Please use Python, JavaScript, Java, C, or C++.` });
+            }
 
-                if (error && error.killed) {
-                    resolve({ success: false, output: '', error: 'Time Limit Exceeded (5s)' });
-                } else if (error) {
-                    resolve({ success: false, output: stdout || '', error: stderr || error.message });
-                } else {
-                    resolve({ success: true, output: stdout ? stdout.trim() : '', error: stderr || '' });
-                }
-            });
+            const runExecution = () => {
+                exec(runCmd, { timeout: 5000, maxBuffer: 1024 * 512, cwd: tmpDir }, (error, stdout, stderr) => {
+                    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { }
+
+                    if (error && error.killed) {
+                        resolve({ success: false, output: '', error: 'Time Limit Exceeded (5s)' });
+                    } else if (error) {
+                        resolve({ success: false, output: stdout || '', error: stderr || error.message });
+                    } else {
+                        resolve({ success: true, output: stdout ? stdout.trim() : '', error: stderr || '' });
+                    }
+                });
+            };
+
+            // If compilation needed, compile first then run
+            if (compileCmd) {
+                exec(compileCmd, { timeout: 15000, maxBuffer: 1024 * 512, cwd: tmpDir }, (compileError, compileStdout, compileStderr) => {
+                    if (compileError) {
+                        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) { }
+                        resolve({ success: false, output: '', error: compileStderr || compileError.message || 'Compilation error' });
+                        return;
+                    }
+                    runExecution();
+                });
+            } else {
+                runExecution();
+            }
         });
     }
 
@@ -768,12 +806,6 @@ function registerSkillTestRoutes(app, pool) {
             for (let i = 0; i < testCases.length; i++) {
                 const tc = testCases[i];
                 const result = await executeCode(code, language, tc.input);
-
-                if (result.unsupported) {
-                    // If language is not supported, we default to passed (or pending)
-                    testResults.push({ name: `Test Case ${i + 1}`, passed: true, output: 'Language not supported for auto-eval' });
-                    continue;
-                }
 
                 if (!result.success && !result.error && !result.output) {
                     // Empty result?

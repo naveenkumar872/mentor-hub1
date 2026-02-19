@@ -428,7 +428,7 @@ export default function SkillAIInterview({ attemptId, attemptData, onComplete, o
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 12px 12px' }}>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button onClick={isListening ? stopListening : startListening} style={{
-                                        width: '40px', height: '40px', borderRadius: '50%', border: 'none', cursor: 'pointer',
+                                        width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer',
                                         background: isListening ? '#ef4444' : 'rgba(16, 185, 129, 0.1)',
                                         color: isListening ? 'white' : '#10b981',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',

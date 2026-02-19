@@ -2317,6 +2317,101 @@ textarea:focus {
     transform: scale(1.05);
 }
 
+/* ==================== Enhanced Dashboard Charts Layout ==================== */
+
+/* Stat card mini progress bar */
+.stat-card-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 0 0 16px 16px;
+    overflow: hidden;
+}
+
+.stat-card-progress-fill {
+    height: 100%;
+    border-radius: 0 0 16px 16px;
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Charts row layout */
+.dash-charts-row {
+    display: grid;
+    grid-template-columns: 1.8fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 0;
+}
+
+.dash-chart-wide {
+    min-height: 300px;
+}
+
+.dash-chart-small {
+    min-height: 300px;
+}
+
+/* Two column for gamification */
+.dash-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+/* Three column layout */
+.dash-three-col {
+    display: grid;
+    grid-template-columns: 300px 1fr 320px;
+    gap: 1.5rem;
+}
+
+@media (max-width: 1400px) {
+    .dash-charts-row {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 1200px) {
+    .dash-three-col {
+        grid-template-columns: 1fr 1fr;
+    }
+    .dash-two-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 900px) {
+    .dash-charts-row {
+        grid-template-columns: 1fr;
+    }
+    .dash-three-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Recharts dark theme overrides */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+    stroke: rgba(148, 163, 184, 0.06) !important;
+}
+
+.recharts-default-tooltip {
+    background: rgba(15, 23, 42, 0.95) !important;
+    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+.recharts-tooltip-label {
+    color: #94a3b8 !important;
+}
+
+.recharts-legend-item-text {
+    color: #94a3b8 !important;
+}
+
 /* Skeleton Loader */
 .skeleton {
     background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
@@ -2333,4 +2428,273 @@ textarea:focus {
     100% {
         background-position: -200% 0;
     }
+}
+
+/* =============================================
+   STUDENT DASHBOARD v2 — "sdash" prefix
+   ============================================= */
+.sdash {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 4px;
+    animation: sdash-in 0.45s ease-out;
+}
+
+@keyframes sdash-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ----- Stat cards row ----- */
+.sdash-stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+}
+
+.sdash-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 14px 16px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.sdash-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.sdash-stat-ring {
+    position: relative;
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+}
+.sdash-stat-icon {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.sdash-stat-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.sdash-stat-val {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.sdash-stat-dim {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+.sdash-stat-lbl {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+}
+
+/* ----- Shared card ----- */
+.sdash-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+.sdash-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+
+.sdash-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.sdash-card-head h3 {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.sdash-badge-sm {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 50px;
+}
+
+/* ----- Row2: 2-col ----- */
+.sdash-row2 {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr;
+    gap: 14px;
+}
+.sdash-grow { flex: 1; }
+
+/* ----- Row3: 3-col ----- */
+.sdash-row3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+}
+.sdash-center-card { align-items: center; }
+
+/* ----- Row4: 4-col ----- */
+.sdash-row4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+}
+
+/* ----- Donut center label ----- */
+.sdash-donut-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+}
+.sdash-donut-pct {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    display: block;
+}
+.sdash-donut-sub {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ----- Legend ----- */
+.sdash-legend {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 6px;
+}
+.sdash-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+.sdash-legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* ----- Skills bars ----- */
+.sdash-skills {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.sdash-skill-row { }
+.sdash-skill-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+.sdash-skill-track {
+    height: 7px;
+    border-radius: 4px;
+    background: rgba(148, 163, 184, 0.1);
+    overflow: hidden;
+}
+.sdash-skill-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s ease;
+}
+
+/* ----- Gamification card adapter ----- */
+.sdash-gami-card {
+    padding: 0 !important;
+    overflow: hidden;
+}
+.sdash-gami-card > div,
+.sdash-gami-card .gamification-profile {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 16px 18px !important;
+    background: transparent !important;
+}
+
+/* ----- Tooltip ----- */
+.dash-tooltip {
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 10px;
+    padding: 8px 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.dash-tooltip-label {
+    color: #94a3b8;
+    font-size: 0.7rem;
+    margin-bottom: 3px;
+}
+.dash-tooltip-value {
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+/* ----- Empty state mini ----- */
+.empty-state-small {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    padding: 1.5rem 0;
+}
+
+/* ----- Responsive ----- */
+@media (max-width: 1200px) {
+    .sdash-stats { grid-template-columns: repeat(3, 1fr); }
+    .sdash-row3 { grid-template-columns: 1fr 1fr; }
+    .sdash-row4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+    .sdash-stats { grid-template-columns: repeat(2, 1fr); }
+    .sdash-row2 { grid-template-columns: 1fr; }
+    .sdash-row3 { grid-template-columns: 1fr; }
+    .sdash-row4 { grid-template-columns: 1fr; }
 }

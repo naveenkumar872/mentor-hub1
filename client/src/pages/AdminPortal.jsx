@@ -2846,6 +2846,7 @@ function GlobalProblems() {
         expectedOutput: '',
         deadline: '',
         status: 'live',
+        maxAttempts: 0,
         // SQL specific fields
         sqlSchema: '',
         expectedQueryResult: '',
@@ -2885,6 +2886,7 @@ function GlobalProblems() {
             expectedQueryResult: isSQL ? (generated.expectedQueryResult || generated.expectedResult || '') : '',
             deadline: problem.deadline,
             status: generated.status || 'live',
+            maxAttempts: problem.maxAttempts,
             enableProctoring: problem.enableProctoring,
             enableVideoAudio: problem.enableVideoAudio,
             disableCopyPaste: problem.disableCopyPaste,
@@ -2961,7 +2963,7 @@ function GlobalProblems() {
             setShowModal(false)
             setProblem({
                 title: '', type: 'Coding', language: 'Python', difficulty: 'Medium',
-                description: '', sampleInput: '', expectedOutput: '', deadline: '', status: 'live',
+                description: '', sampleInput: '', expectedOutput: '', deadline: '', status: 'live', maxAttempts: 0,
                 sqlSchema: '', expectedQueryResult: '',
                 enableProctoring: false, enableVideoAudio: false, disableCopyPaste: false, trackTabSwitches: false, maxTabSwitches: 3,
                 enableFaceDetection: false, detectMultipleFaces: false, trackFaceLookaway: false
@@ -2980,6 +2982,16 @@ function GlobalProblems() {
             } catch (error) {
                 alert('Error deleting problem')
             }
+        }
+    }
+
+    const updateMaxAttempts = async (problemId, newVal) => {
+        try {
+            await axios.put(`${API_BASE}/problems/${problemId}`, { maxAttempts: newVal })
+            fetchProblems()
+        } catch (error) {
+            console.error('Update max attempts error:', error.response?.data || error.message)
+            alert('Error updating max attempts: ' + (error.response?.data?.error || error.message))
         }
     }
 
@@ -3052,6 +3064,7 @@ function GlobalProblems() {
                     expectedOutput: getExpectedOutput(),
                     sqlSchema: isSQL ? getSQLSchema() : '',
                     expectedQueryResult: isSQL ? getExpectedQueryResult() : '',
+                    maxAttempts: parseInt(obj['max_attempts'] || obj['maxattempts'] || obj['attempts']) || 0,
                     status: obj['status'] || 'live',
                     mentorId: ADMIN_ID
                 }
@@ -3331,6 +3344,25 @@ function GlobalProblems() {
                             {p.deadline && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#f87171', marginBottom: '1rem', background: 'rgba(248, 113, 113, 0.05)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content' }}>
                                     <Clock size={12} /> Deadline: {new Date(p.deadline).toLocaleDateString()}
+                                </div>
+                            )}
+
+                            {(p.maxAttempts || p.max_attempts) > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#8b5cf6', marginBottom: '1rem', background: 'rgba(139, 92, 246, 0.05)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content' }}>
+                                    🔄 Max Attempts: {p.maxAttempts || p.max_attempts}
+                                    <button onClick={() => {
+                                        const val = prompt('Set max attempts (0 = unlimited):', p.maxAttempts || p.max_attempts || 0)
+                                        if (val !== null) updateMaxAttempts(p.id, parseInt(val) || 0)
+                                    }} style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer', padding: '0 2px', fontSize: '0.7rem' }} title="Edit max attempts">✏️</button>
+                                </div>
+                            )}
+                            {!(p.maxAttempts || p.max_attempts) && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem', background: 'rgba(100, 116, 139, 0.05)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content' }}>
+                                    🔄 Attempts: Unlimited
+                                    <button onClick={() => {
+                                        const val = prompt('Set max attempts (0 = unlimited):', '0')
+                                        if (val !== null && parseInt(val) > 0) updateMaxAttempts(p.id, parseInt(val))
+                                    }} style={{ background: 'none', border: 'none', color: '#8b5cf6', cursor: 'pointer', padding: '0 2px', fontSize: '0.7rem' }} title="Set attempt limit">✏️</button>
                                 </div>
                             )}
 
@@ -3719,6 +3751,21 @@ function GlobalProblems() {
                                         value={problem.deadline}
                                         onChange={(e) => setProblem({ ...problem, deadline: e.target.value })}
                                     />
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                    <label className="form-label">Max Attempts (0 = Unlimited)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={problem.maxAttempts}
+                                        onChange={(e) => setProblem({ ...problem, maxAttempts: parseInt(e.target.value) || 0 })}
+                                        placeholder="0 = unlimited attempts"
+                                    />
+                                    <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                                        Set how many times a student can submit. 0 means unlimited.
+                                    </small>
                                 </div>
 
                                 {/* Proctoring Settings Section */}

@@ -15,6 +15,9 @@ import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
+// Advanced Features Components
+import { AtRiskStudentsDashboard, LearningCurveChart } from '../components/AnalyticsComponents'
+import { PlagiarismDetectionDashboard } from '../components/PlagiarismViolationComponents'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -114,6 +117,8 @@ function MentorPortal() {
                 { path: '/mentor/leaderboard', label: t('leaderboard'), icon: <Trophy size={20} /> },
                 { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
+                { path: '/mentor/at-risk', label: '⚠️ At-Risk Students', icon: <AlertTriangle size={20} /> },
+                { path: '/mentor/plagiarism', label: '🔍 Plagiarism Detection', icon: <Shield size={20} /> },
                 { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> }
             ]
         },
@@ -132,6 +137,8 @@ function MentorPortal() {
                 <Route path="/leaderboard" element={<Leaderboard user={user} />} />
                 <Route path="/all-submissions" element={<AllSubmissions user={user} />} />
                 <Route path="/analytics" element={<MentorAnalytics user={user} />} />
+                <Route path="/at-risk" element={<AtRiskStudentsDashboard mentorId={user?.id || user?.userId} />} />
+                <Route path="/plagiarism" element={<PlagiarismDetectionDashboard testId={null} />} />
                 <Route path="/live-monitoring" element={<MentorLiveMonitoring user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
             </Routes>
@@ -985,6 +992,7 @@ function UploadProblems({ user }) {
         expectedOutput: '',
         deadline: '',
         status: 'live',
+        maxAttempts: 0,
         // SQL specific fields
         sqlSchema: '',
         expectedQueryResult: '',
@@ -1023,6 +1031,7 @@ function UploadProblems({ user }) {
             expectedQueryResult: isSQL ? (generated.expectedQueryResult || generated.expectedResult || '') : '',
             deadline: problem.deadline,
             status: generated.status || 'live',
+            maxAttempts: problem.maxAttempts,
             enableProctoring: problem.enableProctoring,
             enableVideoAudio: problem.enableVideoAudio,
             disableCopyPaste: problem.disableCopyPaste,
@@ -1165,6 +1174,7 @@ function UploadProblems({ user }) {
                     expectedOutput: getExpectedOutput(),
                     sqlSchema: isSQL ? getSQLSchema() : '',
                     expectedQueryResult: isSQL ? getExpectedQueryResult() : '',
+                    maxAttempts: parseInt(row['max_attempts'] || row['maxattempts'] || row['attempts']) || 0,
                     deadline: row.deadline || '',
                     status: row.status || 'live',
                     mentorId: user.id
@@ -1188,7 +1198,7 @@ function UploadProblems({ user }) {
             setShowModal(false)
             setProblem({
                 title: '', type: 'Coding', language: 'Python', difficulty: 'Medium',
-                description: '', testInput: '', expectedOutput: '', deadline: '', status: 'live',
+                description: '', testInput: '', expectedOutput: '', deadline: '', status: 'live', maxAttempts: 0,
                 enableProctoring: false, enableVideoAudio: false, disableCopyPaste: false,
                 trackTabSwitches: false, maxTabSwitches: 3,
                 enableFaceDetection: false, detectMultipleFaces: false, trackFaceLookaway: false
@@ -1207,6 +1217,16 @@ function UploadProblems({ user }) {
             } catch (error) {
                 alert('Error deleting problem')
             }
+        }
+    }
+
+    const updateMaxAttempts = async (problemId, newVal) => {
+        try {
+            await axios.put(`${API_BASE}/problems/${problemId}`, { maxAttempts: newVal })
+            fetchData()
+        } catch (error) {
+            console.error('Update max attempts error:', error.response?.data || error.message)
+            alert('Error updating max attempts: ' + (error.response?.data?.error || error.message))
         }
     }
 
@@ -1357,6 +1377,7 @@ function UploadProblems({ user }) {
                                 <th>Type</th>
                                 <th>Language</th>
                                 <th>Difficulty</th>
+                                <th>Attempts</th>
                                 <th>Created</th>
                                 <th>Completion</th>
                                 <th>Status</th>
@@ -1399,6 +1420,15 @@ function UploadProblems({ user }) {
                                     </td>
                                     <td><span style={{ fontWeight: 500 }}>{p.language}</span></td>
                                     <td><span className={`difficulty-badge ${p.difficulty?.toLowerCase()}`}>{p.difficulty}</span></td>
+                                    <td style={{ fontSize: '0.85rem', color: (p.maxAttempts || p.max_attempts) > 0 ? '#8b5cf6' : 'var(--text-muted)', cursor: 'pointer' }}
+                                        onClick={() => {
+                                            const val = prompt('Set max attempts (0 = unlimited):', p.maxAttempts || p.max_attempts || 0)
+                                            if (val !== null) updateMaxAttempts(p.id, parseInt(val) || 0)
+                                        }}
+                                        title="Click to edit max attempts"
+                                    >
+                                        {(p.maxAttempts || p.max_attempts) > 0 ? `${p.maxAttempts || p.max_attempts}` : '∞'} ✏️
+                                    </td>
                                     <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
                                     <td>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1825,6 +1855,21 @@ function UploadProblems({ user }) {
                                 <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                                     <label className="form-label">Deadline (Optional)</label>
                                     <input type="date" value={problem.deadline} onChange={(e) => setProblem({ ...problem, deadline: e.target.value })} />
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                    <label className="form-label">Max Attempts (0 = Unlimited)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={problem.maxAttempts}
+                                        onChange={(e) => setProblem({ ...problem, maxAttempts: parseInt(e.target.value) || 0 })}
+                                        placeholder="0 = unlimited attempts"
+                                    />
+                                    <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                                        Set how many times a student can submit. 0 means unlimited.
+                                    </small>
                                 </div>
 
                                 {/* Proctoring Settings */}
