@@ -212,8 +212,9 @@ function registerSkillTestRoutes(app, pool) {
             const [testRows] = await pool.query('SELECT sql_count FROM skill_tests WHERE id = ?', [testId]);
             const hadSQL = testRows.length > 0 && (testRows[0].sql_count || 0) > 0;
 
-            // Delete the test and its attempts
+            // Delete the test and its attempts and allocations
             await pool.query('DELETE FROM skill_test_attempts WHERE test_id = ?', [testId]);
+            await pool.query('DELETE FROM test_student_allocations WHERE test_id = ?', [testId]);
             await pool.query('DELETE FROM skill_tests WHERE id = ?', [testId]);
 
             // Drop this test's sandbox tables
@@ -249,7 +250,24 @@ function registerSkillTestRoutes(app, pool) {
     app.get('/api/skill-tests/student/available', async (req, res) => {
         try {
             const { studentId } = req.query;
-            const [tests] = await pool.query('SELECT * FROM skill_tests WHERE is_active = TRUE ORDER BY created_at DESC');
+
+            // Get tests allocated to this student
+            const [allocations] = await pool.query(
+                'SELECT test_id FROM test_student_allocations WHERE student_id = ?',
+                [studentId]
+            );
+            const allocatedIds = allocations.map(a => a.test_id);
+
+            // Get all active skill tests
+            const [allTests] = await pool.query('SELECT * FROM skill_tests WHERE is_active = TRUE ORDER BY created_at DESC');
+
+            // Filter tests: either they are allocated to this student, or they are not allocated to anyone (public)
+            // Or if we want strict mode: only allocated tests.
+            // Given the "Assign" button, strict mode is likely preferred for assigned tests.
+            // But let's check if there are any that have NO entries in allocations (if so, maybe they are public?)
+            // Actually, let's look at how global tests do it.
+
+            const tests = allTests.filter(t => allocatedIds.includes(String(t.id)));
 
             // For each test, get student's latest attempt status
             const enriched = await Promise.all(tests.map(async t => {

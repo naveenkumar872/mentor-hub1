@@ -3517,13 +3517,13 @@ app.get('/api/tests/allocated-to/:studentId', async (req, res) => {
         );
 
         const testIds = allocations.map(a => a.test_id);
-        
+
         // Get details from appropriate tables (aptitude, global_tests, etc.)
         let allTests = [];
 
         if (testIds.length > 0) {
             const placeholders = testIds.map(() => '?').join(',');
-            
+
             // Get from aptitude tests
             const [aptTests] = await pool.query(
                 `SELECT id, title, 'aptitude' as type FROM aptitude_tests WHERE id IN (${placeholders}) AND status = 'live'`,
@@ -3537,6 +3537,14 @@ app.get('/api/tests/allocated-to/:studentId', async (req, res) => {
                 testIds
             );
             allTests = allTests.concat(globalTests);
+
+            // Get from skill tests
+            // Note: skill_tests id is INT, but we store as string in testIds, MySQL handles conversion
+            const [skillTests] = await pool.query(
+                `SELECT id, title, 'skill' as type FROM skill_tests WHERE id IN (${placeholders}) AND is_active = 1`,
+                testIds
+            );
+            allTests = allTests.concat(skillTests);
         }
 
         res.json(allTests);
@@ -7503,8 +7511,8 @@ app.get('/api/plagiarism/report/:reportId', async (req, res) => {
         if (reports.length === 0) return res.status(404).json({ error: 'Report not found' });
 
         const report = reports[0];
-        const reportData = typeof report.report_data === 'string' 
-            ? JSON.parse(report.report_data) 
+        const reportData = typeof report.report_data === 'string'
+            ? JSON.parse(report.report_data)
             : report.report_data;
 
         res.json({
@@ -7914,7 +7922,7 @@ const proctoringEngine = require('./proctoring_engine');
 app.post('/api/proctoring/start-exam', async (req, res) => {
     try {
         const { examId, problemId, studentId, mentorId } = req.body;
-        
+
         if (!examId || !studentId) {
             return res.status(400).json({ error: 'Missing required fields: examId, studentId' });
         }
@@ -8199,7 +8207,7 @@ app.get('/api/proctoring/analytics', async (req, res) => {
         const cameraCount = summary.camera_blocked_count || 0;
         const phoneCount = summary.phone_detection_count || 0;
         const totalPoints = summary.total_violation_points || 0;
-        
+
         // Calculate average violation score (0-100 scale)
         const totalSubs = summary.total_submissions || 1;
         const avgViolationScore = Math.round((totalPoints / (totalSubs * 4)) * 100); // 4 = max violation types
@@ -8264,11 +8272,11 @@ app.get('/api/proctoring/analytics/by-student', async (req, res) => {
 
         // Enrich with status indicators
         const enrichedStudents = students.map((student) => {
-            const totalViolations = (student.total_tab_switches || 0) + 
-                                   (student.total_copy_paste || 0) + 
-                                   (student.total_camera_blocked || 0) + 
-                                   (student.total_phone_detection || 0);
-            
+            const totalViolations = (student.total_tab_switches || 0) +
+                (student.total_copy_paste || 0) +
+                (student.total_camera_blocked || 0) +
+                (student.total_phone_detection || 0);
+
             let status = '✅ CLEAN';
             if (student.flagged_exams >= 3) {
                 status = '🚨 REPEAT VIOLATOR';
@@ -8368,7 +8376,7 @@ async function ensureTestAllocationsTable() {
 // Start server
 (async () => {
     await ensureTestAllocationsTable();
-    
+
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
         console.log('🔌 WebSocket ready for real-time updates');
