@@ -395,10 +395,12 @@ app.get('/api/students/:studentId/tasks', async (req, res) => {
 
         const mentorId = students[0].mentor_id;
 
-        // Tasks from their mentor OR admin
+        // Tasks allocated to this student from their mentor OR admin
         const [tasks] = await pool.query(
-            'SELECT * FROM tasks WHERE (mentor_id = ? OR mentor_id = "admin-001") AND status = "live"',
-            [mentorId]
+            `SELECT t.* FROM tasks t
+            INNER JOIN test_student_allocations tsa ON t.id = tsa.test_id
+            WHERE tsa.student_id = ? AND (t.mentor_id = ? OR t.mentor_id = "admin-001") AND t.status = "live"`,
+            [req.params.studentId, mentorId]
         );
 
         const enrichedTasks = await Promise.all(tasks.map(async t => {
@@ -551,10 +553,12 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
 
         const mentorId = students[0].mentor_id;
 
-        // Problems from their mentor OR admin
+        // Problems allocated to this student from their mentor OR admin
         const [problems] = await pool.query(
-            'SELECT * FROM problems WHERE (mentor_id = ? OR mentor_id = "admin-001") AND status = "live"',
-            [mentorId]
+            `SELECT p.* FROM problems p
+            INNER JOIN problem_student_allocations psa ON p.id = psa.problem_id
+            WHERE psa.student_id = ? AND (p.mentor_id = ? OR p.mentor_id = "admin-001") AND p.status = "live"`,
+            [req.params.studentId, mentorId]
         );
 
         const enrichedProblems = await Promise.all(problems.map(async p => {
