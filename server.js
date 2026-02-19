@@ -2574,9 +2574,8 @@ app.post('/api/aptitude/:testId/allocate-students', async (req, res) => {
         // Delete existing allocations for this test
         await connection.query('DELETE FROM test_student_allocations WHERE test_id = ?', [testId]);
 
-        // Insert new allocations
-        const allocationIds = studentIds.map((_, i) => `alloc-${testId}-${i}-${Date.now()}`);
-        const values = studentIds.map((studentId, i) => [allocationIds[i], testId, studentId]);
+        // Insert new allocations with shorter, unique IDs using UUID
+        const values = studentIds.map((studentId) => [uuidv4(), testId, studentId]);
 
         if (values.length > 0) {
             await connection.query(
@@ -3404,9 +3403,8 @@ app.post('/api/tests/:testId/allocate-students', async (req, res) => {
         // Delete existing allocations for this test
         await connection.query('DELETE FROM test_student_allocations WHERE test_id = ?', [testId]);
 
-        // Insert new allocations
-        const allocationIds = studentIds.map((_, i) => `alloc-${testId}-${i}-${Date.now()}`);
-        const values = studentIds.map((studentId, i) => [allocationIds[i], testId, studentId]);
+        // Insert new allocations with shorter, unique IDs using UUID
+        const values = studentIds.map((studentId) => [uuidv4(), testId, studentId]);
 
         if (values.length > 0) {
             await connection.query(
@@ -3421,6 +3419,63 @@ app.post('/api/tests/:testId/allocate-students', async (req, res) => {
     } catch (error) {
         await connection.rollback();
         console.error('Allocation error:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Allocate students to PROBLEM (stores in problem_allocations table)
+app.post('/api/problems/:problemId/allocate-students', async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { problemId } = req.params;
+        const { studentIds } = req.body;
+
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ error: 'studentIds must be a non-empty array' });
+        }
+
+        // First verify the problem exists
+        const [problem] = await connection.query('SELECT id FROM problems WHERE id = ?', [problemId]);
+        if (problem.length === 0) {
+            return res.status(404).json({ error: 'Problem not found' });
+        }
+
+        await connection.beginTransaction();
+
+        // Create table if it doesn't exist
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS problem_student_allocations (
+                id VARCHAR(36) PRIMARY KEY,
+                problem_id VARCHAR(36) NOT NULL,
+                student_id VARCHAR(36) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_allocation (problem_id, student_id),
+                INDEX idx_problem (problem_id),
+                INDEX idx_student (student_id)
+            )
+        `);
+
+        // Delete existing allocations for this problem
+        await connection.query('DELETE FROM problem_student_allocations WHERE problem_id = ?', [problemId]);
+
+        // Insert new allocations with UUID
+        const values = studentIds.map((studentId) => [uuidv4(), problemId, studentId]);
+
+        if (values.length > 0) {
+            await connection.query(
+                'INSERT INTO problem_student_allocations (id, problem_id, student_id) VALUES ?',
+                [values]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, allocatedCount: studentIds.length });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Problem allocation error:', error);
         res.status(500).json({ error: error.message });
     } finally {
         connection.release();

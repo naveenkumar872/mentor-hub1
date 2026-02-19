@@ -459,6 +459,13 @@ function UploadTasks({ user }) {
         deadline: ''
     })
 
+    // Student allocation states
+    const [showStudentAllocationModal, setShowStudentAllocationModal] = useState(false)
+    const [allStudents, setAllStudents] = useState([])
+    const [selectedStudents, setSelectedStudents] = useState([])
+    const [allocatingTaskId, setAllocatingTaskId] = useState(null)
+    const [studentSearchTerm, setStudentSearchTerm] = useState('')
+
     // AI Chatbot handler - auto-fills the task form
     const handleAIGenerate = (generated) => {
         setTask({
@@ -489,6 +496,47 @@ function UploadTasks({ user }) {
     useEffect(() => {
         fetchData()
     }, [user.id])
+
+    const fetchAllStudents = async () => {
+        try {
+            const res = await axios.get(`${API_BASE}/mentors/${user.id}/students`)
+            setAllStudents(Array.isArray(res.data) ? res.data : [])
+        } catch (e) { console.error(e) }
+    }
+
+    const openStudentAllocationModal = async (taskId) => {
+        setAllocatingTaskId(taskId)
+        await fetchAllStudents()
+
+        try {
+            const res = await axios.get(`${API_BASE}/tests/${taskId}/allocated-students`)
+            setSelectedStudents(res.data.studentIds || [])
+        } catch (e) {
+            console.error(e)
+            setSelectedStudents([])
+        }
+        setShowStudentAllocationModal(true)
+    }
+
+    const toggleStudentSelection = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId)
+                ? prev.filter(id => id !== studentId)
+                : [...prev, studentId]
+        )
+    }
+
+    const saveStudentAllocations = async () => {
+        try {
+            await axios.post(`${API_BASE}/tests/${allocatingTaskId}/allocate-students`, {
+                studentIds: selectedStudents
+            })
+            alert('Students assigned successfully!')
+            setShowStudentAllocationModal(false)
+        } catch (e) {
+            alert('Error assigning students: ' + (e.response?.data?.error || e.message))
+        }
+    }
 
     const handleCSVUpload = async (e) => {
         const file = e.target.files[0]
@@ -723,22 +771,31 @@ function UploadTasks({ user }) {
                                     </td>
                                     <td><span className={`status-badge ${t.status}`}>{t.status}</span></td>
                                     <td>
-                                        <button
-                                            onClick={() => handleDelete(t.id)}
-                                            disabled={!canDelete(t)}
-                                            style={{
-                                                background: canDelete(t) ? 'rgba(239, 68, 68, 0.1)' : 'rgba(148, 163, 184, 0.1)',
-                                                border: 'none',
-                                                color: canDelete(t) ? '#ef4444' : '#64748b',
-                                                padding: '0.4rem 0.75rem',
-                                                borderRadius: '6px',
-                                                cursor: canDelete(t) ? 'pointer' : 'not-allowed',
-                                                fontSize: '0.8rem'
-                                            }}
-                                            title={canDelete(t) ? 'Delete task' : 'Cannot delete while students are in progress'}
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                onClick={() => openStudentAllocationModal(t.id)}
+                                                className="btn-create-new"
+                                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.2)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                                            >
+                                                <Users size={14} /> Assign
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(t.id)}
+                                                disabled={!canDelete(t)}
+                                                style={{
+                                                    background: canDelete(t) ? 'rgba(239, 68, 68, 0.1)' : 'rgba(148, 163, 184, 0.1)',
+                                                    border: 'none',
+                                                    color: canDelete(t) ? '#ef4444' : '#64748b',
+                                                    padding: '0.4rem 0.75rem',
+                                                    borderRadius: '6px',
+                                                    cursor: canDelete(t) ? 'pointer' : 'not-allowed',
+                                                    fontSize: '0.8rem'
+                                                }}
+                                                title={canDelete(t) ? 'Delete task' : 'Cannot delete while students are in progress'}
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -754,6 +811,155 @@ function UploadTasks({ user }) {
                 onClose={() => setShowAIChat(false)}
                 onGenerate={handleAIGenerate}
             />
+
+            {/* Student Allocation Modal for Tasks */}
+            {showStudentAllocationModal && (
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
+                }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '750px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <div className="modal-title-with-icon">
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Users size={20} color="white" />
+                                </div>
+                                <div style={{ textAlign: 'left' }}>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students to Task</h3>
+                                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this task</p>
+                                </div>
+                            </div>
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close"><X size={20} /></button>
+                        </div>
+
+                        <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.7rem 1rem 0.7rem 2.5rem',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-card)',
+                                        border: '1px solid var(--border-color)',
+                                        color: 'var(--text-main)',
+                                        fontSize: '0.9rem'
+                                    }}
+                                />
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const filtered = allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.7rem 1.2rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
+                                        <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                                        <p>No students found matching your search.</p>
+                                    </div>
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1rem',
+                                                borderRadius: '1rem',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.2s',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none',
+                                                textAlign: 'left'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '40px', height: '40px', borderRadius: '50%',
+                                                background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '1rem', fontWeight: 700, color: 'white'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                                    <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                                                        {student.batch || 'No Batch'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn-reset" onClick={() => {
+                                    setShowStudentAllocationModal(false)
+                                    setStudentSearchTerm('')
+                                }}>Cancel</button>
+                                <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
+                                    Confirm Assignment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
@@ -879,7 +1085,7 @@ function UploadProblems({ user }) {
 
     const saveStudentAllocations = async () => {
         try {
-            await axios.post(`${API_BASE}/tests/${allocatingProblemId}/allocate-students`, {
+            await axios.post(`${API_BASE}/problems/${allocatingProblemId}/allocate-students`, {
                 studentIds: selectedStudents
             })
             alert('Students assigned successfully!')
@@ -1261,156 +1467,231 @@ function UploadProblems({ user }) {
                         </tbody>
                     </table>
                 </div>
+            </div>
 
-                {/* Student Allocation Modal */}
-                {showStudentAllocationModal && (
-                    <div className="modal-overlay" onClick={() => {
-                        setShowStudentAllocationModal(false)
-                        setStudentSearchTerm('')
-                    }}>
-                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '750px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                            <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                                <div className="modal-title-with-icon">
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Users size={20} color="white" />
-                                    </div>
-                                    <div style={{ textAlign: 'left' }}>
-                                        <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Assign Students</h3>
-                                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Select students for this problem</p>
-                                    </div>
+            {/* Student Allocation Modal - Positioned Outside Card */}
+            {showStudentAllocationModal && (
+                <div className="modal-overlay" onClick={() => {
+                    setShowStudentAllocationModal(false)
+                    setStudentSearchTerm('')
+                }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '90%', maxWidth: '950px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)' }}>
+                        <div className="modal-header" style={{ padding: '2rem 1.5rem', borderBottom: '2px solid var(--border-color)', background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05))', flexShrink: 0 }}>
+                            <div className="modal-title-with-icon" style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                                <div style={{ width: '50px', height: '50px', borderRadius: '12px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 8px 16px rgba(59, 130, 246, 0.3)' }}>
+                                    <Users size={24} color="white" />
                                 </div>
-                                <button onClick={() => {
-                                    setShowStudentAllocationModal(false)
-                                    setStudentSearchTerm('')
-                                }} className="modal-close"><X size={20} /></button>
+                                <div style={{ textAlign: 'left', flex: 1 }}>
+                                    <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-main)' }}>Assign Students</h3>
+                                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Select students to complete this problem</p>
+                                </div>
                             </div>
+                            <button onClick={() => {
+                                setShowStudentAllocationModal(false)
+                                setStudentSearchTerm('')
+                            }} className="modal-close" style={{ position: 'absolute', right: '1.5rem', top: '1.5rem' }}><X size={22} /></button>
+                        </div>
 
-                            <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                <div style={{ position: 'relative', flex: 1 }}>
-                                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                    <input
-                                        type="text"
-                                        placeholder="Search by name or batch..."
-                                        value={studentSearchTerm}
-                                        onChange={(e) => setStudentSearchTerm(e.target.value)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '0.7rem 1rem 0.7rem 2.5rem',
-                                            borderRadius: '10px',
-                                            background: 'var(--bg-card)',
-                                            border: '1px solid var(--border-color)',
-                                            color: 'var(--text-main)',
-                                            fontSize: '0.9rem'
-                                        }}
-                                    />
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        const filtered = allStudents.filter(s =>
-                                            (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
-                                            (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
-                                        )
-                                        const allSelected = filtered.every(s => selectedStudents.includes(s.id))
-                                        if (allSelected) {
-                                            setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
-                                        } else {
-                                            setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
-                                        }
-                                    }}
+                        <div style={{ padding: '1.2rem 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '0.8rem', alignItems: 'center', flexShrink: 0 }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <Search size={19} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary)', fontWeight: 500 }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search students by name, email or batch..."
+                                    value={studentSearchTerm}
+                                    onChange={(e) => setStudentSearchTerm(e.target.value)}
                                     style={{
-                                        padding: '0.7rem 1.2rem',
+                                        width: '100%',
+                                        padding: '0.8rem 1rem 0.8rem 2.8rem',
                                         borderRadius: '10px',
                                         background: 'var(--bg-card)',
-                                        border: '1px solid var(--border-color)',
+                                        border: '1.5px solid var(--border-color)',
                                         color: 'var(--text-main)',
-                                        fontSize: '0.85rem',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        whiteSpace: 'nowrap'
+                                        fontSize: '0.95rem',
+                                        transition: 'all 0.2s',
+                                        outline: 'none'
                                     }}
-                                >
-                                    {allStudents.filter(s =>
-                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
-                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
-                                    ).every(s => selectedStudents.includes(s.id)) ? 'Deselect All' : 'Select All'}
-                                </button>
+                                    onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                                    onBlur={(e) => e.target.style.borderColor = 'var(--border-color)'}
+                                />
                             </div>
-
-                            <div className="modal-body" style={{ overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-                                    {allStudents.filter(s =>
+                            <button
+                                onClick={() => {
+                                    const filtered = allStudents.filter(s =>
                                         (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
                                         (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
-                                    ).length === 0 ? (
-                                        <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', opacity: 0.5 }}>
-                                            <Users size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
-                                            <p>No students found matching your search.</p>
-                                        </div>
-                                    ) : (
-                                        allStudents.filter(s =>
-                                            (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
-                                            (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
-                                        ).map(student => (
-                                            <div
-                                                key={student.id}
-                                                onClick={() => toggleStudentSelection(student.id)}
-                                                style={{
-                                                    padding: '1rem',
-                                                    borderRadius: '1rem',
-                                                    background: selectedStudents.includes(student.id) ? 'var(--primary-alpha)' : 'var(--bg-card)',
-                                                    border: `1.5px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '1rem',
-                                                    transition: 'all 0.2s',
-                                                    boxShadow: selectedStudents.includes(student.id) ? '0 4px 12px var(--primary-alpha)' : 'none',
-                                                    textAlign: 'left'
-                                                }}
-                                            >
-                                                <div style={{
-                                                    width: '40px', height: '40px', borderRadius: '50%',
-                                                    background: selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--bg-secondary)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    fontSize: '1rem', fontWeight: 700, color: 'white'
-                                                }}>
-                                                    {(student.name || student.username || 'S').charAt(0).toUpperCase()}
-                                                </div>
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {student.name || student.username}
-                                                    </div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                                                        <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                                                            {student.batch || 'No Batch'}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {selectedStudents.includes(student.id) && <CheckCircle size={18} color="var(--primary)" />}
+                                    )
+                                    const allSelected = filtered.every(s => selectedStudents.includes(s.id))
+                                    if (allSelected) {
+                                        setSelectedStudents(prev => prev.filter(id => !filtered.map(s => s.id).includes(id)))
+                                    } else {
+                                        setSelectedStudents(prev => [...new Set([...prev, ...filtered.map(s => s.id)])])
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.8rem 1.4rem',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1.5px solid var(--primary)',
+                                    color: 'var(--primary)',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.target.style.background = 'var(--primary)'
+                                    e.target.style.color = 'white'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.background = 'var(--bg-card)'
+                                    e.target.style.color = 'var(--primary)'
+                                }}
+                            >
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).every(s => selectedStudents.includes(s.id)) ? '✓ Deselect All' : '+ Select All'}
+                            </button>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', background: 'var(--bg-primary)', minHeight: 0 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.2rem' }}>
+                                {allStudents.filter(s =>
+                                    (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                    (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                ).length === 0 ? (
+                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem 2rem', opacity: 0.6 }}>
+                                        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔍</div>
+                                        <p style={{ fontSize: '1rem', color: 'var(--text-muted)', margin: 0 }}>No students found</p>
+                                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.5rem 0 0 0' }}>Try adjusting your search criteria</p>
+                                    </div>
+                                ) : (
+                                    allStudents.filter(s =>
+                                        (s.name || s.username || '').toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
+                                        (s.batch || '').toLowerCase().includes(studentSearchTerm.toLowerCase())
+                                    ).map(student => (
+                                        <div
+                                            key={student.id}
+                                            onClick={() => toggleStudentSelection(student.id)}
+                                            style={{
+                                                padding: '1.2rem',
+                                                borderRadius: '12px',
+                                                background: selectedStudents.includes(student.id) ? 'linear-gradient(135deg, var(--primary-alpha), rgba(139, 92, 246, 0.08))' : 'var(--bg-card)',
+                                                border: `2px solid ${selectedStudents.includes(student.id) ? 'var(--primary)' : 'var(--border-color)'}`,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '1rem',
+                                                transition: 'all 0.25s ease',
+                                                boxShadow: selectedStudents.includes(student.id) ? '0 8px 20px rgba(59, 130, 246, 0.15)' : '0 2px 8px rgba(0, 0, 0, 0.05)',
+                                                textAlign: 'left',
+                                                position: 'relative',
+                                                overflow: 'hidden'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (!selectedStudents.includes(student.id)) {
+                                                    e.currentTarget.style.borderColor = 'var(--primary)'
+                                                    e.currentTarget.style.background = 'var(--bg-secondary)'
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (!selectedStudents.includes(student.id)) {
+                                                    e.currentTarget.style.borderColor = 'var(--border-color)'
+                                                    e.currentTarget.style.background = 'var(--bg-card)'
+                                                }
+                                            }}
+                                        >
+                                            {selectedStudents.includes(student.id) && (
+                                                <div style={{ position: 'absolute', left: 0, top: 0, width: '4px', height: '100%', background: 'linear-gradient(180deg, var(--primary), #6366f1)' }}></div>
+                                            )}
+                                            <div style={{
+                                                width: '48px', height: '48px', borderRadius: '10px',
+                                                background: selectedStudents.includes(student.id) ? 'linear-gradient(135deg, var(--primary), #6366f1)' : 'linear-gradient(135deg, #8b5cf6, #3b82f6)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '1.2rem', fontWeight: 700, color: 'white', flexShrink: 0,
+                                                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)'
+                                            }}>
+                                                {(student.name || student.username || 'S').charAt(0).toUpperCase()}
                                             </div>
-                                        ))
-                                    )}
-                                </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '0.3rem' }}>
+                                                    {student.name || student.username}
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                                                    <span style={{ opacity: 0.7 }}>📧</span>
+                                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{student.email || 'N/A'}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <span style={{ padding: '3px 8px', borderRadius: '6px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                                                        🏢 {student.batch || 'No Batch'}
+                                                    </span>
+                                                    {student.status && (
+                                                        <span style={{ padding: '3px 8px', borderRadius: '6px', background: student.status === 'active' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: student.status === 'active' ? '#10b981' : '#ef4444', fontSize: '0.75rem', fontWeight: 600 }}>
+                                                            {student.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {selectedStudents.includes(student.id) && (
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', w: '24px' }}>
+                                                    <CheckCircle size={22} color="var(--primary)" strokeWidth={2.5} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
                             </div>
+                        </div>
 
-                            <div className="modal-footer" style={{ padding: '1.2rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
-                                <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', fontWeight: 500 }}>
-                                    <span style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1.1rem' }}>{selectedStudents.length}</span> students selected
-                                </div>
-                                <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <button className="btn-reset" onClick={() => {
+                        <div className="modal-footer" style={{ padding: '1.5rem', borderTop: '2px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)', flexWrap: 'wrap', gap: '1rem', flexShrink: 0 }}>
+                            <div style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                                <span style={{ color: 'var(--primary)', fontWeight: 900, fontSize: '1.3rem' }}>{selectedStudents.length}</span>
+                                <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)' }}>student{selectedStudents.length !== 1 ? 's' : ''} selected</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                <button 
+                                    className="btn-reset" 
+                                    onClick={() => {
                                         setShowStudentAllocationModal(false)
                                         setStudentSearchTerm('')
-                                    }}>Cancel</button>
-                                    <button className="btn-create-new" onClick={saveStudentAllocations} style={{ background: 'var(--primary)', padding: '0.7rem 2rem', borderRadius: '10px', boxShadow: '0 4px 15px var(--primary-alpha)' }}>
-                                        Confirm Assignment
-                                    </button>
-                                </div>
+                                    }}
+                                    style={{ padding: '0.8rem 2rem', fontSize: '0.95rem', fontWeight: 600 }}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    className="btn-create-new" 
+                                    onClick={saveStudentAllocations} 
+                                    style={{ 
+                                        background: 'linear-gradient(135deg, var(--primary), #6366f1)', 
+                                        padding: '0.8rem 2.5rem', 
+                                        borderRadius: '10px',
+                                        fontSize: '0.95rem',
+                                        fontWeight: 700,
+                                        border: 'none',
+                                        color: 'white',
+                                        boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.3s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.target.style.boxShadow = '0 10px 30px rgba(59, 130, 246, 0.5)'
+                                        e.target.style.transform = 'translateY(-2px)'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.target.style.boxShadow = '0 6px 20px rgba(59, 130, 246, 0.35)'
+                                        e.target.style.transform = 'translateY(0)'
+                                    }}
+                                >
+                                    ✓ Confirm Assignment
+                                </button>
                             </div>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             {/* Create Problem Modal */}
             {showModal && (

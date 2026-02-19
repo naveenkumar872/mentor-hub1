@@ -2944,7 +2944,7 @@ function GlobalProblems() {
 
     const saveStudentAllocations = async () => {
         try {
-            await axios.post(`${API_BASE}/tests/${allocatingProblemId}/allocate-students`, {
+            await axios.post(`${API_BASE}/problems/${allocatingProblemId}/allocate-students`, {
                 studentIds: selectedStudents
             })
             alert('Students assigned successfully!')
