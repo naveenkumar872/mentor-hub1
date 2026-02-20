@@ -169,7 +169,8 @@ function Dashboard({ user }) {
     const [stats, setStats] = useState(null)
     const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
+    const fetchData = () => {
+        setLoading(true)
         axios.get(`${API_BASE}/analytics/student/${user.id}`)
             .then(res => {
                 setStats(res.data)
@@ -179,6 +180,10 @@ function Dashboard({ user }) {
                 console.error(err)
                 setLoading(false)
             })
+    }
+
+    useEffect(() => {
+        fetchData()
     }, [user.id])
 
     const formatTimeAgo = (dateString) => {
@@ -270,6 +275,30 @@ function Dashboard({ user }) {
 
     return (
         <div className="sdash">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>Overview</h2>
+                <button
+                    onClick={fetchData}
+                    className="refresh-btn"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '8px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'var(--text-main)',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    <RefreshCw size={16} className={loading ? 'spin' : ''} />
+                    Refresh
+                </button>
+            </div>
+
             {/* Row 1: Stats Cards */}
             <div className="sdash-stats">
                 {[

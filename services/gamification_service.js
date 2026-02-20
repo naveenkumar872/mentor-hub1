@@ -333,7 +333,7 @@ class GamificationService {
             );
 
             const [rank] = await this.db.query(
-                `SELECT COUNT(*) as rank FROM student_gamification 
+                `SELECT COUNT(*) as \`rank\` FROM student_gamification 
                 WHERE total_points > (SELECT total_points FROM student_gamification WHERE student_id = ?)`,
                 [studentId]
             );

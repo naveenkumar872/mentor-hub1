@@ -1012,6 +1012,35 @@ app.post('/api/submissions/ml-task', async (req, res) => {
                     console.warn('Could not insert task_completion:', tcErr.message);
                 }
             }
+            // Invalidate caches when submission is created
+            cacheManager.delete(`student:${studentId}:analytics`);
+            cacheManager.delete(`student:${studentId}:learning_path`);
+            cacheManager.delete(`student:${studentId}:peer_comparison`);
+            cacheManager.delete(`topics:all:${studentId}`);
+            cacheManager.delete('leaderboard:global:all');
+            cacheManager.delete('leaderboard:dashboard:top10');
+
+            // Invalidate mentor's analytics cache
+            try {
+                const [allocation] = await pool.query(
+                    'SELECT mentor_id FROM mentor_student_allocations WHERE student_id = ? LIMIT 1',
+                    [studentId]
+                );
+                if (allocation.length > 0) {
+                    cacheManager.delete(`mentor:${allocation[0].mentor_id}:analytics`);
+                }
+            } catch (e) { /* Ignore */ }
+
+            // Update predictive analytics
+            if (analyticsService) {
+                try {
+                    await analyticsService.analyzeStudentPerformance(studentId);
+                    console.log(`📊 Analytics: Updated for student ${studentId} (ML Task)`);
+                } catch (err) {
+                    console.warn('Analytics update failed:', err.message);
+                }
+            }
+
         } catch (dbErr) {
             console.warn('Could not save ML task submission to DB:', dbErr.message);
         }
@@ -1496,8 +1525,12 @@ Scoring Guide:
         }
 
         // Invalidate caches when submission is created
-        cacheManager.delete('leaderboard:global:all');
         cacheManager.delete(`student:${studentId}:analytics`);
+        cacheManager.delete(`student:${studentId}:learning_path`);
+        cacheManager.delete(`student:${studentId}:peer_comparison`);
+        cacheManager.delete(`topics:all:${studentId}`);
+        cacheManager.delete('leaderboard:global:all');
+        cacheManager.delete('leaderboard:dashboard:top10');
         cacheManager.delete('admin:analytics:global');
         // Also invalidate mentor's analytics cache
         try {
@@ -2630,6 +2663,24 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
                 await analyticsService.analyzeStudentPerformance(studentId);
                 console.log(`📊 Analytics: Updated for student ${studentId} (Aptitude)`);
             }
+            // Invalidate caches
+            cacheManager.delete(`student:${studentId}:analytics`);
+            cacheManager.delete(`student:${studentId}:learning_path`);
+            cacheManager.delete(`student:${studentId}:peer_comparison`);
+            cacheManager.delete(`topics:all:${studentId}`);
+            cacheManager.delete('leaderboard:global:all');
+            cacheManager.delete('leaderboard:dashboard:top10');
+
+            // Invalidate mentor's analytics cache
+            try {
+                const [allocation] = await pool.query(
+                    'SELECT mentor_id FROM mentor_student_allocations WHERE student_id = ? LIMIT 1',
+                    [studentId]
+                );
+                if (allocation.length > 0) {
+                    cacheManager.delete(`mentor:${allocation[0].mentor_id}:analytics`);
+                }
+            } catch (e) { /* Ignore */ }
         } catch (err) {
             console.log('Update skipped:', err.message);
         }
@@ -3411,6 +3462,35 @@ app.post('/api/global-tests/:id/submit', async (req, res) => {
 
         await connection.commit();
 
+        // Update predictive analytics
+        if (analyticsService) {
+            try {
+                await analyticsService.analyzeStudentPerformance(studentId);
+                console.log(`📊 Analytics: Updated for student ${studentId} (Global Test)`);
+            } catch (err) {
+                console.warn('Analytics update failed:', err.message);
+            }
+        }
+
+        // Invalidate caches
+        cacheManager.delete(`student:${studentId}:analytics`);
+        cacheManager.delete(`student:${studentId}:learning_path`);
+        cacheManager.delete(`student:${studentId}:peer_comparison`);
+        cacheManager.delete(`topics:all:${studentId}`);
+        cacheManager.delete('leaderboard:global:all');
+        cacheManager.delete('leaderboard:dashboard:top10');
+
+        // Invalidate mentor's analytics cache
+        try {
+            const [allocation] = await pool.query(
+                'SELECT mentor_id FROM mentor_student_allocations WHERE student_id = ? LIMIT 1',
+                [studentId]
+            );
+            if (allocation.length > 0) {
+                cacheManager.delete(`mentor:${allocation[0].mentor_id}:analytics`);
+            }
+        } catch (e) { /* Ignore */ }
+
         res.json({
             submission: {
                 id: subId,
@@ -3963,33 +4043,61 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             time: r.time
         }));
 
-        // Get leaderboard data for student dashboard
-        const [leaderboardRows] = await pool.query(`
-            SELECT u.id as studentId, u.name, 
-            COUNT(DISTINCT tc.task_id) as taskCount,
-            COUNT(DISTINCT pc.problem_id) as codeCount,
-            COUNT(DISTINCT sca.aptitude_test_id) as aptitudeCount,
-            COALESCE(AVG(sub.score), 0) as avgScore
-            FROM users u
-            LEFT JOIN task_completions tc ON u.id = tc.student_id
-            LEFT JOIN problem_completions pc ON u.id = pc.student_id
-            LEFT JOIN student_completed_aptitude sca ON u.id = sca.student_id
-            LEFT JOIN submissions sub ON u.id = sub.student_id
-            WHERE u.role = 'student'
-            GROUP BY u.id
-            ORDER BY avgScore DESC, (taskCount + codeCount + aptitudeCount) DESC
-            LIMIT 10
-        `);
+        // Get leaderboard data for student dashboard (global cache)
+        const leaderboardCacheKey = 'leaderboard:dashboard:top10';
+        let leaderboard = cacheManager.get(leaderboardCacheKey);
 
-        const leaderboard = leaderboardRows.map((r, idx) => ({
-            rank: idx + 1,
-            studentId: r.studentId,
-            name: r.name,
-            taskCount: parseInt(r.taskCount) || 0,
-            codeCount: parseInt(r.codeCount) || 0,
-            aptitudeCount: parseInt(r.aptitudeCount) || 0,
-            avgScore: Math.round(r.avgScore) || 0
-        }));
+        if (!leaderboard) {
+            const [leaderboardRows] = await pool.query(`
+                SELECT u.id as studentId, u.name, 
+                (SELECT COUNT(*) FROM task_completions WHERE student_id = u.id) as taskCount,
+                (SELECT COUNT(*) FROM problem_completions WHERE student_id = u.id) as codeCount,
+                (SELECT COUNT(*) FROM student_completed_aptitude WHERE student_id = u.id) as aptitudeCount,
+                (SELECT COALESCE(AVG(score), 0) FROM submissions WHERE student_id = u.id) as avgScore
+                FROM users u
+                WHERE u.role = 'student'
+                ORDER BY avgScore DESC, (taskCount + codeCount + aptitudeCount) DESC
+                LIMIT 10
+            `);
+
+            leaderboard = leaderboardRows.map((r, idx) => ({
+                rank: idx + 1,
+                studentId: r.studentId,
+                name: r.name,
+                taskCount: parseInt(r.taskCount) || 0,
+                codeCount: parseInt(r.codeCount) || 0,
+                aptitudeCount: parseInt(r.aptitudeCount) || 0,
+                avgScore: Math.round(r.avgScore) || 0
+            }));
+
+            cacheManager.set(leaderboardCacheKey, leaderboard, 3600000); // 1 hour
+        }
+
+        // Get predictive analytics if available
+        const [predictiveRows] = await pool.query(
+            'SELECT * FROM student_analytics WHERE student_id = ?',
+            [studentId]
+        );
+
+        const predictiveData = predictiveRows.length > 0 ? {
+            risk_score: predictiveRows[0].risk_score,
+            at_risk: !!predictiveRows[0].at_risk,
+            problem_completion_rate: predictiveRows[0].problem_completion_rate,
+            average_test_score: predictiveRows[0].average_test_score,
+            prediction_confidence: predictiveRows[0].prediction_confidence,
+            weak_concepts: predictiveRows[0].weak_concepts || [],
+            strong_concepts: predictiveRows[0].strong_concepts || [],
+            learning_curve: predictiveRows[0].learning_curve || {}
+        } : {
+            risk_score: 0,
+            at_risk: false,
+            problem_completion_rate: 0,
+            average_test_score: 0,
+            prediction_confidence: 0,
+            weak_concepts: [],
+            strong_concepts: [],
+            learning_curve: {}
+        };
 
         const analyticsData = {
             mentorInfo,
@@ -4004,11 +4112,12 @@ app.get('/api/analytics/student/:studentId', async (req, res) => {
             completedAptitude,
             submissionTrends,
             recentSubmissions,
-            leaderboard
+            leaderboard,
+            ...predictiveData
         };
 
-        // Cache for 30 minutes
-        cacheManager.set(cacheKey, analyticsData, 1800000);
+        // Cache for 5 minutes
+        cacheManager.set(cacheKey, analyticsData, 300000);
         res.json(analyticsData);
 
     } catch (error) {

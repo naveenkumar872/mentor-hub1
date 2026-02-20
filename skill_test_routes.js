@@ -15,9 +15,45 @@ const {
     evaluateInterviewAnswer,
     evaluateSQLQuery,
     generateFinalReport
-} = require(path.join(__dirname, 'ai_service')); // Robust path resolution for casing consistency
+} = require(path.join(__dirname, 'ai_service'));
+const { cacheManager } = require('./utils/cache');
 
 function registerSkillTestRoutes(app, pool) {
+
+    // Helper to invalidate cache and update analytics
+    async function refreshStudentDashboard(studentId) {
+        try {
+            // Update predictive analytics
+            const advanced = global.advancedServices;
+            if (advanced?.analyticsService) {
+                await advanced.analyticsService.analyzeStudentPerformance(studentId);
+                console.log(`📊 Analytics: Updated for student ${studentId} (Skill Test)`);
+            }
+
+            // Invalidate caches
+            cacheManager.delete(`student:${studentId}:analytics`);
+            cacheManager.delete(`student:${studentId}:learning_path`);
+            cacheManager.delete(`student:${studentId}:peer_comparison`);
+            cacheManager.delete(`topics:all:${studentId}`);
+            cacheManager.delete('leaderboard:global:all');
+            cacheManager.delete('leaderboard:dashboard:top10');
+
+            // Also invalidate mentor's analytics cache
+            try {
+                const [allocation] = await pool.query(
+                    'SELECT mentor_id FROM mentor_student_allocations WHERE student_id = ? LIMIT 1',
+                    [studentId]
+                );
+                if (allocation.length > 0) {
+                    cacheManager.delete(`mentor:${allocation[0].mentor_id}:analytics`);
+                }
+            } catch (e) { /* Ignore cache invalidation errors */ }
+
+            console.log(`🧹 Cache: Cleared for student ${studentId} dashboard`);
+        } catch (e) {
+            console.warn('Refresh dashboard failed:', e.message);
+        }
+    }
 
     // ════════════════════════════════════════
     //  SQL SANDBOX TABLE HELPERS (per-test)
@@ -516,6 +552,7 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [JSON.stringify(answers), score, JSON.stringify(report), attemptId]
                 );
+                await refreshStudentDashboard(attempt.student_id);
             } else {
                 await pool.query(
                     `UPDATE skill_test_attempts 
@@ -525,6 +562,7 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [JSON.stringify(answers), score, attemptId]
                 );
+                await refreshStudentDashboard(attempt.student_id);
             }
 
             res.json({ success: true, score, passed, correct: correctCount, total: questions.length, nextStage: passed ? 'coding' : null });
@@ -903,6 +941,7 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [score, JSON.stringify(report), attemptId]
                 );
+                await refreshStudentDashboard(attempt.student_id);
             } else {
                 await pool.query(
                     `UPDATE skill_test_attempts 
@@ -910,6 +949,7 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [score, attemptId]
                 );
+                await refreshStudentDashboard(attempt.student_id);
             }
 
             res.json({ success: true, score, passed, solved: passedCount, total: numProblems, nextStage: passed ? 'sql' : null });
@@ -1175,6 +1215,7 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [score, JSON.stringify(report), attemptId]
                 );
+                await refreshStudentDashboard(attempt.student_id);
             } else {
                 await pool.query(
                     `UPDATE skill_test_attempts 
@@ -1182,6 +1223,7 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [score, attemptId]
                 );
+                await refreshStudentDashboard(attempt.student_id);
             }
 
             res.json({ success: true, score, passed, solved: passedCount, total: numProblems, nextStage: passed ? 'interview' : null });
@@ -1349,10 +1391,8 @@ function registerSkillTestRoutes(app, pool) {
                         console.log(`🎮 Gamification: Skill Test points awarded to student ${studentId}`);
                     }
 
-                    if (advanced?.analyticsService) {
-                        await advanced.analyticsService.analyzeStudentPerformance(studentId);
-                        console.log(`📊 Analytics: Updated for student ${studentId} (Skill Test)`);
-                    }
+                    // Trigger full refresh (also clears cache)
+                    await refreshStudentDashboard(studentId);
                 } catch (err) {
                     console.error('⚠️ Post-test updates failed:', err.message);
                 }
