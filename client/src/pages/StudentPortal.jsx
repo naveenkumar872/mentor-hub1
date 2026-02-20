@@ -246,8 +246,8 @@ function Dashboard({ user }) {
         const offset = circ - (Math.min(pct, 100) / 100) * circ
         return (
             <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth={strokeWidth} />
-                <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease' }} />
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth={strokeWidth} />
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease' }} />
             </svg>
         )
     }
@@ -495,13 +495,18 @@ function Tasks({ user }) {
     const [activeTask, setActiveTask] = useState(null)
     const [viewingTask, setViewingTask] = useState(null)
 
-    useEffect(() => {
+    const fetchTasks = (showLoading = true) => {
+        if (showLoading) setLoading(true)
         axios.get(`${API_BASE}/students/${user.id}/tasks`)
             .then(res => {
                 setTasks(res.data)
                 setLoading(false)
             })
             .catch(err => setLoading(false))
+    }
+
+    useEffect(() => {
+        fetchTasks(true)
     }, [user.id])
 
     if (loading) return <div className="loading-spinner"></div>
@@ -540,19 +545,36 @@ function Tasks({ user }) {
                             <div className="item-card-footer" style={{ paddingTop: '1rem', marginTop: 'auto', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                 <span className={`status-badge ${task.status || 'live'}`}>{task.status || 'Active'}</span>
                                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+                                    {task.maxAttempts > 0 && (
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: task.attemptCount >= task.maxAttempts ? 'var(--error)' : 'var(--text-muted)',
+                                            alignSelf: 'center',
+                                            marginRight: '0.5rem',
+                                            fontWeight: 600
+                                        }}>
+                                            {task.attemptCount}/{task.maxAttempts} Attempts
+                                        </span>
+                                    )}
                                     <button
                                         onClick={() => setViewingTask(task)}
                                         className="btn-reset"
                                         style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
                                     >
-                                        <Eye size={14} /> View Details
+                                        <Eye size={14} /> View
                                     </button>
                                     <button
                                         onClick={() => setActiveTask(task)}
                                         className="btn-create-new"
-                                        style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                                        disabled={task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts}
+                                        style={{
+                                            padding: '0.5rem 1rem',
+                                            fontSize: '0.85rem',
+                                            opacity: (task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts) ? 0.5 : 1,
+                                            cursor: (task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts) ? 'not-allowed' : 'pointer'
+                                        }}
                                     >
-                                        <Upload size={16} /> Submit
+                                        <Upload size={16} /> {task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts ? 'Limit Reached' : 'Submit'}
                                     </button>
                                 </div>
                             </div>
@@ -561,7 +583,7 @@ function Tasks({ user }) {
                 )}
             </div>
             {viewingTask && <TaskDetailsModal task={viewingTask} onClose={() => setViewingTask(null)} onSubmit={() => { setViewingTask(null); setActiveTask(viewingTask); }} />}
-            {activeTask && <TaskSubmitModal task={activeTask} user={user} onClose={() => setActiveTask(null)} />}
+            {activeTask && <TaskSubmitModal task={activeTask} user={user} onClose={() => setActiveTask(null)} onSubmissionComplete={() => fetchTasks(false)} />}
         </>
     )
 }
@@ -592,6 +614,19 @@ function TaskDetailsModal({ task, onClose, onSubmit }) {
                         <span className={`status-badge ${task.status || 'live'}`} style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}>
                             {task.status || 'Active'}
                         </span>
+                        {task.maxAttempts > 0 && (
+                            <span style={{
+                                fontSize: '0.85rem',
+                                padding: '0.4rem 0.8rem',
+                                borderRadius: '2rem',
+                                background: task.attemptCount >= task.maxAttempts ? 'var(--error-alpha)' : 'var(--bg-secondary)',
+                                color: task.attemptCount >= task.maxAttempts ? 'var(--error)' : 'var(--text-muted)',
+                                border: '1px solid var(--border-color)',
+                                fontWeight: 600
+                            }}>
+                                {task.attemptCount}/{task.maxAttempts} Attempts Used
+                            </span>
+                        )}
                     </div>
 
                     {/* Description */}
@@ -664,8 +699,19 @@ function TaskDetailsModal({ task, onClose, onSubmit }) {
                 {/* Footer with Submit Button */}
                 <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <button onClick={onClose} className="btn-reset">Close</button>
-                    <button onClick={onSubmit} className="btn-create-new" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Upload size={16} /> Submit Solution
+                    <button
+                        onClick={onSubmit}
+                        className="btn-create-new"
+                        disabled={task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            opacity: (task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts) ? 0.5 : 1,
+                            cursor: (task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts) ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        <Upload size={16} /> {task.maxAttempts > 0 && task.attemptCount >= task.maxAttempts ? 'Attempt Limit Reached' : 'Submit Solution'}
                     </button>
                 </div>
             </div>
@@ -674,7 +720,7 @@ function TaskDetailsModal({ task, onClose, onSubmit }) {
 }
 
 // ==================== TASK SUBMIT MODAL ====================
-function TaskSubmitModal({ task, user, onClose }) {
+function TaskSubmitModal({ task, user, onClose, onSubmissionComplete }) {
     const [file, setFile] = useState(null)
     const [githubUrl, setGithubUrl] = useState('')
     const [submissionType, setSubmissionType] = useState('file') // 'file' or 'github'
@@ -721,6 +767,7 @@ function TaskSubmitModal({ task, user, onClose }) {
                             taskRequirements: task.requirements
                         })
                         setResult(response.data)
+                        if (onSubmissionComplete) onSubmissionComplete()
                     } catch (error) {
                         console.error(error)
                         setResult({ status: 'error', score: 0, feedback: error.response?.data?.error || 'Submission failed. Please try again.' })
@@ -744,6 +791,7 @@ function TaskSubmitModal({ task, user, onClose }) {
                 setResult(response.data)
                 setSubmitting(false)
                 setEvaluating(false)
+                if (onSubmissionComplete) onSubmissionComplete()
             }
         } catch (error) {
             console.error(error)
@@ -1044,15 +1092,22 @@ function Assignments({ user }) {
         setAttemptCounts(counts)
     }
 
-    useEffect(() => {
+    const refreshProblems = (silent = false) => {
+        if (!silent) setLoading(true)
         axios.get(`${API_BASE}/students/${user.id}/problems`)
             .then(res => {
                 const data = res.data
                 setProblems(data)
-                setLoading(false)
+                if (!silent) setLoading(false)
                 fetchAttemptCounts(data)
             })
-            .catch(err => setLoading(false))
+            .catch(err => {
+                if (!silent) setLoading(false)
+            })
+    }
+
+    useEffect(() => {
+        refreshProblems()
     }, [user.id])
 
     const handleSolve = (problem) => {
@@ -1070,8 +1125,8 @@ function Assignments({ user }) {
     const handleClose = () => {
         setActiveProblem(null)
         setUseProctoredEditor(false)
-        // Refresh attempt counts after closing editor
-        fetchAttemptCounts(problems)
+        // Refresh everything after closing editor
+        refreshProblems(true)
     }
 
     // Separate problems into Coding and SQL
@@ -1286,14 +1341,19 @@ function Assignments({ user }) {
             )}
 
             {activeProblem && !useProctoredEditor && (
-                <CodeEditorModal problem={activeProblem} user={user} onClose={handleClose} />
+                <CodeEditorModal
+                    problem={activeProblem}
+                    user={user}
+                    onClose={handleClose}
+                    onSubmissionComplete={() => refreshProblems(true)}
+                />
             )}
         </>
     )
 }
 
 // ==================== CODE EDITOR MODAL WITH FULL PROCTORED MODE ====================
-function CodeEditorModal({ problem, user, onClose }) {
+function CodeEditorModal({ problem, user, onClose, onSubmissionComplete }) {
     const langConfig = LANGUAGE_CONFIG[problem.language] || LANGUAGE_CONFIG['Python']
     const [code, setCode] = useState(langConfig.defaultCode)
     const [selectedLang, setSelectedLang] = useState(problem.language || 'Python')
@@ -1488,6 +1548,7 @@ function CodeEditorModal({ problem, user, onClose }) {
             })
             setResult(response.data)
             setStatus('done')
+            if (onSubmissionComplete) onSubmissionComplete()
             if (document.fullscreenElement) document.exitFullscreen()
         } catch (error) {
             if (error.response?.status === 403 && error.response?.data?.error === 'Attempt limit reached') {
@@ -1730,55 +1791,139 @@ function CodeEditorModal({ problem, user, onClose }) {
 
                 {/* Right Side: Code Editor */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#1e293b' }}>
-                    {/* Toolbar */}
-                    <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                            <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
-                            <select
-                                value={selectedLang}
-                                onChange={(e) => handleLanguageChange(e.target.value)}
-                                disabled={problem.type === 'SQL' || problem.language === 'SQL'}
-                                style={{
-                                    background: '#0f172a',
-                                    color: '#f8fafc',
-                                    border: '1px solid #334155',
-                                    borderRadius: '6px',
-                                    padding: '0.4rem 0.75rem',
-                                    fontSize: '0.85rem',
-                                    opacity: (problem.type === 'SQL' || problem.language === 'SQL') ? 0.7 : 1,
-                                    cursor: (problem.type === 'SQL' || problem.language === 'SQL') ? 'not-allowed' : 'pointer'
-                                }}
-                            >
-                                {Object.keys(LANGUAGE_CONFIG).map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                            </select>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.75rem' }}>
-                            {/* Hide Run Code for SQL - SQLValidator handles execution */}
-                            {selectedLang !== 'SQL' && (
-                                <button onClick={handleRun} disabled={status === 'running' || status === 'submitting'} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                    <Play size={16} /> {status === 'running' ? 'Running...' : 'Run Code'}
-                                </button>
-                            )}
-                            <button onClick={handleSubmit} disabled={status === 'running' || status === 'submitting' || result} style={{ background: result ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: result ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                <Send size={16} /> {status === 'submitting' ? 'Submitting...' : 'Submit'}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Editor */}
-                    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-                        <Editor height="100%" language={LANGUAGE_CONFIG[selectedLang]?.monacoLang || 'python'} theme="vs-dark" value={code} onChange={(value) => setCode(value)} options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 20 } }} />
-                    </div>
-
-                    {/* Result Panel */}
-                    {result && (
-                        <div style={{ padding: '1.5rem', background: result.status === 'accepted' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderTop: `2px solid ${result.status === 'accepted' ? '#10b981' : '#ef4444'}`, display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                            {result.status === 'accepted' ? <CheckCircle size={40} color="#10b981" /> : <XCircle size={40} color="#ef4444" />}
-                            <div>
-                                <h4 style={{ margin: 0, color: result.status === 'accepted' ? '#10b981' : '#ef4444' }}>{result.status === 'accepted' ? 'Accepted!' : 'Rejected'}</h4>
-                                <p style={{ margin: '0.25rem 0 0', color: '#e2e8f0' }}>Score: <strong>{result.score}/100</strong> • {result.feedback}{tabSwitches > 0 && <span style={{ color: '#f59e0b' }}> • Tab violations: {tabSwitches}</span>}</p>
+                    {/* Toolbar - Only show if not submitted */}
+                    {!result && (
+                        <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
+                                <select
+                                    value={selectedLang}
+                                    onChange={(e) => handleLanguageChange(e.target.value)}
+                                    disabled={problem.type === 'SQL' || problem.language === 'SQL'}
+                                    style={{
+                                        background: '#0f172a',
+                                        color: '#f8fafc',
+                                        border: '1px solid #334155',
+                                        borderRadius: '6px',
+                                        padding: '0.4rem 0.75rem',
+                                        fontSize: '0.85rem',
+                                        opacity: (problem.type === 'SQL' || problem.language === 'SQL') ? 0.7 : 1,
+                                        cursor: (problem.type === 'SQL' || problem.language === 'SQL') ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {Object.keys(LANGUAGE_CONFIG).map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                                </select>
                             </div>
-                            <button onClick={handleExit} style={{ marginLeft: 'auto', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: 600 }}>Close Session</button>
+                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                {/* Hide Run Code for SQL - SQLValidator handles execution */}
+                                {selectedLang !== 'SQL' && (
+                                    <button onClick={handleRun} disabled={status === 'running' || status === 'submitting'} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                        <Play size={16} /> {status === 'running' ? 'Running...' : 'Run Code'}
+                                    </button>
+                                )}
+                                <button onClick={handleSubmit} disabled={status === 'running' || status === 'submitting' || result} style={{ background: result ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: result ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                    <Send size={16} /> {status === 'submitting' ? 'Submitting...' : 'Submit'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Editor - Show only if no result */}
+                    {!result && (
+                        <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                            <Editor height="100%" language={LANGUAGE_CONFIG[selectedLang]?.monacoLang || 'python'} theme="vs-dark" value={code} onChange={(value) => setCode(value)} options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 20 } }} />
+                        </div>
+                    )}
+
+                    {/* Result Panel / Detailed Report */}
+                    {result && (
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', background: '#0f172a', color: '#f8fafc' }}>
+                            {/* Header Section */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', marginBottom: '2.5rem', paddingBottom: '2rem', borderBottom: '1px solid #334155' }}>
+                                <div style={{
+                                    width: '120px', height: '120px', borderRadius: '50%',
+                                    background: `conic-gradient(${result.score >= 80 ? '#10b981' : result.score >= 60 ? '#f59e0b' : '#ef4444'} ${result.score * 3.6}deg, #1e293b 0deg)`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    position: 'relative', flexShrink: 0
+                                }}>
+                                    <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                        <span style={{ fontSize: '2.5rem', fontWeight: 800, color: '#f8fafc' }}>{result.score}</span>
+                                        <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Score</span>
+                                    </div>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <h3 style={{ margin: 0, color: result.score >= 80 ? '#10b981' : result.score >= 60 ? '#f59e0b' : '#ef4444', fontSize: '2rem', marginBottom: '0.75rem', fontWeight: 700 }}>
+                                        {result.score >= 90 ? 'Outstanding Performance!' : result.score >= 80 ? 'Excellent Work!' : result.score >= 60 ? 'Good Effort' : 'Needs Improvement'}
+                                    </h3>
+                                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6' }}>
+                                        {result.feedback || (result.status === 'accepted' ? 'Your solution passed all tests and met the requirements.' : 'Your solution needs some improvements.')}
+                                    </p>
+                                    {tabSwitches > 0 && <p style={{ marginTop: '0.5rem', color: '#f59e0b', fontSize: '0.9rem' }}>⚠️ {tabSwitches} tab switch notifications recorded.</p>}
+                                </div>
+                            </div>
+
+                            {/* Metrics Grid */}
+                            {result.analysis && (
+                                <div style={{ marginBottom: '2.5rem' }}>
+                                    <h4 style={{ color: '#f8fafc', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <BarChart3 size={20} color="#3b82f6" /> Performance Analysis
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
+                                        {Object.entries(result.analysis).map(([key, val]) => {
+                                            if (val === 'Unknown' || val === null) return null;
+                                            const score = parseInt(val) || 0; // Handle if it's a number string or raw number
+                                            // Mapping keys to human readable
+                                            const label = key.replace(/([A-Z])/g, ' $1').trim();
+                                            return (
+                                                <div key={key} style={{ background: '#1e293b', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '0.9rem', color: '#94a3b8', textTransform: 'capitalize', fontWeight: 600 }}>{label}</span>
+                                                        <span style={{ fontWeight: 800, color: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444', fontSize: '1.1rem' }}>{score}%</span>
+                                                    </div>
+                                                    <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            width: `${score}%`,
+                                                            height: '100%',
+                                                            background: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444',
+                                                            borderRadius: '4px',
+                                                            transition: 'width 1s ease-out'
+                                                        }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Detailed Feedback / Explanation */}
+                            {result.aiExplanation && (
+                                <div style={{ marginBottom: '2.5rem' }}>
+                                    <h4 style={{ color: '#f8fafc', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <BookOpen size={20} color="#8b5cf6" /> Detailed AI Analysis
+                                    </h4>
+                                    <div style={{
+                                        background: '#1e293b',
+                                        padding: '1.75rem',
+                                        borderRadius: '1rem',
+                                        border: '1px solid #334155',
+                                        color: '#cbd5e1',
+                                        fontSize: '1rem',
+                                        lineHeight: '1.8',
+                                        whiteSpace: 'pre-wrap',
+                                        fontFamily: 'monospace' // Or a clean sans-serif if pre-wrap works well
+                                    }}>
+                                        {result.aiExplanation}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                <button onClick={handleExit} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '1rem 2rem', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 600, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    Close Session
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -2654,23 +2799,23 @@ function GlobalTests({ user }) {
             try {
                 const allTestsResponse = await axios.get(`${API_BASE}/global-tests?status=live`)
                 const allocatedResponse = await axios.get(`${API_BASE}/tests/allocated-to/${user.id}`)
-                
+
                 const allTests = Array.isArray(allTestsResponse.data) ? allTestsResponse.data : []
                 const allocatedTests = Array.isArray(allocatedResponse.data) ? allocatedResponse.data : []
-                
+
                 // Determine which tests should be visible
                 const visibleTests = allTests.filter(test => {
                     const testAllocationInfo = allocatedTests.find(a => a.test_id === test.id)
-                    
+
                     // If test has no allocations, show to everyone
                     if (!testAllocationInfo || !testAllocationInfo.has_allocations) {
                         return true
                     }
-                    
+
                     // If test has allocations, only show if student is allocated
                     return testAllocationInfo.is_allocated_to_student
                 })
-                
+
                 setTests(visibleTests)
             } catch (e) {
                 if (e.response?.status === 503) setTests([])

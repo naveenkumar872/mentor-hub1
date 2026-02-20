@@ -93,27 +93,32 @@ module.exports = (db, PlagiarismDetector, GamificationService, PredictiveAnalyti
         try {
             const { studentId, mentorId, flagged, severity, limit = 50, offset = 0 } = req.query;
 
-            let query = 'SELECT * FROM plagiarism_analysis WHERE 1=1';
+            let query = `
+                SELECT pa.*, u.name as student_name, u.mentor_id 
+                FROM plagiarism_analysis pa
+                JOIN users u ON pa.student_id = u.id
+                WHERE 1=1
+            `;
             const params = [];
 
             if (studentId) {
-                query += ' AND student_id = ?';
+                query += ' AND pa.student_id = ?';
                 params.push(studentId);
             }
             if (mentorId) {
-                query += ' AND mentor_id = ?';
+                query += ' AND u.mentor_id = ?';
                 params.push(mentorId);
             }
             if (flagged) {
-                query += ' AND flagged = ?';
+                query += ' AND pa.flagged = ?';
                 params.push(flagged === 'true' ? 1 : 0);
             }
             if (severity) {
-                query += ' AND severity = ?';
+                query += ' AND pa.severity = ?';
                 params.push(severity);
             }
 
-            query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+            query += ' ORDER BY pa.created_at DESC LIMIT ? OFFSET ?';
             params.push(parseInt(limit), parseInt(offset));
 
             const [reports] = await db.query(query, params);

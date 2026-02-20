@@ -16,8 +16,7 @@ import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 // Advanced Features Components
-import { AtRiskStudentsDashboard, LearningCurveChart } from '../components/AnalyticsComponents'
-import { PlagiarismDetectionDashboard } from '../components/PlagiarismViolationComponents'
+import { LearningCurveChart } from '../components/AnalyticsComponents'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -117,8 +116,6 @@ function MentorPortal() {
                 { path: '/mentor/leaderboard', label: t('leaderboard'), icon: <Trophy size={20} /> },
                 { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
-                { path: '/mentor/at-risk', label: '⚠️ At-Risk Students', icon: <AlertTriangle size={20} /> },
-                { path: '/mentor/plagiarism', label: '🔍 Plagiarism Detection', icon: <Shield size={20} /> },
                 { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> }
             ]
         },
@@ -137,8 +134,6 @@ function MentorPortal() {
                 <Route path="/leaderboard" element={<Leaderboard user={user} />} />
                 <Route path="/all-submissions" element={<AllSubmissions user={user} />} />
                 <Route path="/analytics" element={<MentorAnalytics user={user} />} />
-                <Route path="/at-risk" element={<AtRiskStudentsDashboard mentorId={user?.id || user?.userId} />} />
-                <Route path="/plagiarism" element={<PlagiarismDetectionDashboard testId={null} />} />
                 <Route path="/live-monitoring" element={<MentorLiveMonitoring user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
             </Routes>
@@ -1681,8 +1676,8 @@ function UploadProblems({ user }) {
                                 <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)' }}>student{selectedStudents.length !== 1 ? 's' : ''} selected</span>
                             </div>
                             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                <button 
-                                    className="btn-reset" 
+                                <button
+                                    className="btn-reset"
                                     onClick={() => {
                                         setShowStudentAllocationModal(false)
                                         setStudentSearchTerm('')
@@ -1691,12 +1686,12 @@ function UploadProblems({ user }) {
                                 >
                                     Cancel
                                 </button>
-                                <button 
-                                    className="btn-create-new" 
-                                    onClick={saveStudentAllocations} 
-                                    style={{ 
-                                        background: 'linear-gradient(135deg, var(--primary), #6366f1)', 
-                                        padding: '0.8rem 2.5rem', 
+                                <button
+                                    className="btn-create-new"
+                                    onClick={saveStudentAllocations}
+                                    style={{
+                                        background: 'linear-gradient(135deg, var(--primary), #6366f1)',
+                                        padding: '0.8rem 2.5rem',
                                         borderRadius: '10px',
                                         fontSize: '0.95rem',
                                         fontWeight: 700,

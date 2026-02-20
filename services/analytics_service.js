@@ -22,7 +22,7 @@ class PredictiveAnalyticsService {
             const [submissions] = await this.db.query(
                 `SELECT * FROM submissions 
                 WHERE student_id = ? 
-                ORDER BY created_at DESC`,
+                ORDER BY submitted_at DESC`,
                 [studentId]
             );
 
@@ -30,7 +30,7 @@ class PredictiveAnalyticsService {
             const [testSubmissions] = await this.db.query(
                 `SELECT * FROM global_test_submissions 
                 WHERE student_id = ? 
-                ORDER BY created_at DESC`,
+                ORDER BY submitted_at DESC`,
                 [studentId]
             );
 
@@ -52,7 +52,7 @@ class PredictiveAnalyticsService {
                 weakConcepts,
                 strongConcepts: patterns.strongAreas,
                 riskScore,
-                atRisk: riskScore > 70,
+                atRisk: riskScore >= 50,
                 predictionConfidence: this.calculateConfidence(submissions.length),
                 patterns
             });
@@ -65,7 +65,7 @@ class PredictiveAnalyticsService {
                 weakConcepts,
                 strongConcepts: patterns.strongAreas,
                 riskScore,
-                atRisk: riskScore > 70,
+                atRisk: riskScore >= 50,
                 recommendations: await this.generateRecommendations(studentId, weakConcepts, riskScore)
             };
         } catch (error) {
@@ -146,7 +146,7 @@ class PredictiveAnalyticsService {
 
         // Group by week
         submissions.forEach(sub => {
-            const date = new Date(sub.created_at);
+            const date = new Date(sub.submitted_at);
             const week = Math.floor(date.getTime() / (7 * 24 * 60 * 60 * 1000));
 
             if (!grouped[week]) {
@@ -222,6 +222,11 @@ class PredictiveAnalyticsService {
         if (problemMetrics.problemCompletionRate < 40) {
             riskScore += 40;
         } else if (problemMetrics.problemCompletionRate < 70) {
+            riskScore += 20;
+        }
+
+        // Recent failures penalty
+        if (problemMetrics.rejectedSubmissions > 0) {
             riskScore += 20;
         }
 
@@ -308,9 +313,9 @@ class PredictiveAnalyticsService {
             patterns.languages[lang] = { total: data.total, successRate };
         });
 
-        // Practice frequency
+        // Practice frequency (check newest submission)
         const daysDiff = Math.floor(
-            (Date.now() - new Date(submissions[submissions.length - 1].created_at).getTime()) /
+            (Date.now() - new Date(submissions[0].submitted_at).getTime()) /
             (1000 * 60 * 60 * 24)
         );
         if (daysDiff <= 7 && submissions.length > 5) {

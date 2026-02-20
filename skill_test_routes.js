@@ -1335,6 +1335,27 @@ function registerSkillTestRoutes(app, pool) {
                      WHERE id = ?`,
                     [JSON.stringify(interviewQA), nextIndex, interviewScore, interviewStatus, overallStatus, JSON.stringify(report), attemptId]
                 );
+
+                // Award points, update streak and analytics for Skill Test completion
+                try {
+                    const advanced = global.advancedServices;
+                    const studentId = attempt.student_id;
+
+                    if (advanced?.gamificationService) {
+                        // Award base points for finishing
+                        await advanced.gamificationService.awardTestCompletion(studentId, attempt.test_id, Math.round(interviewScore * 10)); // normalized to 100
+                        await advanced.gamificationService.awardPoints(studentId, 100, 'skill_test_completion', attempt.test_id);
+                        await advanced.gamificationService.updateStreak(studentId);
+                        console.log(`🎮 Gamification: Skill Test points awarded to student ${studentId}`);
+                    }
+
+                    if (advanced?.analyticsService) {
+                        await advanced.analyticsService.analyzeStudentPerformance(studentId);
+                        console.log(`📊 Analytics: Updated for student ${studentId} (Skill Test)`);
+                    }
+                } catch (err) {
+                    console.error('⚠️ Post-test updates failed:', err.message);
+                }
             } else {
                 await pool.query(
                     'UPDATE skill_test_attempts SET interview_qa = ?, interview_current_index = ? WHERE id = ?',

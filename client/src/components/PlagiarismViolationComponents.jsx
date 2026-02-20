@@ -635,17 +635,29 @@ export function PlagiarismDetectionDashboard({ testId }) {
                                 marginBottom: '0.75rem'
                             }}>
                                 <div style={{
-                                    fontWeight: 700,
-                                    fontSize: '1.1rem'
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.25rem'
                                 }}>
-                                    {report.submission_id || `Report ${idx + 1}`}
+                                    <div style={{
+                                        fontWeight: 700,
+                                        fontSize: '1.1rem'
+                                    }}>
+                                        {report.student_name || 'Unknown Student'}
+                                    </div>
+                                    <div style={{
+                                        fontSize: '0.85rem',
+                                        color: 'var(--text-muted)'
+                                    }}>
+                                        Submitted: {new Date(report.created_at).toLocaleDateString()}
+                                    </div>
                                 </div>
                                 <div style={{
                                     fontSize: '1.25rem',
                                     fontWeight: 800,
-                                    color: report.similarity_percentage > 30 ? '#ef4444' : report.similarity_percentage > 15 ? '#f59e0b' : '#10b981'
+                                    color: (report.overall_score || 0) > 75 ? '#ef4444' : (report.overall_score || 0) > 40 ? '#f59e0b' : '#10b981'
                                 }}>
-                                    {report.similarity_percentage || '0'}% Similar
+                                    {Math.round(report.overall_score || 0)}% Suspicious
                                 </div>
                             </div>
                             {selectedReport === idx && (
@@ -656,7 +668,7 @@ export function PlagiarismDetectionDashboard({ testId }) {
                                     fontSize: '0.9rem',
                                     color: 'var(--text-secondary)'
                                 }}>
-                                    <PlagiarismReport submissionId={report.submission_id} onAnalyze={() => {}} />
+                                    <PlagiarismReport submissionId={report.submission_id} onAnalyze={() => { }} />
                                 </div>
                             )}
                         </div>
