@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone, Database, Layers, Shield, Users } from 'lucide-react'
+import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone, Database, Layers, Shield, Users, BarChart3, BookOpen } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
 import * as tf from '@tensorflow/tfjs'
@@ -42,6 +42,7 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const [warningMessage, setWarningMessage] = useState('')
     const [isDisqualified, setIsDisqualified] = useState(false)
     const [startTime] = useState(Date.now())
+    const [result, setResult] = useState(null)
 
     // Video/Audio state
     const [videoEnabled, setVideoEnabled] = useState(false)
@@ -790,7 +791,8 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             if (onSubmitSuccess) {
                 onSubmitSuccess(response.data)
             }
-            onClose()
+            setResult(response.data)
+            // onClose() - Don't close immediately, show result first
         } catch (err) {
             // 📊 EMIT: Submission failed event
             socketService.emitSubmissionCompleted(
@@ -878,463 +880,558 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
             </div>
 
             {/* Body */}
-            <div style={{ padding: 0, display: 'flex', flexDirection: 'row', flex: 1, minHeight: 0, overflow: 'hidden', background: '#0f172a' }}>
-                {/* Left Side: Problem Description & Hints */}
-                <div style={{ width: '400px', borderRight: '1px solid #334155', padding: '2rem', overflowY: 'auto', background: '#0f172a', display: 'flex', flexDirection: 'column' }}>
-                    <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
-                    <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
-                        {problem.description}
-
-                        {/* Show SQL-specific fields or regular input/output */}
-                        {(problem.type === 'SQL' || problem.language === 'SQL') ? (
-                            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
-                                {problem.sqlSchema && (
-                                    <>
-                                        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span style={{ color: '#06b6d4' }}>🗄️</span>
-                                            <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
-                                        </div>
-                                        <pre style={{
-                                            color: '#93c5fd',
-                                            background: '#0f172a',
-                                            padding: '1rem',
-                                            borderRadius: '6px',
-                                            marginBottom: '1rem',
-                                            fontSize: '0.8rem',
-                                            overflowX: 'auto',
-                                            whiteSpace: 'pre-wrap',
-                                            border: '1px solid #334155'
-                                        }}>{problem.sqlSchema}</pre>
-                                    </>
-                                )}
-                                {problem.expectedQueryResult && (
-                                    <>
-                                        <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span style={{ color: '#10b981' }}>📊</span>
-                                            <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
-                                        </div>
-                                        <pre style={{
-                                            color: '#4ade80',
-                                            background: '#0f172a',
-                                            padding: '1rem',
-                                            borderRadius: '6px',
-                                            fontSize: '0.8rem',
-                                            overflowX: 'auto',
-                                            whiteSpace: 'pre-wrap',
-                                            border: '1px solid #334155'
-                                        }}>{problem.expectedQueryResult}</pre>
-                                    </>
-                                )}
-                                {!problem.sqlSchema && !problem.expectedQueryResult && (
-                                    <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
-                                        Write a SQL query to solve this problem. Your query will be executed against the database.
-                                    </p>
-                                )}
-                            </div>
-                        ) : (
-                            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
-                                <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
-                                <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || "N/A"}</code>
-                                <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
-                                <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* AI Hints Section */}
-                    <div style={{ marginTop: '2rem', background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.05))', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                        <h4 style={{ margin: '0 0 0.75rem', color: '#fbbf24', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Lightbulb size={16} /> Need Help?
-                        </h4>
-                        <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
-                            Stuck on this problem? Get AI-powered hints to guide you without revealing the full solution.
-                        </p>
-                        <button
-                            onClick={handleGetHint}
-                            disabled={loadingHint}
-                            style={{
-                                background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-                                border: 'none',
-                                color: '#1e293b',
-                                padding: '0.6rem 1.2rem',
-                                borderRadius: '6px',
-                                cursor: loadingHint ? 'not-allowed' : 'pointer',
-                                fontWeight: 600,
-                                fontSize: '0.85rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                width: '100%',
-                                justifyContent: 'center'
-                            }}
-                        >
-                            <Lightbulb size={16} /> {loadingHint ? 'Getting Hints...' : 'Get AI Hints'}
-                        </button>
-                        {hint && (
-                            <div style={{
-                                marginTop: '0.75rem',
-                                padding: '0.75rem',
-                                background: 'rgba(34, 197, 94, 0.1)',
-                                borderRadius: '8px',
-                                border: '1px solid rgba(34, 197, 94, 0.2)',
-                                fontSize: '0.85rem',
-                                color: '#4ade80'
-                            }}>
-                                💡 {hint}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Proctoring Rules */}
-                    <div style={{ marginTop: '2rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                        <h4 style={{ margin: '0 0 0.75rem', color: '#ef4444', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={16} /> Proctoring Rules</h4>
-                        <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.8 }}>
-                            <li>Do not switch tabs or windows</li>
-                            <li>Do not exit fullscreen mode</li>
-                            <li>All violations are recorded</li>
-                            <li>3+ violations may result in disqualification</li>
-                        </ul>
-                    </div>
-
-                    {/* Video Preview (if enabled) */}
-                    {proctoring.videoAudio && (
+            {result ? (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', background: '#0f172a', color: '#f8fafc' }}>
+                    {/* Header Section */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', marginBottom: '2.5rem', paddingBottom: '2rem', borderBottom: '1px solid #334155' }}>
                         <div style={{
-                            marginTop: '2rem',
-                            padding: '0.75rem',
-                            background: 'rgba(0,0,0,0.3)',
-                            borderRadius: '0.75rem',
-                            border: '1px solid #334155',
-                            position: 'relative'
+                            width: '120px', height: '120px', borderRadius: '50%',
+                            background: `conic-gradient(${result.score >= 80 ? '#10b981' : result.score >= 60 ? '#f59e0b' : '#ef4444'} ${result.score * 3.6}deg, #1e293b 0deg)`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            position: 'relative', flexShrink: 0
                         }}>
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                muted
-                                playsInline
-                                style={{
-                                    width: '100%',
-                                    height: '150px',
-                                    objectFit: 'cover',
-                                    borderRadius: '8px',
-                                    background: '#000',
-                                    border: cameraBlocked ? '3px solid #ef4444' : '2px solid #10b981',
-                                    opacity: cameraBlocked ? 0.5 : 1
-                                }}
-                            />
-                            {cameraBlocked && (
-                                <div style={{
-                                    position: 'absolute',
-                                    top: '50%',
-                                    left: '50%',
-                                    transform: 'translate(-50%, -50%)',
-                                    background: 'rgba(239, 68, 68, 0.9)',
-                                    padding: '0.5rem 1rem',
-                                    borderRadius: '8px',
-                                    color: 'white',
-                                    fontWeight: 600,
-                                    fontSize: '0.75rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem'
-                                }}>
-                                    <VideoOff size={14} /> CAMERA BLOCKED
-                                </div>
-                            )}
-                            <p style={{
-                                margin: '0.5rem 0 0',
-                                fontSize: '0.7rem',
-                                color: cameraBlocked ? '#ef4444' : '#10b981',
-                                textAlign: 'center',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '0.5rem'
-                            }}>
-                                {!cameraBlocked && (
-                                    <span style={{
-                                        width: '8px',
-                                        height: '8px',
-                                        borderRadius: '50%',
-                                        background: '#10b981',
-                                        animation: 'pulse 1s infinite'
-                                    }}></span>
-                                )}
-                                {cameraBlocked ? '⚠️ Uncover your camera!' : (modelLoaded ? '🤖 AI Monitoring Active' : '⏳ Loading AI...')}
+                            <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '2.5rem', fontWeight: 800, color: '#f8fafc' }}>{result.score}</span>
+                                <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Score</span>
+                            </div>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <h3 style={{ margin: 0, color: result.score >= 80 ? '#10b981' : result.score >= 60 ? '#f59e0b' : '#ef4444', fontSize: '2rem', marginBottom: '0.75rem', fontWeight: 700 }}>
+                                {result.score >= 90 ? 'Outstanding Performance!' : result.score >= 80 ? 'Excellent Work!' : result.score >= 60 ? 'Good Effort' : 'Needs Improvement'}
+                            </h3>
+                            <p style={{ margin: 0, color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6' }}>
+                                {result.feedback || (result.status === 'accepted' ? 'Your solution passed all tests and met the requirements.' : 'Your solution needs some improvements.')}
                             </p>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                                {tabSwitches > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', fontSize: '0.85rem' }}>⚠️ {tabSwitches} tab switches</span>}
+                                {copyPasteAttempts > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '0.85rem' }}>📋 {copyPasteAttempts} copy attempts</span>}
+                                {cameraBlockedCount > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '0.85rem' }}>📹 {cameraBlockedCount} cam blocks</span>}
+                                {phoneDetectionCount > 0 && <span style={{ padding: '0.25rem 0.75rem', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '0.85rem' }}>📱 {phoneDetectionCount} phone detected</span>}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Metrics Grid */}
+                    {result.analysis && (
+                        <div style={{ marginBottom: '2.5rem' }}>
+                            <h4 style={{ color: '#f8fafc', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <BarChart3 size={20} color="#3b82f6" /> Performance Analysis
+                            </h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
+                                {Object.entries(result.analysis).map(([key, val]) => {
+                                    if (val === 'Unknown' || val === null) return null;
+                                    const score = parseInt(val) || 0;
+                                    const label = key.replace(/([A-Z])/g, ' $1').trim();
+                                    return (
+                                        <div key={key} style={{ background: '#1e293b', padding: '1.25rem', borderRadius: '1rem', border: '1px solid #334155' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '0.9rem', color: '#94a3b8', textTransform: 'capitalize', fontWeight: 600 }}>{label}</span>
+                                                <span style={{ fontWeight: 800, color: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444', fontSize: '1.1rem' }}>{score}%</span>
+                                            </div>
+                                            <div style={{ height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{
+                                                    width: `${score}%`,
+                                                    height: '100%',
+                                                    background: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444',
+                                                    borderRadius: '4px',
+                                                    transition: 'width 1s ease-out'
+                                                }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
-                </div>
 
-                {/* Right Side: Code Editor */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#1e293b', minHeight: 0 }}>
-                    {/* Toolbar */}
-                    <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                            <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
-                            <select
-                                value={selectedLanguage}
-                                onChange={(e) => {
-                                    const newLang = e.target.value
-                                    setSelectedLanguage(newLang)
-                                    setCode(LANGUAGE_CONFIG[newLang]?.defaultCode || '')
-                                }}
-                                disabled={problem.type === 'SQL' || problem.language === 'SQL'}
+                    {/* Detailed Feedback / Explanation */}
+                    {result.aiExplanation && (
+                        <div style={{ marginBottom: '2.5rem' }}>
+                            <h4 style={{ color: '#f8fafc', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <BookOpen size={20} color="#8b5cf6" /> Detailed AI Analysis
+                            </h4>
+                            <div style={{
+                                background: '#1e293b',
+                                padding: '1.75rem',
+                                borderRadius: '1rem',
+                                border: '1px solid #334155',
+                                color: '#cbd5e1',
+                                fontSize: '1rem',
+                                lineHeight: '1.8',
+                                whiteSpace: 'pre-wrap',
+                                fontFamily: 'monospace'
+                            }}>
+                                {result.aiExplanation}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                        <button onClick={handleClose} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '1rem 2rem', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 600, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            Close Session
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <div style={{ padding: 0, display: 'flex', flexDirection: 'row', flex: 1, minHeight: 0, overflow: 'hidden', background: '#0f172a' }}>
+                    {/* Left Side: Problem Description & Hints */}
+                    <div style={{ width: '400px', borderRight: '1px solid #334155', padding: '2rem', overflowY: 'auto', background: '#0f172a', display: 'flex', flexDirection: 'column' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '1.5rem', color: '#f8fafc' }}>Problem Description</h3>
+                        <div style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.7' }}>
+                            {problem.description}
+
+                            {/* Show SQL-specific fields or regular input/output */}
+                            {(problem.type === 'SQL' || problem.language === 'SQL') ? (
+                                <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
+                                    {problem.sqlSchema && (
+                                        <>
+                                            <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span style={{ color: '#06b6d4' }}>🗄️</span>
+                                                <strong style={{ color: '#e2e8f0' }}>Database Schema:</strong>
+                                            </div>
+                                            <pre style={{
+                                                color: '#93c5fd',
+                                                background: '#0f172a',
+                                                padding: '1rem',
+                                                borderRadius: '6px',
+                                                marginBottom: '1rem',
+                                                fontSize: '0.8rem',
+                                                overflowX: 'auto',
+                                                whiteSpace: 'pre-wrap',
+                                                border: '1px solid #334155'
+                                            }}>{problem.sqlSchema}</pre>
+                                        </>
+                                    )}
+                                    {problem.expectedQueryResult && (
+                                        <>
+                                            <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span style={{ color: '#10b981' }}>📊</span>
+                                                <strong style={{ color: '#e2e8f0' }}>Expected Query Result:</strong>
+                                            </div>
+                                            <pre style={{
+                                                color: '#4ade80',
+                                                background: '#0f172a',
+                                                padding: '1rem',
+                                                borderRadius: '6px',
+                                                fontSize: '0.8rem',
+                                                overflowX: 'auto',
+                                                whiteSpace: 'pre-wrap',
+                                                border: '1px solid #334155'
+                                            }}>{problem.expectedQueryResult}</pre>
+                                        </>
+                                    )}
+                                    {!problem.sqlSchema && !problem.expectedQueryResult && (
+                                        <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
+                                            Write a SQL query to solve this problem. Your query will be executed against the database.
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', marginTop: '1.5rem' }}>
+                                    <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Sample Input:</strong></div>
+                                    <code style={{ color: '#93c5fd', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block', marginBottom: '1rem' }}>{problem.sampleInput || "N/A"}</code>
+                                    <div style={{ marginBottom: '0.5rem' }}><strong style={{ color: '#e2e8f0' }}>Expected Output:</strong></div>
+                                    <code style={{ color: '#4ade80', background: '#0f172a', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'block' }}>{problem.expectedOutput || "N/A"}</code>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* AI Hints Section */}
+                        <div style={{ marginTop: '2rem', background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.05))', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '0.75rem', padding: '1.25rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem', color: '#fbbf24', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Lightbulb size={16} /> Need Help?
+                            </h4>
+                            <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
+                                Stuck on this problem? Get AI-powered hints to guide you without revealing the full solution.
+                            </p>
+                            <button
+                                onClick={handleGetHint}
+                                disabled={loadingHint}
                                 style={{
-                                    background: '#0f172a',
-                                    color: '#f8fafc',
-                                    border: '1px solid #334155',
+                                    background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+                                    border: 'none',
+                                    color: '#1e293b',
+                                    padding: '0.6rem 1.2rem',
                                     borderRadius: '6px',
-                                    padding: '0.4rem 0.75rem',
+                                    cursor: loadingHint ? 'not-allowed' : 'pointer',
+                                    fontWeight: 600,
                                     fontSize: '0.85rem',
-                                    cursor: (problem.type === 'SQL' || problem.language === 'SQL') ? 'not-allowed' : 'pointer',
-                                    opacity: (problem.type === 'SQL' || problem.language === 'SQL') ? 0.7 : 1
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    width: '100%',
+                                    justifyContent: 'center'
                                 }}
                             >
-                                {Object.keys(LANGUAGE_CONFIG).map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                            </select>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.75rem' }}>
-                            <button onClick={handleRun} disabled={isRunning || isSubmitting} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                <Play size={16} /> {isRunning ? 'Running...' : 'Run Code'}
+                                <Lightbulb size={16} /> {loadingHint ? 'Getting Hints...' : 'Get AI Hints'}
                             </button>
-                            <button onClick={handleSubmit} disabled={isRunning || isSubmitting} style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                <Send size={16} /> {isSubmitting ? 'Submitting...' : 'Submit'}
-                            </button>
+                            {hint && (
+                                <div style={{
+                                    marginTop: '0.75rem',
+                                    padding: '0.75rem',
+                                    background: 'rgba(34, 197, 94, 0.1)',
+                                    borderRadius: '8px',
+                                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                                    fontSize: '0.85rem',
+                                    color: '#4ade80'
+                                }}>
+                                    💡 {hint}
+                                </div>
+                            )}
                         </div>
-                    </div>
 
-                    {/* Editor */}
-                    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-                        <Editor
-                            height="100%"
-                            language={LANGUAGE_CONFIG[selectedLanguage]?.monacoLang || 'python'}
-                            theme="vs-dark"
-                            value={code}
-                            onChange={(value) => setCode(value || '')}
-                            options={{
-                                minimap: { enabled: false },
-                                fontSize: 14,
-                                scrollBeyondLastLine: false,
-                                automaticLayout: true,
-                                padding: { top: 20 }
-                            }}
-                        />
-                    </div>
+                        {/* Proctoring Rules */}
+                        <div style={{ marginTop: '2rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.75rem', padding: '1.25rem' }}>
+                            <h4 style={{ margin: '0 0 0.75rem', color: '#ef4444', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><AlertTriangle size={16} /> Proctoring Rules</h4>
+                            <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.8 }}>
+                                <li>Do not switch tabs or windows</li>
+                                <li>Do not exit fullscreen mode</li>
+                                <li>All violations are recorded</li>
+                                <li>3+ violations may result in disqualification</li>
+                            </ul>
+                        </div>
 
-                    {/* Output Section with Tabs */}
-                    <div style={{ flex: '0 0 280px', background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                        {/* Tab Headers */}
-                        <div style={{ display: 'flex', borderBottom: '1px solid #334155', background: '#0f172a' }}>
-                            {['input', 'output', 'tests'].map(tab => (
-                                <button
-                                    key={tab}
-                                    onClick={() => setActiveOutputTab(tab)}
+                        {/* Video Preview (if enabled) */}
+                        {proctoring.videoAudio && (
+                            <div style={{
+                                marginTop: '2rem',
+                                padding: '0.75rem',
+                                background: 'rgba(0,0,0,0.3)',
+                                borderRadius: '0.75rem',
+                                border: '1px solid #334155',
+                                position: 'relative'
+                            }}>
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    muted
+                                    playsInline
                                     style={{
-                                        padding: '0.75rem 1.25rem',
-                                        background: activeOutputTab === tab ? '#1e293b' : 'transparent',
-                                        border: 'none',
-                                        borderBottom: activeOutputTab === tab ? `2px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#06b6d4'}` : '2px solid transparent',
-                                        color: activeOutputTab === tab ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#06b6d4') : '#64748b',
-                                        cursor: 'pointer',
-                                        fontSize: '0.85rem',
-                                        fontWeight: 500,
+                                        width: '100%',
+                                        height: '150px',
+                                        objectFit: 'cover',
+                                        borderRadius: '8px',
+                                        background: '#000',
+                                        border: cameraBlocked ? '3px solid #ef4444' : '2px solid #10b981',
+                                        opacity: cameraBlocked ? 0.5 : 1
+                                    }}
+                                />
+                                {cameraBlocked && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '50%',
+                                        left: '50%',
+                                        transform: 'translate(-50%, -50%)',
+                                        background: 'rgba(239, 68, 68, 0.9)',
+                                        padding: '0.5rem 1rem',
+                                        borderRadius: '8px',
+                                        color: 'white',
+                                        fontWeight: 600,
+                                        fontSize: '0.75rem',
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '0.5rem'
-                                    }}
-                                >
-                                    {tab === 'input' && <>📝 Custom Input</>}
-                                    {tab === 'output' && <>⚙️ Output {output && <span style={{ width: 6, height: 6, borderRadius: '50%', background: output.includes('Error') ? '#ef4444' : '#10b981' }}></span>}</>}
-                                    {tab === 'tests' && <>🧪 Test Cases</>}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Tab Content */}
-                        {activeOutputTab === 'input' && (
-                            <div style={{ padding: '0.75rem', flex: 1 }}>
-                                <textarea
-                                    value={customInput}
-                                    onChange={(e) => setCustomInput(e.target.value)}
-                                    placeholder={`Enter your input here (stdin)...\nExample:\n5\n1 2 3 4 5`}
-                                    style={{
-                                        width: '100%',
-                                        height: 'calc(100% - 30px)',
-                                        background: '#0f172a',
-                                        color: '#e2e8f0',
-                                        border: '1px solid #334155',
-                                        borderRadius: '8px',
-                                        padding: '0.75rem',
-                                        fontFamily: 'monospace',
-                                        fontSize: '0.85rem',
-                                        resize: 'none',
-                                        outline: 'none'
-                                    }}
-                                />
-                                <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: '#64748b' }}>
-                                    💡 This input will be passed as stdin when you click "Run Code"
-                                </div>
-                            </div>
-                        )}
-
-                        {activeOutputTab === 'output' && (
-                            <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto' }}>
-                                <div style={{ fontFamily: 'monospace', color: output.includes('Error') ? '#ef4444' : '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>
-                                    {output || '👉 Run your code to see output here'}
-                                </div>
-                            </div>
-                        )}
-
-                        {activeOutputTab === 'tests' && (
-                            <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                                {testResults.length === 0 ? (
-                                    <>
-                                        <button
-                                            onClick={handleRunAllTests}
-                                            disabled={runningTests || isRunning}
-                                            style={{
-                                                background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
-                                                border: 'none',
-                                                color: 'white',
-                                                padding: '0.6rem 1.2rem',
-                                                borderRadius: '6px',
-                                                marginBottom: '1rem',
-                                                cursor: runningTests ? 'not-allowed' : 'pointer',
-                                                fontWeight: 600,
-                                                fontSize: '0.9rem'
-                                            }}
-                                        >
-                                            {runningTests ? '⏳ Running All Tests...' : '🧪 Run All Tests'}
-                                        </button>
-                                        <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                            {(problem.type === 'SQL' || problem.language === 'SQL') ? (
-                                                <div>
-                                                    <div style={{ marginBottom: '1rem' }}>
-                                                        <strong style={{ color: '#06b6d4' }}>📊 Database Schema:</strong>
-                                                        <pre style={{
-                                                            color: '#93c5fd',
-                                                            background: '#0f172a',
-                                                            padding: '0.75rem',
-                                                            borderRadius: '6px',
-                                                            marginTop: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            overflowX: 'auto',
-                                                            whiteSpace: 'pre-wrap',
-                                                            border: '1px solid #334155'
-                                                        }}>{problem.sqlSchema || 'Schema not provided'}</pre>
-                                                    </div>
-                                                    <div>
-                                                        <strong style={{ color: '#10b981' }}>📈 Expected Result:</strong>
-                                                        <pre style={{
-                                                            color: '#4ade80',
-                                                            background: '#0f172a',
-                                                            padding: '0.75rem',
-                                                            borderRadius: '6px',
-                                                            marginTop: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            overflowX: 'auto',
-                                                            whiteSpace: 'pre-wrap',
-                                                            border: '1px solid #334155'
-                                                        }}>{problem.expectedQueryResult || 'Expected result not provided'}</pre>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div>
-                                                    <div style={{ marginBottom: '1rem' }}>
-                                                        <strong style={{ color: '#f59e0b' }}>📥 Sample Input:</strong>
-                                                        <pre style={{
-                                                            color: '#93c5fd',
-                                                            background: '#0f172a',
-                                                            padding: '0.75rem',
-                                                            borderRadius: '6px',
-                                                            marginTop: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            overflowX: 'auto',
-                                                            whiteSpace: 'pre-wrap',
-                                                            border: '1px solid #334155'
-                                                        }}>{problem.sampleInput || 'N/A'}</pre>
-                                                    </div>
-                                                    <div>
-                                                        <strong style={{ color: '#10b981' }}>📤 Expected Output:</strong>
-                                                        <pre style={{
-                                                            color: '#4ade80',
-                                                            background: '#0f172a',
-                                                            padding: '0.75rem',
-                                                            borderRadius: '6px',
-                                                            marginTop: '0.5rem',
-                                                            fontSize: '0.75rem',
-                                                            overflowX: 'auto',
-                                                            whiteSpace: 'pre-wrap',
-                                                            border: '1px solid #334155'
-                                                        }}>{problem.expectedOutput || 'N/A'}</pre>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                                        <button
-                                            onClick={handleRunAllTests}
-                                            disabled={runningTests || isRunning}
-                                            style={{
-                                                background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
-                                                border: 'none',
-                                                color: 'white',
-                                                padding: '0.5rem 1rem',
-                                                borderRadius: '6px',
-                                                marginBottom: '1rem',
-                                                cursor: runningTests ? 'not-allowed' : 'pointer',
-                                                fontWeight: 600,
-                                                fontSize: '0.85rem'
-                                            }}
-                                        >
-                                            {runningTests ? '⏳ Running...' : '🔄 Run Tests Again'}
-                                        </button>
-
-                                        <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#1e293b', borderRadius: '6px' }}>
-                                            <strong style={{ color: '#06b6d4' }}>Test Results: </strong>
-                                            <span style={{ color: testResults.every(r => r.passed) ? '#10b981' : '#ef4444' }}>
-                                                {testResults.filter(r => r.passed).length}/{testResults.length} passed
-                                            </span>
-                                        </div>
-
-                                        {testResults.map((result, idx) => (
-                                            <div key={idx} style={{ marginBottom: '1rem', padding: '0.75rem', background: result.passed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${result.passed ? '#10b981' : '#ef4444'}`, borderRadius: '6px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                                    <span style={{ fontSize: '1.2rem' }}>{result.passed ? '✅' : '❌'}</span>
-                                                    <strong style={{ color: result.passed ? '#10b981' : '#ef4444' }}>Test {result.testNumber}</strong>
-                                                </div>
-
-                                                <div style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-                                                    <strong style={{ color: '#94a3b8' }}>Input:</strong>
-                                                    <code style={{ color: '#cbd5e1', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
-                                                        {result.input}
-                                                    </code>
-                                                </div>
-
-                                                <div style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-                                                    <strong style={{ color: '#10b981' }}>Expected:</strong>
-                                                    <code style={{ color: '#4ade80', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
-                                                        {result.expected}
-                                                    </code>
-                                                </div>
-
-                                                <div style={{ fontSize: '0.75rem' }}>
-                                                    <strong style={{ color: result.passed ? '#10b981' : '#ef4444' }}>Actual:</strong>
-                                                    <code style={{ color: result.passed ? '#4ade80' : '#ef4444', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
-                                                        {result.error ? `ERROR: ${result.error}` : result.actual}
-                                                    </code>
-                                                </div>
-                                            </div>
-                                        ))}
+                                    }}>
+                                        <VideoOff size={14} /> CAMERA BLOCKED
                                     </div>
                                 )}
+                                <p style={{
+                                    margin: '0.5rem 0 0',
+                                    fontSize: '0.7rem',
+                                    color: cameraBlocked ? '#ef4444' : '#10b981',
+                                    textAlign: 'center',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.5rem'
+                                }}>
+                                    {!cameraBlocked && (
+                                        <span style={{
+                                            width: '8px',
+                                            height: '8px',
+                                            borderRadius: '50%',
+                                            background: '#10b981',
+                                            animation: 'pulse 1s infinite'
+                                        }}></span>
+                                    )}
+                                    {cameraBlocked ? '⚠️ Uncover your camera!' : (modelLoaded ? '🤖 AI Monitoring Active' : '⏳ Loading AI...')}
+                                </p>
                             </div>
                         )}
                     </div>
+
+                    {/* Right Side: Code Editor */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#1e293b', minHeight: 0 }}>
+                        {/* Toolbar */}
+                        <div style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', background: '#1e293b' }}>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                <label style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Language:</label>
+                                <select
+                                    value={selectedLanguage}
+                                    onChange={(e) => {
+                                        const newLang = e.target.value
+                                        setSelectedLanguage(newLang)
+                                        setCode(LANGUAGE_CONFIG[newLang]?.defaultCode || '')
+                                    }}
+                                    disabled={problem.type === 'SQL' || problem.language === 'SQL'}
+                                    style={{
+                                        background: '#0f172a',
+                                        color: '#f8fafc',
+                                        border: '1px solid #334155',
+                                        borderRadius: '6px',
+                                        padding: '0.4rem 0.75rem',
+                                        fontSize: '0.85rem',
+                                        cursor: (problem.type === 'SQL' || problem.language === 'SQL') ? 'not-allowed' : 'pointer',
+                                        opacity: (problem.type === 'SQL' || problem.language === 'SQL') ? 0.7 : 1
+                                    }}
+                                >
+                                    {Object.keys(LANGUAGE_CONFIG).map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                <button onClick={handleRun} disabled={isRunning || isSubmitting} style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                    <Play size={16} /> {isRunning ? 'Running...' : 'Run Code'}
+                                </button>
+                                <button onClick={handleSubmit} disabled={isRunning || isSubmitting} style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '0.5rem 1.25rem', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                    <Send size={16} /> {isSubmitting ? 'Submitting...' : 'Submit'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Editor */}
+                        <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                            <Editor
+                                height="100%"
+                                language={LANGUAGE_CONFIG[selectedLanguage]?.monacoLang || 'python'}
+                                theme="vs-dark"
+                                value={code}
+                                onChange={(value) => setCode(value || '')}
+                                options={{
+                                    minimap: { enabled: false },
+                                    fontSize: 14,
+                                    scrollBeyondLastLine: false,
+                                    automaticLayout: true,
+                                    padding: { top: 20 }
+                                }}
+                            />
+                        </div>
+
+                        {/* Output Section with Tabs */}
+                        <div style={{ flex: '0 0 280px', background: '#020617', borderTop: '1px solid #334155', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            {/* Tab Headers */}
+                            <div style={{ display: 'flex', borderBottom: '1px solid #334155', background: '#0f172a' }}>
+                                {['input', 'output', 'tests'].map(tab => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => setActiveOutputTab(tab)}
+                                        style={{
+                                            padding: '0.75rem 1.25rem',
+                                            background: activeOutputTab === tab ? '#1e293b' : 'transparent',
+                                            border: 'none',
+                                            borderBottom: activeOutputTab === tab ? `2px solid ${tab === 'input' ? '#f59e0b' : tab === 'output' ? '#3b82f6' : '#06b6d4'}` : '2px solid transparent',
+                                            color: activeOutputTab === tab ? (tab === 'input' ? '#fbbf24' : tab === 'output' ? '#60a5fa' : '#06b6d4') : '#64748b',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 500,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
+                                        }}
+                                    >
+                                        {tab === 'input' && <>📝 Custom Input</>}
+                                        {tab === 'output' && <>⚙️ Output {output && <span style={{ width: 6, height: 6, borderRadius: '50%', background: output.includes('Error') ? '#ef4444' : '#10b981' }}></span>}</>}
+                                        {tab === 'tests' && <>🧪 Test Cases</>}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Tab Content */}
+                            {activeOutputTab === 'input' && (
+                                <div style={{ padding: '0.75rem', flex: 1 }}>
+                                    <textarea
+                                        value={customInput}
+                                        onChange={(e) => setCustomInput(e.target.value)}
+                                        placeholder={`Enter your input here (stdin)...\nExample:\n5\n1 2 3 4 5`}
+                                        style={{
+                                            width: '100%',
+                                            height: 'calc(100% - 30px)',
+                                            background: '#0f172a',
+                                            color: '#e2e8f0',
+                                            border: '1px solid #334155',
+                                            borderRadius: '8px',
+                                            padding: '0.75rem',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.85rem',
+                                            resize: 'none',
+                                            outline: 'none'
+                                        }}
+                                    />
+                                    <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: '#64748b' }}>
+                                        💡 This input will be passed as stdin when you click "Run Code"
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeOutputTab === 'output' && (
+                                <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto' }}>
+                                    <div style={{ fontFamily: 'monospace', color: output.includes('Error') ? '#ef4444' : '#e2e8f0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>
+                                        {output || '👉 Run your code to see output here'}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeOutputTab === 'tests' && (
+                                <div style={{ padding: '0.75rem', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                                    {testResults.length === 0 ? (
+                                        <>
+                                            <button
+                                                onClick={handleRunAllTests}
+                                                disabled={runningTests || isRunning}
+                                                style={{
+                                                    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                                                    border: 'none',
+                                                    color: 'white',
+                                                    padding: '0.6rem 1.2rem',
+                                                    borderRadius: '6px',
+                                                    marginBottom: '1rem',
+                                                    cursor: runningTests ? 'not-allowed' : 'pointer',
+                                                    fontWeight: 600,
+                                                    fontSize: '0.9rem'
+                                                }}
+                                            >
+                                                {runningTests ? '⏳ Running All Tests...' : '🧪 Run All Tests'}
+                                            </button>
+                                            <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                                {(problem.type === 'SQL' || problem.language === 'SQL') ? (
+                                                    <div>
+                                                        <div style={{ marginBottom: '1rem' }}>
+                                                            <strong style={{ color: '#06b6d4' }}>📊 Database Schema:</strong>
+                                                            <pre style={{
+                                                                color: '#93c5fd',
+                                                                background: '#0f172a',
+                                                                padding: '0.75rem',
+                                                                borderRadius: '6px',
+                                                                marginTop: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                overflowX: 'auto',
+                                                                whiteSpace: 'pre-wrap',
+                                                                border: '1px solid #334155'
+                                                            }}>{problem.sqlSchema || 'Schema not provided'}</pre>
+                                                        </div>
+                                                        <div>
+                                                            <strong style={{ color: '#10b981' }}>📈 Expected Result:</strong>
+                                                            <pre style={{
+                                                                color: '#4ade80',
+                                                                background: '#0f172a',
+                                                                padding: '0.75rem',
+                                                                borderRadius: '6px',
+                                                                marginTop: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                overflowX: 'auto',
+                                                                whiteSpace: 'pre-wrap',
+                                                                border: '1px solid #334155'
+                                                            }}>{problem.expectedQueryResult || 'Expected result not provided'}</pre>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <div style={{ marginBottom: '1rem' }}>
+                                                            <strong style={{ color: '#f59e0b' }}>📥 Sample Input:</strong>
+                                                            <pre style={{
+                                                                color: '#93c5fd',
+                                                                background: '#0f172a',
+                                                                padding: '0.75rem',
+                                                                borderRadius: '6px',
+                                                                marginTop: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                overflowX: 'auto',
+                                                                whiteSpace: 'pre-wrap',
+                                                                border: '1px solid #334155'
+                                                            }}>{problem.sampleInput || 'N/A'}</pre>
+                                                        </div>
+                                                        <div>
+                                                            <strong style={{ color: '#10b981' }}>📤 Expected Output:</strong>
+                                                            <pre style={{
+                                                                color: '#4ade80',
+                                                                background: '#0f172a',
+                                                                padding: '0.75rem',
+                                                                borderRadius: '6px',
+                                                                marginTop: '0.5rem',
+                                                                fontSize: '0.75rem',
+                                                                overflowX: 'auto',
+                                                                whiteSpace: 'pre-wrap',
+                                                                border: '1px solid #334155'
+                                                            }}>{problem.expectedOutput || 'N/A'}</pre>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                                            <button
+                                                onClick={handleRunAllTests}
+                                                disabled={runningTests || isRunning}
+                                                style={{
+                                                    background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                                                    border: 'none',
+                                                    color: 'white',
+                                                    padding: '0.5rem 1rem',
+                                                    borderRadius: '6px',
+                                                    marginBottom: '1rem',
+                                                    cursor: runningTests ? 'not-allowed' : 'pointer',
+                                                    fontWeight: 600,
+                                                    fontSize: '0.85rem'
+                                                }}
+                                            >
+                                                {runningTests ? '⏳ Running...' : '🔄 Run Tests Again'}
+                                            </button>
+
+                                            <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#1e293b', borderRadius: '6px' }}>
+                                                <strong style={{ color: '#06b6d4' }}>Test Results: </strong>
+                                                <span style={{ color: testResults.every(r => r.passed) ? '#10b981' : '#ef4444' }}>
+                                                    {testResults.filter(r => r.passed).length}/{testResults.length} passed
+                                                </span>
+                                            </div>
+
+                                            {testResults.map((result, idx) => (
+                                                <div key={idx} style={{ marginBottom: '1rem', padding: '0.75rem', background: result.passed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${result.passed ? '#10b981' : '#ef4444'}`, borderRadius: '6px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                                        <span style={{ fontSize: '1.2rem' }}>{result.passed ? '✅' : '❌'}</span>
+                                                        <strong style={{ color: result.passed ? '#10b981' : '#ef4444' }}>Test {result.testNumber}</strong>
+                                                    </div>
+
+                                                    <div style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
+                                                        <strong style={{ color: '#94a3b8' }}>Input:</strong>
+                                                        <code style={{ color: '#cbd5e1', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
+                                                            {result.input}
+                                                        </code>
+                                                    </div>
+
+                                                    <div style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
+                                                        <strong style={{ color: '#10b981' }}>Expected:</strong>
+                                                        <code style={{ color: '#4ade80', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
+                                                            {result.expected}
+                                                        </code>
+                                                    </div>
+
+                                                    <div style={{ fontSize: '0.75rem' }}>
+                                                        <strong style={{ color: result.passed ? '#10b981' : '#ef4444' }}>Actual:</strong>
+                                                        <code style={{ color: result.passed ? '#4ade80' : '#ef4444', display: 'block', background: '#0f172a', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
+                                                            {result.error ? `ERROR: ${result.error}` : result.actual}
+                                                        </code>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
 
             <style>{`
                 @keyframes pulse {

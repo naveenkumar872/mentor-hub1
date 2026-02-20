@@ -2196,7 +2196,8 @@ function GlobalTasks() {
         difficulty: 'medium',
         description: '',
         requirements: '',
-        deadline: ''
+        deadline: '',
+        maxAttempts: 0
     })
 
     // Student allocation states
@@ -2215,7 +2216,8 @@ function GlobalTasks() {
             difficulty: generated.difficulty || 'medium',
             description: generated.description || '',
             requirements: generated.requirements || '',
-            deadline: task.deadline
+            deadline: task.deadline,
+            maxAttempts: task.maxAttempts
         })
         setShowAIChat(false)
         setShowModal(true)
@@ -2285,7 +2287,7 @@ function GlobalTasks() {
             setShowModal(false)
             setTask({
                 title: '', type: 'machine_learning', difficulty: 'medium',
-                description: '', requirements: '', deadline: ''
+                description: '', requirements: '', deadline: '', maxAttempts: 0
             })
             fetchTasks()
         } catch (error) {
@@ -2533,6 +2535,11 @@ function GlobalTasks() {
                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                                         {t.completedBy?.length || 0} completed
                                     </span>
+                                    {t.maxAttempts > 0 && (
+                                        <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                                            Max Attempts: {t.maxAttempts}
+                                        </span>
+                                    )}
                                 </div>
                                 <button
                                     onClick={() => openStudentAllocationModal(t.id)}
@@ -2793,13 +2800,25 @@ function GlobalTasks() {
                                         ></textarea>
                                     </div>
 
-                                    <div className="form-group">
-                                        <label className="form-label">Deadline (Optional)</label>
-                                        <input
-                                            type="date"
-                                            value={task.deadline}
-                                            onChange={(e) => setTask({ ...task, deadline: e.target.value })}
-                                        />
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                                        <div className="form-group">
+                                            <label className="form-label">Deadline (Optional)</label>
+                                            <input
+                                                type="date"
+                                                value={task.deadline}
+                                                onChange={(e) => setTask({ ...task, deadline: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Max Attempts (0 = Unlimited)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="0"
+                                                value={task.maxAttempts}
+                                                onChange={(e) => setTask({ ...task, maxAttempts: parseInt(e.target.value) || 0 })}
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="form-actions">

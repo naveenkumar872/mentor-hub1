@@ -136,6 +136,7 @@ async function cerebrasChat(messages, options = {}) {
         } catch (error) {
             console.warn(`⚠️ Network/Execution Error with key ending ...${apiKey.slice(-5)}: ${error.message}. Switching to next backup key.`);
             lastError = error;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before next key
             // Continue to loop
         }
     }
@@ -403,7 +404,8 @@ app.get('/api/tasks', async (req, res) => {
             completedBy: t.completed_by_students
                 ? t.completed_by_students.split(',').filter(s => s)
                 : [],
-            completionCount: t.completion_count || 0
+            completionCount: t.completion_count || 0,
+            maxAttempts: t.max_attempts || 0
         }));
 
         const response = await paginatedResponse({
@@ -437,11 +439,14 @@ app.get('/api/students/:studentId/tasks', async (req, res) => {
 
         const enrichedTasks = await Promise.all(tasks.map(async t => {
             const [completions] = await pool.query('SELECT student_id FROM task_completions WHERE task_id = ?', [t.id]);
+            const [[{ count }]] = await pool.query('SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND task_id = ?', [req.params.studentId, t.id]);
             return {
                 ...t,
                 mentorId: t.mentor_id,
                 createdAt: t.created_at,
-                completedBy: completions.map(c => c.student_id)
+                completedBy: completions.map(c => c.student_id),
+                maxAttempts: t.max_attempts || 0,
+                attemptCount: count
             };
         }));
 
@@ -455,15 +460,15 @@ app.get('/api/students/:studentId/tasks', async (req, res) => {
 app.post('/api/tasks', async (req, res) => {
     try {
         const taskId = uuidv4();
-        const { mentorId, title, description, requirements, difficulty, type } = req.body;
+        const { mentorId, title, description, requirements, difficulty, type, maxAttempts } = req.body;
         const createdAt = new Date();
 
         // Convert requirements to JSON string if it's an array
         const requirementsStr = Array.isArray(requirements) ? JSON.stringify(requirements) : requirements;
 
         await pool.query(
-            'INSERT INTO tasks (id, mentor_id, title, description, requirements, difficulty, type, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, "live", ?)',
-            [taskId, mentorId, title, description, requirementsStr, difficulty, type, createdAt]
+            'INSERT INTO tasks (id, mentor_id, title, description, requirements, difficulty, type, status, created_at, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, "live", ?, ?)',
+            [taskId, mentorId, title, description, requirementsStr, difficulty, type, createdAt, parseInt(maxAttempts) || 0]
         );
 
         res.json({
@@ -853,6 +858,27 @@ app.post('/api/submissions/ml-task', async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields: studentId or taskId' });
         }
 
+        // Check for attempt limit
+        const [taskData] = await pool.query('SELECT max_attempts FROM tasks WHERE id = ?', [taskId]);
+        if (taskData.length > 0) {
+            const maxAttempts = parseInt(taskData[0].max_attempts) || 0;
+            if (maxAttempts > 0) {
+                const [[{ attemptCount }]] = await pool.query(
+                    'SELECT COUNT(*) as attemptCount FROM submissions WHERE student_id = ? AND task_id = ?',
+                    [studentId, taskId]
+                );
+
+                if (attemptCount >= maxAttempts) {
+                    return res.status(403).json({
+                        error: 'Attempt limit reached',
+                        message: `You have used all ${maxAttempts} attempt(s) for this task.`,
+                        attemptCount,
+                        maxAttempts
+                    });
+                }
+            }
+        }
+
         // 1. Prepare Content for AI
         let contentToEvaluate = '';
         if (submissionType === 'file') {
@@ -999,14 +1025,22 @@ app.post('/api/submissions/ml-task', async (req, res) => {
 // Get submission count for a student on a specific problem (for attempt tracking)
 app.get('/api/submissions/count', async (req, res) => {
     try {
-        const { studentId, problemId } = req.query;
-        if (!studentId || !problemId) {
-            return res.status(400).json({ error: 'studentId and problemId are required' });
+        const { studentId, problemId, taskId } = req.query;
+
+        let query = 'SELECT COUNT(*) as attemptCount FROM submissions WHERE student_id = ?';
+        const params = [studentId];
+
+        if (problemId) {
+            query += ' AND problem_id = ?';
+            params.push(problemId);
+        } else if (taskId) {
+            query += ' AND task_id = ?';
+            params.push(taskId);
+        } else {
+            return res.status(400).json({ error: 'Either problemId or taskId is required' });
         }
-        const [[{ attemptCount }]] = await pool.query(
-            'SELECT COUNT(*) as attemptCount FROM submissions WHERE student_id = ? AND problem_id = ?',
-            [studentId, problemId]
-        );
+
+        const [[{ attemptCount }]] = await pool.query(query, params);
         res.json({ attemptCount });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1243,10 +1277,10 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                             evaluationResult.feedback = 'Excellent! Your SQL query is correct and produces the expected output.';
                             evaluationResult.aiExplanation = 'Query executed successfully and output matches expected result exactly.';
                             evaluationResult.analysis = {
-                                correctness: 'Excellent - Query produces correct output',
-                                efficiency: 'Good - Query structure is appropriate',
-                                codeStyle: 'Good - SQL syntax is clean',
-                                bestPractices: 'Good - Follows SQL conventions'
+                                correctness: '100 - Excellent, Perfect match',
+                                efficiency: '95 - Good, Query structure is appropriate',
+                                codeStyle: '90 - Good, SQL syntax is clean',
+                                bestPractices: '90 - Good, Follows SQL conventions'
                             };
                         } else if (executedSuccessfully && !isCorrect) {
                             // Query runs but produces wrong output
@@ -1255,10 +1289,10 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                             evaluationResult.feedback = 'Your query executes but does not produce the expected output. Review the expected result and adjust your query.';
                             evaluationResult.aiExplanation = `Query executed but output does not match. Expected format/data differs from actual output.`;
                             evaluationResult.analysis = {
-                                correctness: 'Poor - Output does not match expected result',
-                                efficiency: 'Fair - Query executes',
-                                codeStyle: 'Fair - Syntax is valid',
-                                bestPractices: 'Fair - Query structure needs review'
+                                correctness: '30 - Poor, Output does not match expected result',
+                                efficiency: '50 - Fair, Query executes',
+                                codeStyle: '70 - Fair, Syntax is valid',
+                                bestPractices: '60 - Fair, Query structure needs review'
                             };
                         } else {
                             // Query has syntax error or runtime error
@@ -1267,10 +1301,10 @@ Only mark as detected if similarity > 80% and code structure is nearly identical
                             evaluationResult.feedback = 'Your SQL query has syntax errors or fails to execute. Check your SQL syntax and try again.';
                             evaluationResult.aiExplanation = `SQL execution failed: ${actualOutput.substring(0, 200)}`;
                             evaluationResult.analysis = {
-                                correctness: 'Poor - Query fails to execute',
-                                efficiency: 'N/A',
-                                codeStyle: 'Poor - Syntax errors present',
-                                bestPractices: 'Poor - Query needs fixing'
+                                correctness: '0 - Poor, Query fails to execute',
+                                efficiency: '0 - N/A',
+                                codeStyle: '0 - Poor, Syntax errors present',
+                                bestPractices: '0 - Poor, Query needs fixing'
                             };
                         }
                     } else {
@@ -1315,10 +1349,10 @@ Respond with JSON:
     "feedback": "Detailed feedback for the student (2-3 sentences)",
     "aiExplanation": "Technical explanation of the evaluation",
     "analysis": {
-        "correctness": "Excellent/Good/Fair/Poor - brief explanation",
-        "efficiency": "Excellent/Good/Fair/Poor - time/space analysis",
-        "codeStyle": "Excellent/Good/Fair/Poor - style notes",
-        "bestPractices": "Excellent/Good/Fair/Poor - practices used"
+        "correctness": "Score (0-100) - brief explanation",
+        "efficiency": "Score (0-100) - time/space analysis",
+        "codeStyle": "Score (0-100) - style notes",
+        "bestPractices": "Score (0-100) - practices used"
     }
 }
 

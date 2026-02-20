@@ -50,6 +50,7 @@ async function callCerebras(messages, options = {}) {
             return data.choices?.[0]?.message?.content || '';
         } catch (err) {
             lastError = err;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before next key
             continue;
         }
     }
@@ -138,7 +139,7 @@ Return ONLY a valid JSON array.`
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.95, max_tokens: 8000 });
+        const response = await callCerebras(messages, { temperature: 0.95, max_tokens: 4000 });
         const questions = parseJSON(response);
 
         if (!questions || !Array.isArray(questions)) {
@@ -266,7 +267,7 @@ Return ONLY a valid JSON array with exactly ${count} problem(s).`
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 8000 });
+        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 4000 });
         let problems = parseJSON(response);
         if (problems && Array.isArray(problems) && problems.length > 0) {
             // Transform sample_input/output to examples format and trim to exact count
@@ -879,7 +880,7 @@ Return ONLY valid JSON.`
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.5, max_tokens: 6000 });
+        const response = await callCerebras(messages, { temperature: 0.5, max_tokens: 4000 });
         const report = parseJSON(response);
         if (report && report.overall_rating) return report;
         return getDefaultReport();
