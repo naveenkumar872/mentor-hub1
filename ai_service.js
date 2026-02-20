@@ -267,7 +267,7 @@ Return ONLY a valid JSON array with exactly ${count} problem(s).`
     ];
 
     try {
-        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 4000 });
+        const response = await callCerebras(messages, { temperature: 0.9, max_tokens: 8000 });
         let problems = parseJSON(response);
         if (problems && Array.isArray(problems) && problems.length > 0) {
             // Transform sample_input/output to examples format and trim to exact count

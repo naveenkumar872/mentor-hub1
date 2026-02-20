@@ -1426,6 +1426,39 @@ Scoring Guide:
             ]
         );
 
+        // Trigger advanced plagiarism analysis in background
+        try {
+            if (problemId && language !== 'SQL') {
+                // We don't await this to keep response fast, or we can await if we want to ensure it runs
+                // Better to await it here since it's critical for the dashboard
+                const analysisResult = await plagiarismService.analyzeSubmission(submissionId);
+                const analysisId = uuidv4();
+
+                await pool.query(
+                    `INSERT INTO plagiarism_analysis 
+                    (id, submission_id, problem_id, student_id, lexical_similarity, structural_similarity, 
+                     temporal_suspicion, overall_score, flagged, severity, matched_submissions, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                    [
+                        analysisId,
+                        submissionId,
+                        analysisResult.problemId,
+                        analysisResult.studentId,
+                        analysisResult.lexicalSimilarity,
+                        analysisResult.structuralSimilarity,
+                        analysisResult.temporalSuspicion,
+                        analysisResult.overallScore,
+                        analysisResult.flagged ? 1 : 0,
+                        analysisResult.severity,
+                        JSON.stringify(analysisResult.matchedSubmissions)
+                    ]
+                );
+                console.log(`[Plagiarism] Background analysis completed for ${submissionId}`);
+            }
+        } catch (plagErr) {
+            console.error('Background plagiarism analysis failed:', plagErr.message);
+        }
+
         // Mark problem as completed if score >= 70
         if (problemId && finalScore >= 70) {
             try {
@@ -1434,19 +1467,31 @@ Scoring Guide:
                     [problemId, studentId, submittedAt]
                 );
 
-                // Log activity and update streak for successful problem completion
+                // Award points and update streak using GamificationService
                 try {
-                    await updateUserStreak(studentId, { problemsSolved: 1, submissionsCount: 1 });
-                } catch (streakErr) {
-                    console.log('Streak update skipped:', streakErr.message);
+                    if (gamificationService) {
+                        await gamificationService.awardProblemCompletion(studentId, problemId, true, 300);
+                        await gamificationService.updateStreak(studentId);
+                    }
+                    if (analyticsService) {
+                        await analyticsService.analyzeStudentPerformance(studentId);
+                        console.log(`📊 Analytics: Updated for student ${studentId}`);
+                    }
+                } catch (err) {
+                    console.error('⚠️ Post-submission updates failed:', err.message);
                 }
             } catch (e) { /* Ignore if already completed */ }
         } else {
-            // Still log submission activity even if not accepted
+            // Still update streak and analytics for attempt
             try {
-                await updateUserStreak(studentId, { submissionsCount: 1 });
-            } catch (streakErr) {
-                console.log('Streak update skipped:', streakErr.message);
+                if (gamificationService) {
+                    await gamificationService.updateStreak(studentId);
+                }
+                if (analyticsService) {
+                    await analyticsService.analyzeStudentPerformance(studentId);
+                }
+            } catch (err) {
+                console.log('Update skipped:', err.message);
             }
         }
 
@@ -1910,7 +1955,33 @@ Respond in this exact JSON format:
                     'INSERT IGNORE INTO problem_completions (problem_id, student_id, completed_at) VALUES (?, ?, ?)',
                     [problemId, studentId, submittedAt]
                 );
+
+                // Award points and update streak using GamificationService
+                try {
+                    if (gamificationService) {
+                        await gamificationService.awardProblemCompletion(studentId, problemId, true, parseInt(timeSpent) || 300);
+                        await gamificationService.updateStreak(studentId);
+                    }
+                    if (analyticsService) {
+                        await analyticsService.analyzeStudentPerformance(studentId);
+                        console.log(`📊 Analytics (Proctored): Updated for student ${studentId}`);
+                    }
+                } catch (err) {
+                    console.error('⚠️ Post-submission updates failed:', err.message);
+                }
             } catch (e) { /* Ignore if already completed */ }
+        } else {
+            // Update streak and analytics even on failed attempt
+            try {
+                if (gamificationService) {
+                    await gamificationService.updateStreak(studentId);
+                }
+                if (analyticsService) {
+                    await analyticsService.analyzeStudentPerformance(studentId);
+                }
+            } catch (err) {
+                console.error('Update failed:', err.message);
+            }
         }
 
         // Invalidate caches when proctored submission is created
@@ -2549,11 +2620,18 @@ app.post('/api/aptitude/:id/submit', async (req, res) => {
 
         await connection.commit();
 
-        // Log activity and update streak for aptitude completion
+        // Award points, update streak and analytics for aptitude completion
         try {
-            await updateUserStreak(studentId, { aptitudeCompleted: 1 });
-        } catch (streakErr) {
-            console.log('Streak update skipped:', streakErr.message);
+            if (gamificationService) {
+                await gamificationService.awardTestCompletion(studentId, test.id, score);
+                await gamificationService.updateStreak(studentId);
+            }
+            if (analyticsService) {
+                await analyticsService.analyzeStudentPerformance(studentId);
+                console.log(`📊 Analytics: Updated for student ${studentId} (Aptitude)`);
+            }
+        } catch (err) {
+            console.log('Update skipped:', err.message);
         }
 
         res.json({
