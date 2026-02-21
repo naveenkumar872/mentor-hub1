@@ -253,14 +253,17 @@ class PredictiveAnalyticsService {
     calculateImprovementRate(submissions) {
         if (submissions.length < 2) return 0;
 
-        // Get first half success rate
-        const firstHalf = submissions.slice(0, Math.floor(submissions.length / 2));
-        const secondHalf = submissions.slice(Math.floor(submissions.length / 2));
+        // Submissions come in DESC order (newest first)
+        // So secondHalf = older submissions, firstHalf = newer submissions
+        const midpoint = Math.floor(submissions.length / 2);
+        const newerHalf = submissions.slice(0, midpoint);
+        const olderHalf = submissions.slice(midpoint);
 
-        const firstRate = firstHalf.filter(s => s.status === 'accepted').length / firstHalf.length;
-        const secondRate = secondHalf.filter(s => s.status === 'accepted').length / secondHalf.length;
+        const olderRate = olderHalf.filter(s => s.status === 'accepted').length / olderHalf.length;
+        const newerRate = newerHalf.filter(s => s.status === 'accepted').length / newerHalf.length;
 
-        return parseFloat(((secondRate - firstRate) * 100).toFixed(2));
+        // Positive = improving, Negative = declining
+        return parseFloat(((newerRate - olderRate) * 100).toFixed(2));
     }
 
     /**

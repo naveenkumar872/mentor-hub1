@@ -160,11 +160,13 @@ class GamificationService {
     /**
      * Award problem completion points and badges
      */
-    async awardProblemCompletion(studentId, problemId, isFirstAttempt, solutionTime) {
+    async awardProblemCompletion(studentId, problemId, isFirstAttempt, solutionTime, score = 0) {
         let totalPoints = this.POINTS_CONFIG.problemSolved;
 
-        // Perfect score bonus
-        totalPoints += this.POINTS_CONFIG.problemPerfect;
+        // Perfect score bonus — only award if score is actually 100
+        if (score >= 100) {
+            totalPoints += this.POINTS_CONFIG.problemPerfect;
+        }
 
         // Speed bonus (< 2 minutes)
         if (solutionTime < 120) {
@@ -240,11 +242,15 @@ class GamificationService {
 
                 let newStreak = streak[0].current_streak;
 
-                // Continue streak if activity was yesterday or today
-                if (lastDate === yesterday || lastDate === today) {
+                // If already active today, don't increment
+                if (lastDate === today) {
+                    // Same day — streak stays the same
+                    newStreak = streak[0].current_streak;
+                } else if (lastDate === yesterday) {
+                    // Continue streak from yesterday
                     newStreak = streak[0].current_streak + 1;
-                } else if (lastDate !== today) {
-                    // Streak broken if no activity since yesterday
+                } else {
+                    // Streak broken — no activity since yesterday
                     newStreak = 1;
                 }
 

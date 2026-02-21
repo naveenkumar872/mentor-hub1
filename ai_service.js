@@ -587,8 +587,7 @@ int main() {
         if (filtered.length === 0) filtered = allProblems; // fallback
     }
     // Return only requested number of problems
-
-
+    return filtered.slice(0, count);
 }
 
 // ═══════════════════════════════════════════

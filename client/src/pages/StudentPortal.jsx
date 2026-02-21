@@ -13,6 +13,15 @@ import SQLDebugger from '@/components/SQLDebugger'
 import DirectMessaging from '@/components/DirectMessaging'
 import SkillTestPortal from '@/components/SkillTestPortal'
 import SkillSubmissions from '@/components/SkillSubmissions'
+import AdvancedSearch from '@/components/AdvancedSearch'
+import AIRecommendations from '@/components/AIRecommendations'
+import AITestCaseGenerator from '@/components/AITestCaseGenerator'
+import CodeReviewPanel from '@/components/CodeReviewPanel'
+import ExportReports from '@/components/ExportReports'
+import PlagiarismChecker from '@/components/PlagiarismChecker'
+import MentorMatching from '@/components/MentorMatching'
+import AvailabilityCalendar from '@/components/AvailabilityCalendar'
+import FeaturesShowcase from '@/components/FeaturesShowcase'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -120,6 +129,7 @@ function StudentPortal() {
 
     const navItems = [
         { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
+        { path: '/student/features', label: '✨ All Features', icon: <Sparkles size={20} /> },
         {
             label: 'Learning',
             icon: <ClipboardList size={20} />,
@@ -129,21 +139,45 @@ function StudentPortal() {
                 { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
                 { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
                 { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> }
+                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> },
+                { path: '/student/search', label: 'Advanced Search', icon: <Search size={20} /> },
+                { path: '/student/recommendations', label: 'AI Recommendations', icon: <Sparkles size={20} /> },
+                { path: '/student/test-generator', label: 'Test Generator', icon: <FileText size={20} /> }
             ]
         },
         {
-            label: 'Progress',
+            label: 'Progress & Analytics',
             icon: <TrendingUp size={20} />,
             defaultExpanded: false,
             children: [
                 { path: '/student/submissions', label: t('my_submissions'), icon: <Send size={20} /> },
                 { path: '/student/skill-submissions', label: 'Skill Submissions', icon: <Target size={20} /> },
                 { path: '/student/analytics', label: t('my_analytics'), icon: <TrendingUp size={20} /> },
-                { path: '/student/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> }
+                { path: '/student/leaderboard', label: 'Leaderboard', icon: <Trophy size={20} /> },
+                { path: '/student/badges', label: 'Skill Badges', icon: <Award size={20} /> },
+                { path: '/student/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         },
-        { path: '/student/messaging', label: 'Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
+        {
+            label: 'Review & Collaboration',
+            icon: <Github size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/student/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
+                { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> },
+                { path: '/student/mentor-matching', label: 'Mentor Matching', icon: <Users size={20} /> },
+                { path: '/student/messaging', label: 'Direct Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
+            ]
+        },
+        {
+            label: 'Calendar & Settings',
+            icon: <Clock size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/student/availability', label: 'Availability Calendar', icon: <Clock size={20} /> },
+                { path: '/student/settings', label: 'Settings', icon: <Zap size={20} /> }
+            ]
+        }
     ]
 
     return (
@@ -155,11 +189,21 @@ function StudentPortal() {
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
                 <Route path="/skill-tests" element={<SkillTestPortal user={user} />} />
+                <Route path="/search" element={<AdvancedSearch user={user} />} />
+                <Route path="/recommendations" element={<AIRecommendations user={user} />} />
+                <Route path="/test-generator" element={<AITestCaseGenerator user={user} />} />
                 <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
                 <Route path="/analytics" element={<StudentAnalytics user={user} />} />
                 <Route path="/leaderboard" element={<GamificationLeaderboard limit={100} />} />
+                <Route path="/badges" element={<AchievementBadges userId={user?.id} />} />
+                <Route path="/reports" element={<ExportReports user={user} />} />
+                <Route path="/code-reviews" element={<CodeReviewPanel user={user} />} />
+                <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
+                <Route path="/mentor-matching" element={<MentorMatching currentUser={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
+                <Route path="/availability" element={<AvailabilityCalendar user={user} />} />
+                <Route path="/features" element={<FeaturesShowcase />} />
             </Routes>
         </DashboardLayout>
     )

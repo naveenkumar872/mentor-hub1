@@ -1,0 +1,489 @@
+/* Progress Dashboard Styles */
+
+.progress-dashboard {
+    padding: 24px;
+    background: var(--bg-primary);
+    min-height: 100vh;
+    color: var(--text-primary);
+}
+
+.progress-dashboard.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    gap: 16px;
+}
+
+.progress-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.timeframe-select {
+    padding: 10px 16px;
+    border: 1px solid;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    background: none;
+    color: inherit;
+}
+
+.light .timeframe-select {
+    border-color: #ccc;
+}
+
+.dark .timeframe-select {
+    background: #333;
+    border-color: #555;
+}
+
+/* KPI Cards */
+.kpi-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.kpi-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid;
+    background: var(--bg-secondary);
+}
+
+.light .kpi-card {
+    background: #f8f8f8;
+    border-color: #e0e0e0;
+}
+
+.dark .kpi-card {
+    background: #2a2a2a;
+    border-color: #444;
+}
+
+.kpi-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.kpi-content {
+    flex: 1;
+}
+
+.kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.7;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.kpi-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+/* Progress Grid */
+.progress-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 24px;
+}
+
+.section {
+    background: var(--bg-secondary);
+    padding: 24px;
+    border-radius: 8px;
+    border: 1px solid;
+}
+
+.light .section {
+    background: white;
+    border-color: #e0e0e0;
+}
+
+.dark .section {
+    background: #1a1a1a;
+    border-color: #444;
+}
+
+.section h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.empty-state {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0;
+}
+
+/* Mastery List */
+.mastery-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.mastery-item {
+    display: grid;
+    grid-template-columns: 100px 1fr 60px;
+    gap: 12px;
+    align-items: center;
+}
+
+.mastery-name {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.mastery-bar {
+    height: 20px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.light .mastery-bar {
+    background: #e8e8e8;
+}
+
+.dark .mastery-bar {
+    background: #2a2a2a;
+}
+
+.mastery-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0066cc, #00aa00);
+    transition: width 0.3s ease;
+}
+
+.mastery-value {
+    text-align: right;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+/* Timeline */
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timeline-item {
+    display: flex;
+    gap: 16px;
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    align-items: center;
+}
+
+.light .timeline-item {
+    background: #f8f8f8;
+}
+
+.dark .timeline-item {
+    background: #2a2a2a;
+}
+
+.timeline-dot {
+    font-size: 20px;
+    flex-shrink: 0;
+    min-width: 20px;
+}
+
+.timeline-content {
+    flex: 1;
+}
+
+.timeline-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 2px;
+}
+
+.timeline-time {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.timeline-score {
+    font-weight: 700;
+    font-size: 14px;
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Category List */
+.category-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.category-item {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 12px;
+    align-items: center;
+}
+
+.cat-name {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.cat-stats {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.solved {
+    min-width: 40px;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.cat-bar {
+    flex: 1;
+    height: 22px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.light .cat-bar {
+    background: #e8e8e8;
+}
+
+.dark .cat-bar {
+    background: #2a2a2a;
+}
+
+.cat-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0066cc, #00aa00);
+}
+
+/* Weekly Chart */
+.weekly-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    height: 150px;
+    justify-content: space-around;
+}
+
+.week-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.day-bar {
+    width: 100%;
+    max-width: 40px;
+    background: linear-gradient(180deg, #0066cc, #0088ff);
+    border-radius: 4px 4px 0 0;
+    min-height: 5px;
+    transition: all 0.3s;
+}
+
+.day-bar:hover {
+    opacity: 0.8;
+}
+
+.day-label {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* Difficulty List */
+.difficulty-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.difficulty-item {
+    display: grid;
+    grid-template-columns: 60px 1fr 40px;
+    gap: 12px;
+    align-items: center;
+}
+
+.diff-name {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.diff-stats {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.diff-bar {
+    flex: 1;
+    height: 16px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.light .diff-bar {
+    background: #e8e8e8;
+}
+
+.dark .diff-bar {
+    background: #2a2a2a;
+}
+
+.diff-fill {
+    height: 100%;
+    min-width: 2px;
+}
+
+.count {
+    min-width: 30px;
+    text-align: right;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+/* Achievement Grid */
+.achievement-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 12px;
+}
+
+.achievement {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    text-align: center;
+}
+
+.light .achievement {
+    background: #f8f8f8;
+}
+
+.dark .achievement {
+    background: #2a2a2a;
+}
+
+.ach-icon {
+    font-size: 32px;
+}
+
+.ach-name {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .progress-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .kpi-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .progress-dashboard {
+        padding: 16px;
+    }
+
+    .progress-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .kpi-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .kpi-card {
+        padding: 16px;
+    }
+
+    .mastery-item {
+        grid-template-columns: 80px 1fr 50px;
+    }
+
+    .timeframe-select {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .progress-dashboard {
+        padding: 12px;
+    }
+
+    .progress-header h1 {
+        font-size: 22px;
+    }
+
+    .kpi-card {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .kpi-icon {
+        font-size: 28px;
+    }
+
+    .kpi-value {
+        font-size: 18px;
+    }
+
+    .section {
+        padding: 16px;
+    }
+
+    .achievement-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .weekly-chart {
+        gap: 4px;
+        height: 100px;
+    }
+
+    .day-bar {
+        max-width: 30px;
+    }
+}
