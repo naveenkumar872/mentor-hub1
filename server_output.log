@@ -1,0 +1,11 @@
+[dotenv@17.2.3] injecting env (6) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+📚 API docs available at /api-docs
+[dotenv@17.2.3] injecting env (0) from ..\.env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+✅ Connected to MySQL Database (SSL Enabled)
+✅ test_student_allocations table ready
+🚀 Server running on http://127.0.0.1:3000
+🔌 WebSocket ready for real-time updates
+📚 Student Portal: http://127.0.0.1:3000/#/student
+👨‍🏫 Mentor Portal: http://127.0.0.1:3000/#/mentor
+🛡️ Admin Portal: http://127.0.0.1:3000/#/admin
+⏰ Message auto-cleanup: every 30 min (24hr expiry)

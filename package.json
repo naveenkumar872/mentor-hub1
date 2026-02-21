@@ -5,7 +5,16 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node server.js --env development",
+    "test": "jest --detectOpenHandles --maxWorkers=1",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:auth": "jest middleware/__tests__/auth.test.js",
+    "test:sanitizer": "jest middleware/__tests__/sanitizer.test.js",
+    "test:validation": "jest middleware/__tests__/validation.test.js",
+    "test:rateLimiter": "jest middleware/__tests__/rateLimiter.test.js",
+    "test:integration": "jest routes/__tests__/auth.integration.test.js",
+    "test:logger": "jest utils/__tests__/logger.test.js"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +26,6 @@
     "body-parser": "^2.2.2",
     "bull": "^4.16.5",
     "cors": "^2.8.6",
-    "cros": "^1.1.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
@@ -29,8 +37,14 @@
     "redis": "^5.10.0",
     "socket.io": "^4.7.2",
     "sql.js": "^1.13.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",
     "vite": "^7.3.1",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
   }
 }

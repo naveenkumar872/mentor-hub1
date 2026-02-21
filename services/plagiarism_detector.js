@@ -52,15 +52,16 @@ class PlagiarismDetector {
      * Tokenize code into meaningful tokens
      */
     tokenizeCode(code) {
+        if (!code || typeof code !== 'string') return [];
+
         // Remove comments
         let cleaned = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
 
         // Split on common code separators but keep keywords
-        const tokens = cleaned
-            .match(/\b\w+\b|[{}()\[\];:,=+\-*/\s]/g)
-            .filter(t => t.trim().length > 0);
+        const matches = cleaned.match(/\b\w+\b|[{}()\[\];:,=+\-*/\s]/g);
+        if (!matches) return [];
 
-        return tokens;
+        return matches.filter(t => t.trim().length > 0);
     }
 
     /**
@@ -188,6 +189,12 @@ class PlagiarismDetector {
                 if (lexical > maxSimilarity.lexical) {
                     maxSimilarity.lexical = lexical;
                     maxSimilarity.matchingSubmission = otherSub.id;
+                }
+                if (structural > maxSimilarity.structural) {
+                    maxSimilarity.structural = structural;
+                }
+                if (temporal > maxSimilarity.temporal) {
+                    maxSimilarity.temporal = temporal;
                 }
             }
         }

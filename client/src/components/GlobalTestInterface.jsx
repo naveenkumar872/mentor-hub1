@@ -2,9 +2,22 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { X, Clock, ChevronLeft, ChevronRight, Send, AlertTriangle, Brain, FileText, Layers, Code, Database, CheckCircle, XCircle, Video, VideoOff, Mic, MicOff, Shield, Eye, Smartphone, Target, Play, Lightbulb, Zap, Award, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
-import * as tf from '@tensorflow/tfjs'
-import * as cocoSsd from '@tensorflow-models/coco-ssd'
 import CodeOutputPreview from '@/components/CodeOutputPreview'
+
+// TensorFlow.js loaded dynamically to reduce initial bundle size
+let tf = null
+let cocoSsd = null
+const loadTFModules = async () => {
+    if (!tf) {
+        const [tfModule, cocoModule] = await Promise.all([
+            import('@tensorflow/tfjs'),
+            import('@tensorflow-models/coco-ssd')
+        ])
+        tf = tfModule
+        cocoSsd = cocoModule
+    }
+    return { tf, cocoSsd }
+}
 import SQLValidator from '@/components/SQLValidator'
 import SQLVisualizer from '@/components/SQLVisualizer'
 import SQLDebugger from '@/components/SQLDebugger'
@@ -269,8 +282,9 @@ export default function GlobalTestInterface({ test, user, onClose, onComplete })
             // Load Object Detection Model
             if (proctoring.detectPhoneUsage || proctoring.detectCameraBlocking) {
                 try {
-                    await tf.ready()
-                    const model = await cocoSsd.load()
+                    const { tf: tfLib, cocoSsd: cocoLib } = await loadTFModules()
+                    await tfLib.ready()
+                    const model = await cocoLib.load()
                     objectDetectorRef.current = model
                     phoneCheckIntervalRef.current = setInterval(detectObjects, 3000)
                 } catch (e) {

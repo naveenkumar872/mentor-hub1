@@ -10,7 +10,7 @@ import {
     ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell
 } from 'recharts'
-import jsPDF from 'jspdf'
+import { PDFDocument } from 'pdf-lib'
 import html2canvas from 'html2canvas'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -76,25 +76,33 @@ function GlobalReportModal({ submissionId, onClose, isStudentView = false }) {
                 logging: false
             });
 
-            const imgData = canvas.toDataURL('image/png', 1.0);
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const imgWidth = 210;
-            const pageHeight = 297;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-            let heightLeft = imgHeight;
-            let position = 0;
+            const pngBytes = await new Promise(resolve => canvas.toBlob(blob => blob.arrayBuffer().then(resolve), 'image/png'));
+            const pdfDoc = await PDFDocument.create();
+            const pngImage = await pdfDoc.embedPng(pngBytes);
+            const a4Width = 595.28;
+            const a4Height = 841.89;
+            const scaledHeight = (canvas.height * a4Width) / canvas.width;
+            let yOffset = 0;
 
-            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pageHeight;
-
-            while (heightLeft >= 0) {
-                position = heightLeft - imgHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                heightLeft -= pageHeight;
+            while (yOffset < scaledHeight) {
+                const page = pdfDoc.addPage([a4Width, a4Height]);
+                page.drawImage(pngImage, {
+                    x: 0,
+                    y: a4Height - scaledHeight + yOffset,
+                    width: a4Width,
+                    height: scaledHeight
+                });
+                yOffset += a4Height;
             }
 
-            pdf.save(`${report.studentInfo.name}_Assessment_Report.pdf`);
+            const pdfBytes = await pdfDoc.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${report.studentInfo.name}_Assessment_Report.pdf`;
+            link.click();
+            URL.revokeObjectURL(url);
 
             // Restore original state
             setExpandedSections(originalState);

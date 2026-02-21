@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
+import ErrorBoundary from './components/shared/ErrorBoundary'
 import { I18nProvider } from './services/i18n.jsx'
 import './index.css'
 import './styles/responsive.css'
@@ -25,10 +26,12 @@ if (!localStorage.getItem('theme')) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-        <BrowserRouter>
-            <I18nProvider>
-                <App />
-            </I18nProvider>
-        </BrowserRouter>
+        <ErrorBoundary fullPage>
+            <BrowserRouter>
+                <I18nProvider>
+                    <App />
+                </I18nProvider>
+            </BrowserRouter>
+        </ErrorBoundary>
     </React.StrictMode>,
 )

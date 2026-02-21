@@ -2,10 +2,26 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { AlertTriangle, Video, VideoOff, Mic, MicOff, Eye, Clock, X, CheckCircle, XCircle, Play, Send, Lightbulb, Code, Smartphone, Database, Layers, Shield, Users, BarChart3, BookOpen } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import axios from 'axios'
-import * as tf from '@tensorflow/tfjs'
-import * as cocoSsd from '@tensorflow-models/coco-ssd'
-import * as blazeface from '@tensorflow-models/blazeface'
 import socketService from '../services/socketService'
+
+// TensorFlow.js modules loaded dynamically to reduce initial bundle size (~5MB)
+let tf = null
+let cocoSsd = null
+let blazeface = null
+
+const loadTFModules = async () => {
+    if (!tf) {
+        const [tfModule, cocoModule, blazeModule] = await Promise.all([
+            import('@tensorflow/tfjs'),
+            import('@tensorflow-models/coco-ssd'),
+            import('@tensorflow-models/blazeface')
+        ])
+        tf = tfModule
+        cocoSsd = cocoModule
+        blazeface = blazeModule
+    }
+    return { tf, cocoSsd, blazeface }
+}
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
 
@@ -295,8 +311,9 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const loadObjectDetectionModel = async () => {
         try {
             console.log('📱 Loading object detection model...')
-            await tf.ready()
-            const model = await cocoSsd.load({ base: 'lite_mobilenet_v2' })
+            const { tf: tfLib, cocoSsd: cocoLib } = await loadTFModules()
+            await tfLib.ready()
+            const model = await cocoLib.load({ base: 'lite_mobilenet_v2' })
             objectDetectorRef.current = model
             setModelLoaded(true)
             console.log('✅ Object detection model loaded')
@@ -390,7 +407,8 @@ function ProctoredCodeEditor({ problem, user, onClose, onSubmitSuccess }) {
     const loadFaceDetectionModel = async () => {
         try {
             console.log('👁️ Loading BlazeFace model...')
-            const detector = await blazeface.load()
+            const { blazeface: blazeLib } = await loadTFModules()
+            const detector = await blazeLib.load()
             faceDetectorRef.current = detector
             console.log('✅ BlazeFace model loaded successfully')
             startFaceDetection()

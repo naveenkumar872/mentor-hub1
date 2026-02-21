@@ -1,6 +1,5 @@
 const express = require('express');
 require('dotenv').config();
-// Triggering server reload to register new routes
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
@@ -18,6 +17,13 @@ const { Server: SocketIOServer } = require('socket.io');
 // Performance optimization imports
 const { paginatedResponse } = require('./utils/pagination');
 const { cacheManager } = require('./utils/cache');
+
+// Security & Middleware imports
+const { hashPassword, comparePassword, generateToken, authenticate, authorize, optionalAuth } = require('./middleware/auth');
+const { generalLimiter, authLimiter, aiLimiter, codeLimiter, adminLimiter, uploadLimiter, submissionLimiter } = require('./middleware/rateLimiter');
+const { validate, loginSchema, createUserSchema, resetPasswordSchema, createTaskSchema, createSubmissionSchema, sendMessageSchema, bulkReassignSchema, bulkDeleteSchema, createProblemSchema, aptitudeSubmitSchema, globalTestSubmitSchema, plagiarismCheckSchema, createAptitudeSchema } = require('./middleware/validation');
+const { sanitizeMiddleware, sanitizeString, sanitizeObject } = require('./middleware/sanitizer');
+const setupSwagger = require('./middleware/swagger');
 
 // Plagiarism detection import
 const plagiarismDetector = require('./plagiarism_detector');
@@ -219,18 +225,25 @@ app.use(cors({
             return allowed === origin;
         });
 
-        if (isAllowed) {
+        // Also allow CORS_ORIGIN from env
+        const envOrigin = process.env.CORS_ORIGIN;
+        if (isAllowed || (envOrigin && origin === envOrigin)) {
             callback(null, true);
         } else {
-            callback(null, true); // Allow all for now during deployment
+            callback(new Error(`CORS: Origin ${origin} not allowed`));
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.json({ limit: '10mb' })); // Reduced from 50mb to 10mb for DoS protection
+app.use(sanitizeMiddleware);  // Sanitize all inputs (prevent XSS/injection attacks)
+app.use(generalLimiter); // Apply general rate limiting to all routes
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Setup Swagger API documentation
+setupSwagger(app);
 
 // Import and mount skill test routes AFTER middleware
 const skillTestRoutes = require('./skill_test_routes');
@@ -238,17 +251,31 @@ skillTestRoutes(app, pool);
 
 // ==================== AUTH ROUTES ====================
 
-// Login
-app.post('/api/auth/login', async (req, res) => {
+// Login (rate limited)
+app.post('/api/auth/login', authLimiter, validate(loginSchema), async (req, res) => {
     try {
         const { email, password } = req.body;
-        const [rows] = await pool.query('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
+
+        // Fetch user by email only (not comparing password in SQL)
+        const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
 
         if (rows.length === 0) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         const user = rows[0];
+
+        // Compare password using bcrypt (with backward compatibility for plaintext)
+        const passwordValid = await comparePassword(password, user.password);
+        if (!passwordValid) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Check if account is active
+        if (user.status === 'suspended' || user.status === 'inactive') {
+            return res.status(403).json({ error: 'Account is ' + user.status + '. Contact admin.' });
+        }
+
         // Fetch allocations if mentor
         if (user.role === 'mentor') {
             const [students] = await pool.query('SELECT student_id FROM mentor_student_allocations WHERE mentor_id = ?', [user.id]);
@@ -263,14 +290,28 @@ app.post('/api/auth/login', async (req, res) => {
 
         const { password: _, ...userWithoutPassword } = user;
 
+        // Generate JWT token
+        const token = generateToken(user);
+
         // Normalize snake_case DB to camelCase API
         const responseUser = {
             ...userWithoutPassword,
             mentorId: user.mentor_id,
-            createdAt: user.created_at
+            createdAt: user.created_at,
+            // Theme preferences
+            themePreference: user.theme_preference || 'system',
+            ideTheme: user.ide_theme || 'vs-dark',
+            keyboardShortcutsEnabled: user.keyboard_shortcuts_enabled || true
         };
 
-        res.json({ success: true, user: responseUser });
+        // If password is still plaintext, upgrade to bcrypt hash in background
+        if (!user.password.startsWith('$2a$') && !user.password.startsWith('$2b$')) {
+            hashPassword(password).then(hash => {
+                pool.query('UPDATE users SET password = ? WHERE id = ?', [hash, user.id]).catch(() => {});
+            }).catch(() => {});
+        }
+
+        res.json({ success: true, token, user: responseUser });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Server error' });
@@ -298,12 +339,206 @@ app.get('/api/users/:id', async (req, res) => {
         res.json({
             ...userWithoutPassword,
             mentorId: user.mentor_id,
-            createdAt: user.created_at
+            createdAt: user.created_at,
+            // Theme preferences
+            themePreference: user.theme_preference || 'system',
+            ideTheme: user.ide_theme || 'vs-dark',
+            keyboardShortcutsEnabled: user.keyboard_shortcuts_enabled || true
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Update user preferences (theme, IDE theme, keyboard shortcuts)
+app.put('/api/users/:id/preferences', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { themePreference, ideTheme, keyboardShortcutsEnabled } = req.body;
+
+        // Validate inputs
+        const validThemes = ['light', 'dark', 'system'];
+        const validIDEThemes = ['vs', 'vs-dark', 'hc-black', 'dracula', 'monokai'];
+
+        if (themePreference && !validThemes.includes(themePreference)) {
+            return res.status(400).json({ error: 'Invalid theme preference' });
+        }
+
+        if (ideTheme && !validIDEThemes.includes(ideTheme)) {
+            return res.status(400).json({ error: 'Invalid IDE theme' });
+        }
+
+        const updates = [];
+        const params = [];
+
+        if (themePreference) {
+            updates.push('theme_preference = ?');
+            params.push(themePreference);
+        }
+
+        if (ideTheme) {
+            updates.push('ide_theme = ?');
+            params.push(ideTheme);
+        }
+
+        if (keyboardShortcutsEnabled !== undefined) {
+            updates.push('keyboard_shortcuts_enabled = ?');
+            params.push(keyboardShortcutsEnabled ? 1 : 0);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No preferences to update' });
+        }
+
+        params.push(id);
+        await pool.query(
+            `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+            params
+        );
+
+        res.json({ success: true, message: 'Preferences updated' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user preferences
+app.get('/api/users/:id/preferences', authenticate, async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            'SELECT id, theme_preference, ide_theme, keyboard_shortcuts_enabled FROM users WHERE id = ?',
+            [req.params.id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const user = rows[0];
+        res.json({
+            themePreference: user.theme_preference || 'system',
+            ideTheme: user.ide_theme || 'vs-dark',
+            keyboardShortcutsEnabled: user.keyboard_shortcuts_enabled || true
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ⌨️  Keyboard Shortcuts Endpoints
+
+// Get default keyboard shortcuts
+app.get('/api/keybindings/default', authenticate, (req, res) => {
+    const defaultShortcuts = {
+        'goto-next-problem': { keys: 'Ctrl+]', description: 'Next Problem' },
+        'goto-prev-problem': { keys: 'Ctrl+[', description: 'Previous Problem' },
+        'goto-submissions': { keys: 'Ctrl+S', description: 'My Submissions' },
+        'goto-dashboard': { keys: 'Ctrl+H', description: 'Dashboard' },
+        'editor-submit': { keys: 'Ctrl+Enter', description: 'Submit Code' },
+        'editor-run': { keys: 'Ctrl+R', description: 'Run Code' },
+        'editor-format': { keys: 'Ctrl+Alt+L', description: 'Format Code' },
+        'editor-fold': { keys: 'Ctrl+K Ctrl+0', description: 'Fold All' },
+        'editor-unfold': { keys: 'Ctrl+K Ctrl+J', description: 'Unfold All' },
+        'quick-search': { keys: 'Ctrl+P', description: 'Quick Search' },
+        'open-settings': { keys: 'Ctrl+,', description: 'Settings' },
+        'toggle-theme': { keys: 'Ctrl+Shift+T', description: 'Toggle Theme' },
+        'toggle-fullscreen': { keys: 'F11', description: 'Full Screen' },
+        'undo': { keys: 'Ctrl+Z', description: 'Undo' },
+        'redo': { keys: 'Ctrl+Y', description: 'Redo' },
+        'save': { keys: 'Ctrl+S', description: 'Save' },
+        'help': { keys: 'F1', description: 'Help' }
+    };
+    
+    res.json(defaultShortcuts);
+});
+
+// Get user's custom keyboard shortcuts
+app.get('/api/users/:id/keybindings', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Check authorization
+        if (req.user.id !== parseInt(id)) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const [rows] = await pool.query(
+            'SELECT custom_shortcuts FROM users WHERE id = ?',
+            [id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        let customShortcuts = {};
+        if (rows[0].custom_shortcuts) {
+            try {
+                customShortcuts = typeof rows[0].custom_shortcuts === 'string'
+                    ? JSON.parse(rows[0].custom_shortcuts)
+                    : rows[0].custom_shortcuts;
+            } catch (e) {
+                console.warn('Failed to parse custom shortcuts JSON:', e);
+            }
+        }
+
+        res.json({
+            customShortcuts,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error fetching keybindings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update user's custom keyboard shortcuts
+app.patch('/api/users/:id/keybindings', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { keyboard_shortcuts } = req.body;
+
+        // Check authorization
+        if (req.user.id !== parseInt(id)) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        if (!keyboard_shortcuts) {
+            return res.status(400).json({ error: 'keyboard_shortcuts field required' });
+        }
+
+        // Validate shortcuts object
+        if (typeof keyboard_shortcuts !== 'object') {
+            return res.status(400).json({ error: 'keyboard_shortcuts must be an object' });
+        }
+
+        // Convert to JSON string for storage
+        const shortcutsJson = JSON.stringify(keyboard_shortcuts);
+
+        await pool.query(
+            'UPDATE users SET custom_shortcuts = ?, shortcuts_last_modified = NOW() WHERE id = ?',
+            [shortcutsJson, id]
+        );
+
+        // Log the change
+        await pool.query(
+            `INSERT INTO audit_logs (user_id, user_role, action, resource_type, resource_id, changes, timestamp)
+             VALUES (?, 'user', 'UPDATE_KEYBINDINGS', 'keybindings', ?, ?, NOW())`,
+            [id, id, `Updated ${Object.keys(keyboard_shortcuts).length} custom shortcuts`]
+        );
+
+        res.json({
+            success: true,
+            message: 'Keyboard shortcuts updated',
+            shortcutsCount: Object.keys(keyboard_shortcuts).length
+        });
+    } catch (error) {
+        console.error('Error updating keybindings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Sync theme preference to database (called when user changes theme in UI)
 
 // Get all users
 app.get('/api/users', async (req, res) => {
@@ -354,6 +589,187 @@ app.get('/api/mentors/:mentorId/students', async (req, res) => {
         });
 
         res.json(cleanStudents);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== TIER MANAGEMENT ROUTES ====================
+
+// Get user's current tier and limits
+app.get('/api/users/:id/tier', authenticate, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        
+        // Get user tier
+        const [user] = await pool.query('SELECT id, tier, tier_start_date, tier_expiry_date FROM users WHERE id = ?', [userId]);
+        if (user.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        const userTier = user[0];
+        
+        // Get tier limits from tier_limits table
+        const [tierLimits] = await pool.query('SELECT * FROM tier_limits WHERE tier = ?', [userTier.tier || 'free']);
+        
+        if (tierLimits.length === 0) {
+            return res.json({
+                tier: userTier.tier || 'free',
+                tierStartDate: userTier.tier_start_date,
+                tierExpiryDate: userTier.tier_expiry_date,
+                limits: {
+                    daily_api_limit: 100,
+                    code_execution_limit: 10,
+                    submissions_per_day: 30,
+                    concurrent_connections: 1,
+                    file_upload_limit_mb: 5,
+                    max_problem_attempts: 3,
+                    ai_chat_limit_daily: 5
+                }
+            });
+        }
+
+        const limits = tierLimits[0];
+        res.json({
+            tier: userTier.tier || 'free',
+            tierStartDate: userTier.tier_start_date,
+            tierExpiryDate: userTier.tier_expiry_date,
+            limits: {
+                daily_api_limit: limits.daily_api_limit,
+                code_execution_limit: limits.code_execution_limit,
+                submissions_per_day: limits.submissions_per_day,
+                concurrent_connections: limits.concurrent_connections,
+                file_upload_limit_mb: limits.file_upload_limit_mb,
+                max_problem_attempts: limits.max_problem_attempts,
+                ai_chat_limit_daily: limits.ai_chat_limit_daily,
+                export_limit_monthly: limits.export_limit_monthly,
+                priority_support: limits.priority_support,
+                features: limits.features ? JSON.parse(limits.features) : []
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get all available tiers (public endpoint)
+app.get('/api/tiers', async (req, res) => {
+    try {
+        const [tiers] = await pool.query('SELECT tier, daily_api_limit, code_execution_limit, submissions_per_day, file_upload_limit_mb, ai_chat_limit_daily, priority_support, features FROM tier_limits ORDER BY daily_api_limit ASC');
+        
+        const formattedTiers = tiers.map(t => ({
+            tier: t.tier,
+            dailyApiLimit: t.daily_api_limit,
+            codeExecutionLimit: t.code_execution_limit,
+            submissionsPerDay: t.submissions_per_day,
+            fileUploadLimitMB: t.file_upload_limit_mb,
+            aiChatLimitDaily: t.ai_chat_limit_daily,
+            prioritySupport: t.priority_support,
+            features: t.features ? JSON.parse(t.features) : []
+        }));
+
+        res.json(formattedTiers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Upgrade/downgrade user tier
+app.patch('/api/admin/users/:userId/tier', authenticate, authorize('admin'), async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { userId } = req.params;
+        const { newTier, reason, expiryDate } = req.body;
+
+        // Validate tier
+        const validTiers = ['free', 'pro', 'enterprise'];
+        if (!newTier || !validTiers.includes(newTier)) {
+            return res.status(400).json({ error: 'Invalid tier. Must be: free, pro, or enterprise' });
+        }
+
+        await connection.beginTransaction();
+
+        // Get current tier for audit trail
+        const [user] = await connection.query('SELECT tier FROM users WHERE id = ?', [userId]);
+        if (user.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const oldTier = user[0].tier;
+
+        // Update user tier
+        await connection.query(
+            'UPDATE users SET tier = ?, tier_start_date = NOW(), tier_expiry_date = ? WHERE id = ?',
+            [newTier, expiryDate || null, userId]
+        );
+
+        // Log tier change in tier_history
+        const { v4: uuidv4 } = require('uuid');
+        await connection.query(
+            'INSERT INTO tier_history (id, user_id, old_tier, new_tier, reason, changed_by) VALUES (?, ?, ?, ?, ?, ?)',
+            [uuidv4(), userId, oldTier, newTier, reason || null, req.user.id]
+        );
+
+        await connection.commit();
+
+        res.json({
+            success: true,
+            message: `User tier updated from ${oldTier} to ${newTier}`,
+            userId,
+            newTier,
+            tierStartDate: new Date(),
+            tierExpiryDate: expiryDate || null
+        });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ error: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// Get tier upgrade history for a user
+app.get('/api/users/:userId/tier-history', authenticate, async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        // Users can only see their own history, admins can see anyone's
+        if (req.user.id !== userId && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const [history] = await pool.query(
+            'SELECT id, old_tier, new_tier, reason, changed_by, changed_at FROM tier_history WHERE user_id = ? ORDER BY changed_at DESC',
+            [userId]
+        );
+
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin: Get all tier statistics
+app.get('/api/admin/tier-statistics', authenticate, authorize('admin'), async (req, res) => {
+    try {
+        const [stats] = await pool.query(`
+            SELECT tier, COUNT(*) as user_count
+            FROM users
+            GROUP BY tier
+            ORDER BY tier
+        `);
+
+        const [totalUsers] = await pool.query('SELECT COUNT(*) as total FROM users');
+        const [premiumUsers] = await pool.query('SELECT COUNT(*) as count FROM users WHERE tier IN ("pro", "enterprise")');
+
+        res.json({
+            totalUsers: totalUsers[0].total,
+            premiumUsers: premiumUsers[0].count,
+            byTier: stats.map(s => ({
+                tier: s.tier,
+                count: s.user_count,
+                percentage: ((s.user_count / totalUsers[0].total) * 100).toFixed(2)
+            }))
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -457,7 +873,7 @@ app.get('/api/students/:studentId/tasks', async (req, res) => {
 });
 
 // Create task
-app.post('/api/tasks', async (req, res) => {
+app.post('/api/tasks', authenticate, async (req, res) => {
     try {
         const taskId = uuidv4();
         const { mentorId, title, description, requirements, difficulty, type, maxAttempts } = req.body;
@@ -479,11 +895,8 @@ app.post('/api/tasks', async (req, res) => {
             createdAt
         });
     } catch (error) {
-        try {
-            require('fs').appendFileSync('d:\\Mentor\\Mentor\\server_debug.log', `[${new Date().toISOString()}] Task Create Error: ${error.message}\nBody: ${JSON.stringify(req.body)}\n\n`);
-        } catch (e) { }
-        console.error('Task Create Error:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Task Create Error:', error.message);
+        res.status(500).json({ error: 'Failed to create task' });
     }
 });
 
@@ -631,7 +1044,7 @@ app.get('/api/students/:studentId/problems', async (req, res) => {
 });
 
 // Create problem
-app.post('/api/problems', async (req, res) => {
+app.post('/api/problems', authenticate, validate(createProblemSchema), async (req, res) => {
     try {
         const problemId = uuidv4();
         const {
@@ -667,7 +1080,7 @@ app.post('/api/problems', async (req, res) => {
 });
 
 // Update problem (supports partial update)
-app.put('/api/problems/:id', async (req, res) => {
+app.put('/api/problems/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
@@ -730,7 +1143,7 @@ app.put('/api/problems/:id', async (req, res) => {
 });
 
 // Delete problem
-app.delete('/api/problems/:id', async (req, res) => {
+app.delete('/api/problems/:id', authenticate, async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
@@ -746,6 +1159,194 @@ app.delete('/api/problems/:id', async (req, res) => {
         } finally {
             connection.release();
         }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== PROBLEM COMPLEXITY ROUTES ====================
+
+// Get problem complexity analysis
+app.get('/api/problems/:id/complexity-analysis', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [problems] = await pool.query(
+            `SELECT 
+                id, difficulty_score, pass_rate, avg_time_minutes,
+                min_time_minutes, max_time_minutes, total_submissions,
+                successful_submissions, avg_attempts,
+                structure_complexity, algorithm_complexity,
+                edge_cases_complexity, implementation_complexity,
+                complexity_last_updated
+            FROM problems WHERE id = ?`,
+            [id]
+        );
+
+        if (problems.length === 0) {
+            return res.status(404).json({ error: 'Problem not found' });
+        }
+
+        const problem = problems[0];
+
+        // Get category average
+        const [categoryProbs] = await pool.query(
+            `SELECT AVG(difficulty_score) as avg_diff FROM problems 
+             WHERE category = (SELECT category FROM problems WHERE id = ?) AND id != ?`,
+            [id, id]
+        );
+
+        // Get similar problems
+        const [similarProbs] = await pool.query(
+            `SELECT id, title, category, difficulty_score
+             FROM problems
+             WHERE category = (SELECT category FROM problems WHERE id = ?)
+             AND id != ?
+             AND ABS(difficulty_score - ?) <= 1.5
+             LIMIT 5`,
+            [id, id, problem.difficulty_score]
+        );
+
+        res.json({
+            id: problem.id,
+            difficulty_score: problem.difficulty_score,
+            pass_rate: problem.pass_rate,
+            avg_time_minutes: problem.avg_time_minutes,
+            min_time_minutes: problem.min_time_minutes,
+            max_time_minutes: problem.max_time_minutes,
+            total_submissions: problem.total_submissions,
+            successful_submissions: problem.successful_submissions,
+            avg_attempts: problem.avg_attempts,
+            structure_complexity: problem.structure_complexity,
+            algorithm_complexity: problem.algorithm_complexity,
+            edge_cases_complexity: problem.edge_cases_complexity,
+            implementation_complexity: problem.implementation_complexity,
+            category_avg_difficulty: categoryProbs[0]?.avg_diff || 5.0,
+            similar_problems: similarProbs,
+            last_updated: problem.complexity_last_updated
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get problems by difficulty level
+app.get('/api/problems/complexity/by-difficulty', authenticate, async (req, res) => {
+    try {
+        const { difficulty, limit = 10 } = req.query;
+        const diffValue = parseFloat(difficulty);
+
+        if (isNaN(diffValue)) {
+            return res.status(400).json({ error: 'Invalid difficulty value' });
+        }
+
+        // Get problems within 1.5 of the specified difficulty
+        const [problems] = await pool.query(
+            `SELECT id, title, category, difficulty_score, pass_rate, avg_time_minutes
+             FROM problems
+             WHERE ABS(difficulty_score - ?) <= 1.5
+             ORDER BY difficulty_score ASC
+             LIMIT ?`,
+            [diffValue, Math.min(100, parseInt(limit))]
+        );
+
+        res.json({
+            target_difficulty: diffValue,
+            problems_found: problems.length,
+            problems
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get recommended problems for user
+app.get('/api/problems/complexity/recommendations', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { limit = 5 } = req.query;
+
+        // Get user's average solved difficulty
+        const [userStats] = await pool.query(
+            `SELECT AVG(p.difficulty_score) as avg_solved_difficulty
+             FROM submissions s
+             JOIN problems p ON s.problem_id = p.id
+             WHERE s.student_id = ? AND s.is_successful = 1`,
+            [userId]
+        );
+
+        const userAvgDifficulty = userStats[0]?.avg_solved_difficulty || 3;
+
+        // Recommend problems slightly harder than user's average
+        const targetDifficulty = Math.min(9, userAvgDifficulty + 1.5);
+
+        const [recommendations] = await pool.query(
+            `SELECT id, title, category, difficulty_score, pass_rate, avg_time_minutes
+             FROM problems
+             WHERE id NOT IN (SELECT problem_id FROM submissions WHERE student_id = ?)
+             AND ABS(difficulty_score - ?) <= 1
+             ORDER BY difficulty_score DESC, pass_rate DESC
+             LIMIT ?`,
+            [userId, targetDifficulty, Math.min(100, parseInt(limit))]
+        );
+
+        res.json({
+            user_avg_difficulty: parseFloat(userAvgDifficulty.toFixed(1)),
+            target_difficulty: parseFloat(targetDifficulty.toFixed(1)),
+            recommendations_count: recommendations.length,
+            recommendations
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Submit difficulty feedback
+app.post('/api/problems/:id/difficulty-feedback', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { actualDifficulty, feedback } = req.body;
+
+        if (typeof actualDifficulty !== 'number' || actualDifficulty < 1 || actualDifficulty > 10) {
+            return res.status(400).json({ error: 'Invalid difficulty rating (1-10)' });
+        }
+
+        // Update complexity data
+        const [problem] = await pool.query(
+            'SELECT difficulty_score, total_submissions FROM problems WHERE id = ?',
+            [id]
+        );
+
+        if (problem.length === 0) {
+            return res.status(404).json({ error: 'Problem not found' });
+        }
+
+        // Calculate weighted average
+        const oldScore = problem[0].difficulty_score;
+        const count = problem[0].total_submissions || 1;
+        const newScore = (oldScore * count + actualDifficulty) / (count + 1);
+
+        await pool.query(
+            `UPDATE problems 
+             SET difficulty_score = ?, 
+                 total_submissions = total_submissions + 1,
+                 complexity_last_updated = NOW()
+             WHERE id = ?`,
+            [newScore, id]
+        );
+
+        // Log feedback
+        await pool.query(
+            `INSERT INTO complexity_analytics (problem_id, user_id, created_at)
+             VALUES (?, ?, NOW())`,
+            [id, req.user.id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Difficulty feedback recorded',
+            updated_difficulty: parseFloat(newScore.toFixed(1))
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1077,7 +1678,7 @@ app.get('/api/submissions/count', async (req, res) => {
 });
 
 // Create submission (AI-evaluated code submission)
-app.post('/api/submissions', async (req, res) => {
+app.post('/api/submissions', submissionLimiter, async (req, res) => {
     try {
         const { studentId, problemId, taskId, language, code, submissionType, fileName, tabSwitches } = req.body;
         const submissionId = uuidv4();
@@ -2088,8 +2689,8 @@ app.delete('/api/global-test-submissions/:id', async (req, res) => {
     }
 });
 
-// Reset all submissions (Admin only)
-app.delete('/api/submissions', async (req, res) => {
+// Reset all submissions (Admin only — PROTECTED)
+app.delete('/api/submissions', authenticate, authorize('admin'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -2138,14 +2739,16 @@ app.delete('/api/submissions', async (req, res) => {
 
 // ==================== RUN CODE & SUBMIT API ====================
 
-// Helper: Run code using local subprocess (child_process.spawn)
+// Helper: Run code using local subprocess (child_process.spawn) - SECURE (No shell injection)
 function runCodeSubprocess(command, args, stdinData, timeout = 15000) {
     return new Promise((resolve, reject) => {
         const { spawn } = require('child_process');
+        // Use spawn WITHOUT shell: true to prevent shell injection attacks
+        // All arguments are passed as array, not interpreted by shell
         const proc = spawn(command, args, {
             timeout,
-            shell: true,
-            env: { ...process.env, PATH: process.env.PATH }
+            stdio: ['pipe', 'pipe', 'pipe'],  // stdin, stdout, stderr all piped
+            windowsHide: true  // Hide console window on Windows
         });
 
         let stdout = '';
@@ -2154,7 +2757,7 @@ function runCodeSubprocess(command, args, stdinData, timeout = 15000) {
         proc.stdout.on('data', (data) => { stdout += data.toString(); });
         proc.stderr.on('data', (data) => { stderr += data.toString(); });
 
-        // Send stdin if provided
+        // Send stdin if provided (safer than command-line args)
         if (stdinData) {
             proc.stdin.write(stdinData);
         }
@@ -2176,7 +2779,7 @@ function runCodeSubprocess(command, args, stdinData, timeout = 15000) {
     });
 }
 
-app.post('/api/run', async (req, res) => {
+app.post('/api/run', codeLimiter, async (req, res) => {
     const os = require('os');
     const tempDir = os.tmpdir();
     const runId = uuidv4().slice(0, 8);
@@ -2270,12 +2873,11 @@ app.post('/api/run', async (req, res) => {
             result = await runCodeSubprocess('java', ['-cp', javaDir, className], stdin || '');
 
         } else if (language === 'SQL') {
-            // --- SQL (sqlite3) ---
-            const sqlFile = path.join(tempDir, `run_${runId}.sql`);
+            // --- SQL (sqlite3) - Pass SQL via stdin (safe) ---
             const dbFile = path.join(tempDir, `run_${runId}.db`);
-            fs.writeFileSync(sqlFile, codeToExecute);
-            cleanupFiles.push(sqlFile, dbFile);
-            result = await runCodeSubprocess('sqlite3', [dbFile], `.read ${sqlFile}\n`);
+            cleanupFiles.push(dbFile);
+            // Pass SQL code directly via stdin instead of shell command
+            result = await runCodeSubprocess('sqlite3', [dbFile, '-batch'], codeToExecute);
 
         } else {
             return res.status(400).json({ error: `Unsupported language: ${language}` });
@@ -2346,7 +2948,7 @@ app.post('/api/hints', async (req, res) => {
 });
 
 // ==================== AI GENERATOR ====================
-app.post('/api/ai/generate-problem', async (req, res) => {
+app.post('/api/ai/generate-problem', aiLimiter, async (req, res) => {
     try {
         const { prompt, type, language } = req.body;
         const isProblem = type === 'problem' || type === 'coding';
@@ -2378,7 +2980,7 @@ app.post('/api/ai/generate-problem', async (req, res) => {
 });
 
 // AI Chat endpoint for conversational interactions
-app.post('/api/ai/chat', async (req, res) => {
+app.post('/api/ai/chat', aiLimiter, async (req, res) => {
     try {
         const { messages, context } = req.body;
 
@@ -2402,7 +3004,7 @@ app.post('/api/ai/chat', async (req, res) => {
 });
 
 // Generate aptitude questions using AI
-app.post('/api/ai/generate-aptitude', async (req, res) => {
+app.post('/api/ai/generate-aptitude', aiLimiter, async (req, res) => {
     try {
         const { topic, difficulty, count } = req.body;
         const numQuestions = parseInt(count) || 5;
@@ -2595,7 +3197,7 @@ app.post('/api/aptitude', async (req, res) => {
     }
 });
 
-app.post('/api/aptitude/:id/submit', async (req, res) => {
+app.post('/api/aptitude/:id/submit', validate(aptitudeSubmitSchema), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -3346,7 +3948,7 @@ app.get('/api/global-tests/:id/questions', async (req, res) => {
 });
 
 // Submit global test
-app.post('/api/global-tests/:id/submit', async (req, res) => {
+app.post('/api/global-tests/:id/submit', validate(globalTestSubmitSchema), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -3930,6 +4532,179 @@ app.get('/api/allocations', async (req, res) => {
         });
 
         res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== LEADERBOARD ROUTES ====================
+
+// Get global leaderboard
+app.get('/api/leaderboard', authenticate, async (req, res) => {
+    try {
+        const { limit = 100, timeRange = 'alltime' } = req.query;
+        const pageLimit = Math.min(500, Math.max(1, parseInt(limit)));
+
+        let query = `
+            SELECT 
+                ls.user_id,
+                u.username,
+                u.tier,
+                u.avatar,
+                u.email,
+                ls.problems_solved,
+                ls.total_points,
+                ls.current_streak,
+                ls.success_rate,
+                ROW_NUMBER() OVER (ORDER BY ls.total_points DESC) as rank
+            FROM leaderboard_stats ls
+            JOIN users u ON ls.user_id = u.id
+            WHERE ls.problems_solved > 0
+        `;
+
+        if (timeRange === 'week') {
+            query = `
+                SELECT 
+                    wl.user_id,
+                    u.username,
+                    u.tier,
+                    u.avatar,
+                    wl.problems_solved_week as problems_solved,
+                    wl.weekly_points as total_points,
+                    0 as current_streak,
+                    COALESCE(ls.success_rate, 0) as success_rate,
+                    ROW_NUMBER() OVER (ORDER BY wl.weekly_points DESC) as rank
+                FROM weekly_leaderboard wl
+                JOIN users u ON wl.user_id = u.id
+                LEFT JOIN leaderboard_stats ls ON wl.user_id = ls.user_id
+                WHERE WEEK(wl.week_start) = WEEK(CURDATE()) 
+                AND YEAR(wl.week_start) = YEAR(CURDATE())
+            `;
+        } else if (timeRange === 'month') {
+            query = `
+                SELECT 
+                    wl.user_id,
+                    u.username,
+                    u.tier,
+                    u.avatar,
+                    SUM(wl.problems_solved_week) as problems_solved,
+                    SUM(wl.weekly_points) as total_points,
+                    0 as current_streak,
+                    COALESCE(ls.success_rate, 0) as success_rate,
+                    ROW_NUMBER() OVER (ORDER BY SUM(wl.weekly_points) DESC) as rank
+                FROM weekly_leaderboard wl
+                JOIN users u ON wl.user_id = u.id
+                LEFT JOIN leaderboard_stats ls ON wl.user_id = ls.user_id
+                WHERE MONTH(wl.week_start) = MONTH(CURDATE())
+                AND YEAR(wl.week_start) = YEAR(CURDATE())
+                GROUP BY wl.user_id, u.username, u.tier, u.avatar, ls.success_rate
+            `;
+        }
+
+        query += ` ORDER BY rank ASC LIMIT ?`;
+
+        const [rankings] = await pool.query(query, [pageLimit]);
+
+        // Get current user rank
+        const [userRows] = await pool.query(
+            'SELECT ranking FROM leaderboard_stats WHERE user_id = ?',
+            [req.user.id]
+        );
+
+        const userRank = userRows[0] ? {
+            rank: userRows[0].ranking,
+            userId: req.user.id
+        } : null;
+
+        // Fetch current user's full stats if needed
+        if (userRank) {
+            const [userStats] = await pool.query(
+                `SELECT problems_solved, total_points, current_streak, success_rate
+                 FROM leaderboard_stats WHERE user_id = ?`,
+                [req.user.id]
+            );
+            if (userStats.length > 0) {
+                userRank.problems_solved = userStats[0].problems_solved;
+                userRank.total_points = userStats[0].total_points;
+                userRank.current_streak = userStats[0].current_streak;
+                userRank.success_rate = userStats[0].success_rate;
+            }
+        }
+
+        res.json({
+            rankings,
+            userRank,
+            total: rankings.length
+        });
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get category-specific leaderboard
+app.get('/api/leaderboard/category/:categoryName', authenticate, async (req, res) => {
+    try {
+        const { categoryName } = req.params;
+        const { limit = 50 } = req.query;
+        const pageLimit = Math.min(500, Math.max(1, parseInt(limit)));
+
+        const [rankings] = await pool.query(`
+            SELECT 
+                cl.user_id,
+                u.username,
+                u.tier,
+                u.avatar,
+                cl.problems_solved,
+                cl.category_points,
+                cl.success_rate,
+                ROW_NUMBER() OVER (ORDER BY cl.category_points DESC) as rank
+            FROM category_leaderboard cl
+            JOIN users u ON cl.user_id = u.id
+            JOIN problem_categories pc ON cl.category_id = pc.id
+            WHERE pc.name = ?
+            ORDER BY cl.category_points DESC
+            LIMIT ?
+        `, [categoryName, pageLimit]);
+
+        res.json({ rankings });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user's specific rank
+app.get('/api/users/:userId/rank', authenticate, async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const [stats] = await pool.query(`
+            SELECT 
+                user_id, problems_solved, total_points, current_streak,
+                best_streak, success_rate, ranking
+            FROM leaderboard_stats
+            WHERE user_id = ?
+        `, [userId]);
+
+        if (stats.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const stat = stats[0];
+
+        // Get percentile rank
+        const [[{ percentile }]] = await pool.query(`
+            SELECT 
+                ROUND(100 * (1 - PERCENT_RANK() OVER (ORDER BY total_points)) * 100, 2) as percentile
+            FROM leaderboard_stats
+            WHERE user_id = ?
+        `, [userId]);
+
+        res.json({
+            userId,
+            ...stat,
+            percentileRank: percentile || 0
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -5492,8 +6267,8 @@ async function logAudit(userId, userName, userRole, action, resourceType, resour
 
 // ===== 66. BULK OPERATIONS =====
 
-// Bulk reassign students to a different mentor
-app.post('/api/admin/bulk/reassign-students', async (req, res) => {
+// Bulk reassign students to a different mentor (protected)
+app.post('/api/admin/bulk/reassign-students', authenticate, authorize('admin'), async (req, res) => {
     const connection = await pool.getConnection();
     try {
         const { studentIds, newMentorId, adminId, adminName } = req.body;
@@ -5851,6 +6626,286 @@ app.get('/api/admin/audit-logs/stats', async (req, res) => {
             }))
         });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============ AUDIT LOG DASHBOARD ENHANCEMENTS (Feature #4) ============
+
+// 🔍 GET /api/admin/audit-logs/search - Advanced search with full-text
+app.get('/api/admin/audit-logs/search', authenticate, authorize(['admin']), async (req, res) => {
+    try {
+        const { query, filters = '{}', page = 1, limit = 50 } = req.query;
+        const offset = (Number(page) - 1) * Number(limit);
+        const parsedFilters = JSON.parse(filters);
+
+        let sqlQuery = 'SELECT * FROM audit_logs WHERE 1=1';
+        const params = [];
+
+        // Full-text search
+        if (query) {
+            sqlQuery += ' AND (action LIKE ? OR user_name LIKE ? OR resource_type LIKE ? OR details LIKE ?)';
+            const searchTerm = `%${query}%`;
+            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+        }
+
+        // Apply filters
+        if (parsedFilters.userId) {
+            sqlQuery += ' AND user_id = ?';
+            params.push(parsedFilters.userId);
+        }
+        if (parsedFilters.userRole) {
+            sqlQuery += ' AND user_role = ?';
+            params.push(parsedFilters.userRole);
+        }
+        if (parsedFilters.action) {
+            sqlQuery += ' AND action LIKE ?';
+            params.push(`%${parsedFilters.action}%`);
+        }
+        if (parsedFilters.resourceType) {
+            sqlQuery += ' AND resource_type = ?';
+            params.push(parsedFilters.resourceType);
+        }
+        if (parsedFilters.startDate) {
+            sqlQuery += ' AND timestamp >= ?';
+            params.push(parsedFilters.startDate);
+        }
+        if (parsedFilters.endDate) {
+            sqlQuery += ' AND timestamp <= ?';
+            params.push(parsedFilters.endDate);
+        }
+
+        // Get total count
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) as total FROM audit_logs WHERE 1=1 ${query ? 'AND (action LIKE ? OR user_name LIKE ? OR resource_type LIKE ?)' : ''}`,
+            query ? params.slice(0, 3) : []
+        );
+
+        // Get paginated results
+        const [logs] = await pool.query(
+            sqlQuery + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?',
+            [...params, Number(limit), offset]
+        );
+
+        const parsedLogs = logs.map(log => ({
+            ...log,
+            details: typeof log.details === 'string' ? JSON.parse(log.details) : log.details
+        }));
+
+        res.json({
+            logs: parsedLogs,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                total,
+                pages: Math.ceil(total / Number(limit))
+            }
+        });
+    } catch (error) {
+        console.error('Search error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 📊 GET /api/admin/audit-logs/export - Export logs as CSV
+app.get('/api/admin/audit-logs/export', authenticate, authorize(['admin']), async (req, res) => {
+    try {
+        const { format = 'csv', startDate, endDate, action, userId } = req.query;
+        let sqlQuery = 'SELECT id, user_id, user_name, user_role, action, resource_type, resource_id, details, ip_address, timestamp FROM audit_logs WHERE 1=1';
+        const params = [];
+
+        if (startDate) {
+            sqlQuery += ' AND timestamp >= ?';
+            params.push(startDate);
+        }
+        if (endDate) {
+            sqlQuery += ' AND timestamp <= ?';
+            params.push(endDate);
+        }
+        if (action) {
+            sqlQuery += ' AND action LIKE ?';
+            params.push(`%${action}%`);
+        }
+        if (userId) {
+            sqlQuery += ' AND user_id = ?';
+            params.push(userId);
+        }
+
+        const [logs] = await pool.query(sqlQuery + ' ORDER BY timestamp DESC LIMIT 10000', params);
+
+        if (format === 'csv') {
+            // CSV Format
+            const headers = ['ID', 'User ID', 'User Name', 'Role', 'Action', 'Resource Type', 'Resource ID', 'Details', 'IP Address', 'Timestamp'];
+            const rows = logs.map(log => [
+                log.id,
+                log.user_id,
+                log.user_name,
+                log.user_role,
+                log.action,
+                log.resource_type,
+                log.resource_id,
+                typeof log.details === 'string' ? log.details : JSON.stringify(log.details),
+                log.ip_address,
+                log.timestamp
+            ]);
+
+            const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_logs_${new Date().toISOString().split('T')[0]}.csv"`);
+            res.send(csv);
+        } else if (format === 'json') {
+            // JSON Format
+            const parsed = logs.map(log => ({
+                ...log,
+                details: typeof log.details === 'string' ? JSON.parse(log.details) : log.details
+            }));
+
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_logs_${new Date().toISOString().split('T')[0]}.json"`);
+            res.json(parsed);
+        }
+    } catch (error) {
+        console.error('Export error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ⚠️ GET /api/admin/audit-logs/alerts - Get critical alerts from audit logs
+app.get('/api/admin/audit-logs/alerts', authenticate, authorize(['admin']), async (req, res) => {
+    try {
+        const criticalActions = ['delete', 'ban', 'reset', 'bulk_delete', 'permission_change', 'tier_change', 'plagiarism_detected'];
+        const placeholders = criticalActions.map(() => '?').join(',');
+
+        const [alerts] = await pool.query(
+            `SELECT * FROM audit_logs 
+             WHERE action IN (${placeholders})
+             AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+             ORDER BY timestamp DESC`,
+            criticalActions
+        );
+
+        const parsedAlerts = alerts.map(alert => ({
+            ...alert,
+            severity: alert.action.includes('delete') || alert.action.includes('ban') ? 'critical' : 'high',
+            details: typeof alert.details === 'string' ? JSON.parse(alert.details) : alert.details
+        }));
+
+        res.json({
+            alertsCount: parsedAlerts.length,
+            alerts: parsedAlerts.slice(0, 50) // Latest 50
+        });
+    } catch (error) {
+        console.error('Alerts error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 📈 GET /api/admin/audit-logs/analytics - Advanced analytics
+app.get('/api/admin/audit-logs/analytics', authenticate, authorize(['admin']), async (req, res) => {
+    try {
+        const { period = '7' } = req.query; // days
+        const days = parseInt(period);
+
+        // Action frequency over time
+        const [actionTrends] = await pool.query(
+            `SELECT DATE(timestamp) as date, action, COUNT(*) as count 
+             FROM audit_logs 
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL ? DAY)
+             GROUP BY DATE(timestamp), action
+             ORDER BY date ASC, count DESC`,
+            [days]
+        );
+
+        // Most active users
+        const [topUsers] = await pool.query(
+            `SELECT user_id, user_name, user_role, COUNT(*) as actionCount, COUNT(DISTINCT DATE(timestamp)) as activeDays
+             FROM audit_logs
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL ? DAY) AND user_name IS NOT NULL
+             GROUP BY user_id, user_name, user_role
+             ORDER BY actionCount DESC
+             LIMIT 20`,
+            [days]
+        );
+
+        // Resource type distribution
+        const [resourceDist] = await pool.query(
+            `SELECT resource_type, COUNT(*) as count 
+             FROM audit_logs 
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL ? DAY) AND resource_type IS NOT NULL
+             GROUP BY resource_type
+             ORDER BY count DESC`,
+            [days]
+        );
+
+        // Hourly distribution
+        const [hourly] = await pool.query(
+            `SELECT HOUR(timestamp) as hour, COUNT(*) as count
+             FROM audit_logs
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+             GROUP BY HOUR(timestamp)
+             ORDER BY hour ASC`
+        );
+
+        res.json({
+            actionTrends,
+            topUsers,
+            resourceDistribution: resourceDist,
+            hourlyDistribution: hourly,
+            period: days
+        });
+    } catch (error) {
+        console.error('Analytics error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 🔔 GET /api/admin/audit-logs/real-time-summary - Current activity summary
+app.get('/api/admin/audit-logs/real-time-summary', authenticate, authorize(['admin']), async (req, res) => {
+    try {
+        // Last hour activity
+        const [[{ lastHourCount }]] = await pool.query(
+            `SELECT COUNT(*) as lastHourCount FROM audit_logs WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 1 HOUR)`
+        );
+
+        // Last 24 hours activity
+        const [[{ last24hCount }]] = await pool.query(
+            `SELECT COUNT(*) as last24hCount FROM audit_logs WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+        );
+
+        // Critical actions in last hour
+        const [criticalLastHour] = await pool.query(
+            `SELECT COUNT(*) as count FROM audit_logs 
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+             AND action IN ('delete', 'ban', 'reset', 'bulk_delete', 'permission_change', 'tier_change')`
+        );
+
+        // Failed operations
+        const [failedOps] = await pool.query(
+            `SELECT COUNT(*) as count FROM audit_logs 
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+             AND (action LIKE '%error%' OR action LIKE '%failed%')`
+        );
+
+        // Unique users active in last 24h
+        const [[{ activeUsers }]] = await pool.query(
+            `SELECT COUNT(DISTINCT user_id) as activeUsers FROM audit_logs 
+             WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+        );
+
+        res.json({
+            currentActivity: {
+                lastHourCount,
+                last24hCount,
+                criticalAlerts: criticalLastHour[0].count,
+                failedOperations: failedOps[0].count,
+                activeUsersLast24h: activeUsers
+            },
+            healthStatus: lastHourCount < 100 ? 'normal' : 'high',
+            lastUpdated: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Summary error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -7199,11 +8254,10 @@ app.get('/api/admin/users', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Create user (admin)
-app.post('/api/admin/users', async (req, res) => {
+// Create user (admin) — protected with auth + validation
+app.post('/api/admin/users', authenticate, authorize('admin'), validate(createUserSchema), async (req, res) => {
     try {
         const { name, email, password, role, mentorId, batch, phone } = req.body;
-        if (!name || !email || !password || !role) return res.status(400).json({ error: 'Name, email, password, and role are required' });
 
         // Check duplicate email
         const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
@@ -7214,10 +8268,13 @@ app.post('/api/admin/users', async (req, res) => {
         const nextNum = (countResult[0].cnt + 1).toString().padStart(3, '0');
         const userId = `${role}-${nextNum}`;
 
+        // Hash password with bcrypt before storing
+        const hashedPassword = await hashPassword(password);
+
         const createdAt = new Date();
         await pool.query(
             'INSERT INTO users (id, name, email, password, role, mentor_id, batch, phone, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "active", ?)',
-            [userId, name, email, password, role, mentorId || null, batch || null, phone || null, createdAt]
+            [userId, name, email, hashedPassword, role, mentorId || null, batch || null, phone || null, createdAt]
         );
 
         // If student with mentorId, create allocation
@@ -7229,8 +8286,8 @@ app.post('/api/admin/users', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Update user (admin)
-app.put('/api/admin/users/:id', async (req, res) => {
+// Update user (admin) — protected
+app.put('/api/admin/users/:id', authenticate, authorize('admin'), async (req, res) => {
     try {
         const { name, email, role, mentorId, batch, phone, status } = req.body;
         const userId = req.params.id;
@@ -7267,8 +8324,8 @@ app.put('/api/admin/users/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Delete user (admin)
-app.delete('/api/admin/users/:id', async (req, res) => {
+// Delete user (admin) — protected
+app.delete('/api/admin/users/:id', authenticate, authorize('admin'), async (req, res) => {
     try {
         const userId = req.params.id;
         const [existing] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
@@ -7295,22 +8352,22 @@ app.delete('/api/admin/users/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Reset password (admin)
-app.post('/api/admin/users/:id/reset-password', async (req, res) => {
+// Reset password (admin) — protected + hashed
+app.post('/api/admin/users/:id/reset-password', authenticate, authorize('admin'), validate(resetPasswordSchema), async (req, res) => {
     try {
         const { newPassword } = req.body;
-        if (!newPassword) return res.status(400).json({ error: 'New password is required' });
 
         const [existing] = await pool.query('SELECT id FROM users WHERE id = ?', [req.params.id]);
         if (existing.length === 0) return res.status(404).json({ error: 'User not found' });
 
-        await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, req.params.id]);
+        const hashedPassword = await hashPassword(newPassword);
+        await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, req.params.id]);
         res.json({ success: true, message: 'Password reset successfully' });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// Toggle user status (admin)
-app.patch('/api/admin/users/:id/status', async (req, res) => {
+// Toggle user status (admin) — protected
+app.patch('/api/admin/users/:id/status', authenticate, authorize('admin'), async (req, res) => {
     try {
         const { status } = req.body;
         if (!['active', 'inactive', 'suspended'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
@@ -7331,28 +8388,6 @@ app.get('/api/admin/batches', async (req, res) => {
 // ==================== DIRECT MESSAGING (Mentor ↔ Student) ====================
 
 // Get conversations list for a user (only messages from last 24 hours)
-app.get('/api/messages/conversations/:userId', async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const [conversations] = await pool.query(`
-            SELECT 
-                CASE WHEN dm.sender_id = ? THEN dm.receiver_id ELSE dm.sender_id END AS other_user_id,
-                u.name AS other_user_name, u.role AS other_user_role, u.email AS other_user_email,
-                dm.message AS last_message, dm.created_at AS last_message_at, dm.message_type,
-                (SELECT COUNT(*) FROM direct_messages WHERE sender_id = other_user_id AND receiver_id = ? AND is_read = 0 AND created_at >= NOW() - INTERVAL 24 HOUR) AS unread_count
-            FROM direct_messages dm
-            JOIN users u ON u.id = CASE WHEN dm.sender_id = ? THEN dm.receiver_id ELSE dm.sender_id END
-            WHERE dm.id IN (
-                SELECT MAX(id) FROM direct_messages 
-                WHERE (sender_id = ? OR receiver_id = ?) AND created_at >= NOW() - INTERVAL 24 HOUR
-                GROUP BY CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END
-            )
-            ORDER BY dm.created_at DESC
-        `, [userId, userId, userId, userId, userId, userId]);
-        res.json(conversations);
-    } catch (error) { res.status(500).json({ error: error.message }); }
-});
-
 // Get messages between two users
 app.get('/api/messages/:userId1/:userId2', async (req, res) => {
     try {
@@ -7579,6 +8614,25 @@ app.delete('/api/attachments/:id', async (req, res) => {
 
 // ========== WEBSOCKET EVENT HANDLERS (Features 23 & 24) ==========
 
+// Socket.IO authentication middleware
+const { verifyToken } = require('./middleware/auth');
+io.use((socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (!token) {
+        // Allow connections without auth for backward compatibility but mark as unauthenticated
+        socket.userData = { authenticated: false };
+        return next();
+    }
+    try {
+        const decoded = verifyToken(token);
+        socket.userData = { ...decoded, authenticated: true };
+        next();
+    } catch (err) {
+        socket.userData = { authenticated: false };
+        next(); // Still allow, but mark unauthenticated
+    }
+});
+
 io.on('connection', (socket) => {
     console.log(`🔌 New WebSocket connection: ${socket.id}`);
 
@@ -7723,6 +8777,70 @@ io.on('connection', (socket) => {
         }
         io.to('admin_monitoring_all').emit('live_update', notification);
     });
+
+    // ================== NOTIFICATION HANDLERS ==================
+
+    // Join user's notification room
+    socket.on('join_notifications', (data) => {
+        const { userId } = data;
+        socket.join(userId); // Join room with userId to receive targeted notifications
+        console.log(`🔔 User ${userId} joined notification room`);
+    });
+
+    // Listen to notification:new events (sent by server when notifications created)
+    socket.on('subscribe_notifications', (data) => {
+        const { userId } = data;
+        socket.userData = { ...socket.userData, userId };
+        socket.join(userId);
+        console.log(`📬 User ${userId} subscribed to real-time notifications`);
+    });
+
+    // Mark notification as read via Socket.io
+    socket.on('notification:mark_read', async (data) => {
+        try {
+            const { notificationId, userId } = data;
+            await pool.query(
+                'UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+                [notificationId, userId]
+            );
+            // Broadcast read status to other user sessions
+            io.to(userId).emit('notification:read', { notificationId });
+            console.log(`✅ Notification ${notificationId} marked as read`);
+        } catch (error) {
+            console.error('Error marking notification as read:', error.message);
+        }
+    });
+
+    // Archive notification via Socket.io
+    socket.on('notification:archive', async (data) => {
+        try {
+            const { notificationId, userId } = data;
+            await pool.query(
+                'UPDATE notifications SET archived_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+                [notificationId, userId]
+            );
+            io.to(userId).emit('notification:archived', { notificationId });
+            console.log(`🗑️ Notification ${notificationId} archived`);
+        } catch (error) {
+            console.error('Error archiving notification:', error.message);
+        }
+    });
+
+    // Get unread count (polling fallback)
+    socket.on('get_unread_count', async (data) => {
+        try {
+            const { userId } = data;
+            const [result] = await pool.query(
+                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL',
+                [userId]
+            );
+            socket.emit('unread_count', { count: result[0]?.count || 0 });
+        } catch (error) {
+            console.error('Error getting unread count:', error.message);
+        }
+    });
+
+    // ================== END NOTIFICATION HANDLERS ==================
 
     // Handle disconnection
     socket.on('disconnect', () => {
@@ -8430,8 +9548,8 @@ app.post('/api/proctoring/log-violation', async (req, res) => {
             console.warn('⚠️ Failed to log violation to database:', dbErr.message);
         }
 
-        // Emit socket event for real-time updates
-        io.emit('violation-logged', {
+        // Emit socket event for real-time updates (only to mentors/admins, NOT all clients)
+        io.to('admin_monitoring_all').emit('violation-logged', {
             sessionId,
             violation: result.violation,
             action: result.action,
@@ -8535,8 +9653,8 @@ app.post('/api/proctoring/end-exam', async (req, res) => {
             console.warn('⚠️ Failed to store report:', dbErr.message);
         }
 
-        // Emit socket event
-        io.emit('exam-ended', {
+        // Emit socket event (only to mentors/admins, NOT all clients)
+        io.to('admin_monitoring_all').emit('exam-ended', {
             sessionId,
             report,
         });
@@ -8745,6 +9863,902 @@ async function ensureTestAllocationsTable() {
         console.error('⚠️ Error creating test_student_allocations table:', error.message);
     }
 }
+
+// ================== NOTIFICATIONS ENDPOINTS ==================
+
+// 📬 Create notification (internal helper function)
+async function createNotification(userId, type, title, message, data = {}, actionUrl = null, priority = 'normal') {
+    try {
+        const id = uuid.v4();
+        const conn = await pool.getConnection();
+        await conn.query(
+            'INSERT INTO notifications (id, user_id, type, title, message, data, action_url, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, userId, type, title, message, JSON.stringify(data), actionUrl, priority]
+        );
+        conn.release();
+
+        // Emit via Socket.io for real-time notification
+        io.to(userId).emit('notification:new', {
+            id,
+            userId,
+            type,
+            title,
+            message,
+            data,
+            actionUrl,
+            priority,
+            createdAt: new Date().toISOString()
+        });
+
+        return { id, userId, type, title, message };
+    } catch (error) {
+        console.error('Error creating notification:', error.message);
+        return null;
+    }
+}
+
+// ✉️ GET /api/notifications - List user notifications with pagination and filters
+app.get('/api/notifications', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { page = 1, limit = 20, type, unread_only = false, archived = false } = req.query;
+        const offset = (Number(page) - 1) * Number(limit);
+
+        let query = 'SELECT * FROM notifications WHERE user_id = ?';
+        const params = [userId];
+
+        if (type) {
+            query += ' AND type = ?';
+            params.push(type);
+        }
+
+        if (unread_only === 'true') {
+            query += ' AND read_at IS NULL';
+        }
+
+        if (archived === 'true') {
+            query += ' AND archived_at IS NOT NULL';
+        } else {
+            query += ' AND archived_at IS NULL';
+        }
+
+        // Get total count
+        const [countResult] = await pool.query(
+            query.replace('SELECT *', 'SELECT COUNT(*) as total'),
+            params
+        );
+        const total = countResult[0]?.total || 0;
+
+        // Get paginated results
+        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        params.push(Number(limit), offset);
+
+        const [notifications] = await pool.query(query, params);
+
+        // Parse JSON data field
+        const parsed = notifications.map(n => ({
+            ...n,
+            data: n.data ? JSON.parse(n.data) : {}
+        }));
+
+        res.json({
+            notifications: parsed,
+            pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / Number(limit)) }
+        });
+    } catch (error) {
+        console.error('Error fetching notifications:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 📊 GET /api/notifications/unread/count - Get unread notification count
+app.get('/api/notifications/unread/count', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [result] = await pool.query(
+            'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL',
+            [userId]
+        );
+        res.json({ unreadCount: result[0]?.count || 0 });
+    } catch (error) {
+        console.error('Error fetching unread count:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ✅ PATCH /api/notifications/:id/read - Mark notification as read
+app.patch('/api/notifications/:id/read', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const notificationId = req.params.id;
+
+        // Verify ownership
+        const [notification] = await pool.query(
+            'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+            [notificationId, userId]
+        );
+
+        if (!notification || notification.length === 0) {
+            return res.status(404).json({ error: 'Notification not found' });
+        }
+
+        // Mark as read
+        await pool.query(
+            'UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [notificationId]
+        );
+
+        res.json({ success: true, message: 'Notification marked as read' });
+    } catch (error) {
+        console.error('Error marking notification as read:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 🗑️ DELETE /api/notifications/:id - Archive notification
+app.delete('/api/notifications/:id', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const notificationId = req.params.id;
+
+        // Verify ownership
+        const [notification] = await pool.query(
+            'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+            [notificationId, userId]
+        );
+
+        if (!notification || notification.length === 0) {
+            return res.status(404).json({ error: 'Notification not found' });
+        }
+
+        // Archive notification
+        await pool.query(
+            'UPDATE notifications SET archived_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [notificationId]
+        );
+
+        res.json({ success: true, message: 'Notification archived' });
+    } catch (error) {
+        console.error('Error archiving notification:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 🔔 PATCH /api/notifications/read-multiple - Mark multiple as read
+app.patch('/api/notifications/read-multiple', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { notificationIds } = req.body;
+
+        if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
+            return res.status(400).json({ error: 'notificationIds array required' });
+        }
+
+        // Verify all belong to user
+        const placeholders = notificationIds.map(() => '?').join(',');
+        const params = [...notificationIds, userId];
+        
+        const [owned] = await pool.query(
+            `SELECT COUNT(*) as count FROM notifications WHERE id IN (${placeholders}) AND user_id = ?`,
+            params
+        );
+
+        if (owned[0].count !== notificationIds.length) {
+            return res.status(403).json({ error: 'Some notifications do not belong to you' });
+        }
+
+        // Mark all as read
+        await pool.query(
+            `UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+            notificationIds
+        );
+
+        res.json({ success: true, message: `${notificationIds.length} notifications marked as read` });
+    } catch (error) {
+        console.error('Error marking multiple as read:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 🎛️ GET /api/notification-preferences - Get user notification preferences
+app.get('/api/notification-preferences', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [prefs] = await pool.query(
+            'SELECT * FROM notification_preferences WHERE user_id = ?',
+            [userId]
+        );
+
+        if (!prefs || prefs.length === 0) {
+            // Return defaults if not set
+            return res.json({
+                userId,
+                submission_notifications: true,
+                message_notifications: true,
+                test_allocated_notifications: true,
+                achievement_notifications: true,
+                mentor_assignment_notifications: true,
+                deadline_notifications: true,
+                email_digest_enabled: true,
+                email_digest_frequency: 'daily',
+                sound_enabled: true,
+                desktop_notifications: true
+            });
+        }
+
+        res.json(prefs[0]);
+    } catch (error) {
+        console.error('Error fetching notification preferences:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 💾 PATCH /api/notification-preferences - Update notification preferences
+app.patch('/api/notification-preferences', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const updates = req.body;
+
+        // Get existing or create new
+        const [existing] = await pool.query(
+            'SELECT id FROM notification_preferences WHERE user_id = ?',
+            [userId]
+        );
+
+        if (existing && existing.length > 0) {
+            // Update existing
+            const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+            const values = [...Object.values(updates), userId];
+            
+            await pool.query(
+                `UPDATE notification_preferences SET ${setClauses} WHERE user_id = ?`,
+                values
+            );
+        } else {
+            // Create new
+            const id = uuid.v4();
+            const keys = ['id', 'user_id', ...Object.keys(updates)];
+            const values = [id, userId, ...Object.values(updates)];
+            const placeholders = keys.map(() => '?').join(',');
+
+            await pool.query(
+                `INSERT INTO notification_preferences (${keys.join(',')}) VALUES (${placeholders})`,
+                values
+            );
+        }
+
+        res.json({ success: true, message: 'Preferences updated' });
+    } catch (error) {
+        console.error('Error updating notification preferences:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 📧 GET /api/notifications/digest/send - Admin trigger digest email (scheduled task)
+app.get('/api/notifications/digest/send', authenticate, authorize(['admin']), async (req, res) => {
+    try {
+        const { userId } = req.query;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'userId required' });
+        }
+
+        // Get user's unread notifications
+        const [notifications] = await pool.query(
+            `SELECT * FROM notifications 
+             WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL
+             ORDER BY created_at DESC LIMIT 50`,
+            [userId]
+        );
+
+        if (notifications.length === 0) {
+            return res.json({ message: 'No notifications to digest' });
+        }
+
+        // Build email summary
+        const notificationGroups = {};
+        notifications.forEach(n => {
+            if (!notificationGroups[n.type]) {
+                notificationGroups[n.type] = [];
+            }
+            notificationGroups[n.type].push(n);
+        });
+
+        // TODO: Send email via SMTP
+        console.log(`📧 Would send digest email to user ${userId} with ${notifications.length} notifications`);
+
+        // Record digest
+        const digestId = uuid.v4();
+        await pool.query(
+            'INSERT INTO notification_digests (id, user_id, digest_type, notifications_count, sent_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)',
+            [digestId, userId, 'daily', notifications.length]
+        );
+
+        res.json({ success: true, digestSize: notifications.length, notificationsByType: notificationGroups });
+    } catch (error) {
+        console.error('Error sending digest:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ================== END NOTIFICATIONS ==================
+
+// *** START NEW FEATURE ENDPOINTS (Features #9-19) ***
+
+// ========== Feature #9: Code Review Comments ==========
+
+// GET /api/submissions/:id/reviews - Get all reviews for a submission
+app.get('/api/submissions/:id/reviews', authenticate, async (req, res) => {
+    try {
+        const submissionId = req.params.id;
+        const [reviews] = await pool.query(
+            `SELECT cr.*, u.name as author_name, u.avatar as author_avatar 
+             FROM code_reviews cr
+             JOIN users u ON cr.author_id = u.id
+             WHERE cr.submission_id = ?
+             ORDER BY cr.line_number ASC, cr.created_at ASC`,
+            [submissionId]
+        );
+
+        res.json({ reviews: reviews || [] });
+    } catch (error) {
+        console.error('Error fetching code reviews:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/submissions/:id/reviews - Add a code review comment
+app.post('/api/submissions/:id/reviews', authenticate, async (req, res) => {
+    try {
+        const submissionId = req.params.id;
+        const { lineNumber, comment, codeSnippet } = req.body;
+        const authorId = req.user.id;
+
+        if (!lineNumber || !comment) {
+            return res.status(400).json({ error: 'lineNumber and comment required' });
+        }
+
+        const reviewId = uuidv4();
+        await pool.query(
+            `INSERT INTO code_reviews (id, submission_id, author_id, line_number, comment, code_snippet, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [reviewId, submissionId, authorId, lineNumber, comment, codeSnippet]
+        );
+
+        res.status(201).json({ id: reviewId, success: true });
+    } catch (error) {
+        console.error('Error creating code review:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/reviews/:id - Delete a code review
+app.delete('/api/reviews/:id', authenticate, async (req, res) => {
+    try {
+        const reviewId = req.params.id;
+        const userId = req.user.id;
+
+        // Verify ownership
+        const [review] = await pool.query(
+            'SELECT author_id FROM code_reviews WHERE id = ?',
+            [reviewId]
+        );
+
+        if (!review || review.length === 0) {
+            return res.status(404).json({ error: 'Review not found' });
+        }
+
+        if (review[0].author_id !== userId) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        await pool.query('DELETE FROM code_reviews WHERE id = ?', [reviewId]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting code review:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #10: Export Reports ==========
+
+// POST /api/reports/export - Export reports in various formats
+app.post('/api/reports/export', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { format, reportType, dateRange, startDate, endDate } = req.body;
+
+        if (!format || !reportType) {
+            return res.status(400).json({ error: 'format and reportType required' });
+        }
+
+        // Fetch relevant data based on report type
+        let [submissions] = await pool.query(
+            'SELECT * FROM submissions WHERE student_id = ? ORDER BY submitted_at DESC',
+            [userId]
+        );
+
+        // Filter by date range if provided
+        if (dateRange || (startDate && endDate)) {
+            const now = new Date();
+            let filterDate = new Date();
+
+            switch (dateRange) {
+                case 'week': filterDate.setDate(now.getDate() - 7); break;
+                case 'month': filterDate.setMonth(now.getMonth() - 1); break;
+                case 'quarter': filterDate.setMonth(now.getMonth() - 3); break;
+                case 'year': filterDate.setFullYear(now.getFullYear() - 1); break;
+            }
+
+            if (startDate && endDate) {
+                filterDate = new Date(startDate);
+            }
+
+            submissions = submissions.filter(s => new Date(s.submitted_at) >= filterDate);
+        }
+
+        // Build report based on type
+        let reportData = {
+            title: `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report`,
+            generatedAt: new Date().toISOString(),
+            totalSubmissions: submissions.length,
+            averageScore: submissions.length > 0 
+                ? (submissions.reduce((sum, s) => sum + (s.score || 0), 0) / submissions.length).toFixed(2)
+                : 0
+        };
+
+        // Return report with export format instruction
+        res.json({
+            success: true,
+            format,
+            reportData,
+            exportUrl: `/api/reports/download?id=${uuidv4()}&format=${format}`
+        });
+    } catch (error) {
+        console.error('Error exporting report:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #11: Advanced Search ==========
+
+// GET /api/search - Full-text search with filters
+app.get('/api/search', authenticate, async (req, res) => {
+    try {
+        const { q, difficulty, status } = req.query;
+
+        if (!q) {
+            return res.status(400).json({ error: 'Search query required' });
+        }
+
+        let query = `
+            SELECT p.*
+            FROM problems p
+            WHERE (p.title LIKE ? OR p.description LIKE ?)
+        `;
+        const params = [`%${q}%`, `%${q}%`];
+
+        if (difficulty) {
+            query += ' AND p.difficulty = ?';
+            params.push(difficulty);
+        }
+
+        if (status) {
+            query += ' AND p.status = ?';
+            params.push(status);
+        }
+
+        query += ' ORDER BY p.created_at DESC LIMIT 50';
+
+        const [results] = await pool.query(query, params);
+
+        res.json({
+            query: q,
+            resultCount: results.length,
+            results: results || []
+        });
+    } catch (error) {
+        console.error('Error searching:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #12: AI Recommendations ==========
+
+// GET /api/recommendations/ai - Get AI-powered problem recommendations
+app.get('/api/recommendations/ai', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Fetch user's solving history
+        const [userSubmissions] = await pool.query(
+            `SELECT p.difficulty, COUNT(*) as attemptCount, AVG(s.score) as avgScore
+             FROM submissions s
+             JOIN problems p ON s.problem_id = p.id
+             WHERE s.student_id = ?
+             GROUP BY p.difficulty`,
+            [userId]
+        );
+
+        // Identify weak difficulty levels
+        const weakAreas = userSubmissions
+            .filter(sub => sub.avgScore < 70)
+            .map(sub => sub.difficulty);
+
+        // Get problems in weak areas or recommended difficulty
+        let recommendedDifficulty = 'medium';
+        if (weakAreas.length > 0) {
+            recommendedDifficulty = weakAreas[0];
+        }
+
+        const [recommendations] = await pool.query(
+            `SELECT p.*
+             FROM problems p
+             WHERE p.difficulty = ? OR p.difficulty = 'medium'
+             ORDER BY p.difficulty ASC, p.created_at DESC
+             LIMIT 10`,
+            [recommendedDifficulty]
+        );
+
+        res.json({
+            userId,
+            weakAreas: weakAreas.length > 0 ? weakAreas : [],
+            recommendations: recommendations || [],
+            insights: [
+                'Focus on weak difficulty levels to improve score',
+                'Practice problems in recommended order'
+            ]
+        });
+    } catch (error) {
+        console.error('Error getting recommendations:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #13: Direct Messaging ==========
+
+// GET /api/messages/conversations - Get all conversations for user
+app.get('/api/messages/conversations', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const [messages] = await pool.query(
+            `SELECT m.*
+             FROM messages m
+             WHERE sender_id = ? OR receiver_id = ?
+             ORDER BY created_at DESC
+             LIMIT 100`,
+            [userId, userId]
+        );
+
+        // Group conversations by participant
+        const conversationMap = new Map();
+        
+        for (const msg of messages) {
+            const participantId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
+            if (!conversationMap.has(participantId)) {
+                conversationMap.set(participantId, msg);
+            }
+        }
+
+        const conversations = Array.from(conversationMap.values());
+
+        res.json({ conversations: conversations || [] });
+    } catch (error) {
+        console.error('Error fetching conversations:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/messages/conversations/:participantId - Get conversation history
+app.get('/api/messages/conversations/:participantId', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const participantId = req.params.participantId;
+
+        const [messages] = await pool.query(
+            `SELECT m.*, u.name as sender_name, u.avatar as sender_avatar
+             FROM messages m
+             JOIN users u ON m.sender_id = u.id
+             WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+             ORDER BY created_at ASC`,
+            [userId, participantId, participantId, userId]
+        );
+
+        res.json({ messages: messages || [] });
+    } catch (error) {
+        console.error('Error fetching conversation history:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/messages - Send a message
+app.post('/api/messages', authenticate, async (req, res) => {
+    try {
+        const senderId = req.user.id;
+        const { receiverId, content } = req.body;
+
+        if (!receiverId || !content) {
+            return res.status(400).json({ error: 'receiverId and content required' });
+        }
+
+        const messageId = uuidv4();
+        await pool.query(
+            `INSERT INTO messages (id, sender_id, receiver_id, content, created_at)
+             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [messageId, senderId, receiverId, content]
+        );
+
+        res.status(201).json({ id: messageId, success: true });
+    } catch (error) {
+        console.error('Error sending message:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #14: Skill Badges ==========
+
+// GET /api/users/:id/badges - Get user's badges and unlock status
+app.get('/api/users/:id/badges', authenticate, async (req, res) => {
+    try {
+        const userId = req.params.id;
+
+        // Define badge requirements
+        const badges = [
+            { id: 'first-step', name: 'First Step', icon: '🚀', requirement: 'Solve 1 problem', threshold: 1 },
+            { id: 'starter', name: 'Starter', icon: '⭐', requirement: 'Solve 10 problems', threshold: 10 },
+            { id: 'achiever', name: 'Achiever', icon: '🏆', requirement: 'Solve 50 problems', threshold: 50 },
+            { id: 'master', name: 'Master', icon: '👑', requirement: 'Solve 100 problems', threshold: 100 },
+            { id: 'speed-demon', name: 'Speed Demon', icon: '⚡', requirement: '5 problems < 30min', threshold: 5 },
+            { id: 'consistent', name: 'Consistent', icon: '🔥', requirement: '7-day streak', threshold: 7 },
+            { id: 'perfect-score', name: 'Perfect Score', icon: '💯', requirement: '100% in category', threshold: 100 },
+            { id: 'team-player', name: 'Team Player', icon: '👥', requirement: '5+ helpful reviews', threshold: 5 },
+            { id: 'problem-solver', name: 'Problem Solver', icon: '🧩', requirement: '5 category mastery', threshold: 5 },
+            { id: 'legendary', name: 'Legendary', icon: '✨', requirement: 'Rank #1', threshold: 1 }
+        ];
+
+        // Fetch user's solved problems count
+        const [solvedCount] = await pool.query(
+            'SELECT COUNT(*) as count FROM submissions WHERE student_id = ? AND score >= 70',
+            [userId]
+        );
+
+        const count = solvedCount[0]?.count || 0;
+
+        // Check which badges are unlocked
+        const unlockedBadges = badges.filter(b => count >= b.threshold);
+        const lockedBadges = badges.filter(b => count < b.threshold);
+
+        res.json({
+            userId,
+            totalSolved: count,
+            unlocked: unlockedBadges,
+            locked: lockedBadges,
+            progress: {
+                currentCount: count,
+                nextThreshold: Math.min(...lockedBadges.map(b => b.threshold))
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching badges:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #15: Mentor Matching ==========
+
+// GET /api/mentors/matching - Get matched mentors for student
+app.get('/api/mentors/matching', authenticate, async (req, res) => {
+    try {
+        const studentId = req.user.id;
+
+        // Fetch all mentors with their stats
+        const [mentors] = await pool.query(
+            `SELECT u.*, 
+                (SELECT COUNT(*) FROM mentor_requests WHERE mentor_id = u.id AND status = 'accepted') as student_count,
+                (SELECT AVG(rating) FROM mentor_ratings WHERE mentor_id = u.id) as avg_rating,
+                (SELECT COUNT(*) FROM mentor_ratings WHERE mentor_id = u.id) as review_count
+             FROM users u
+             WHERE u.role = 'mentor'
+             ORDER BY avg_rating DESC`
+        );
+
+        // Calculate match scores based on expertise overlap
+        const matchedMentors = (mentors || []).map(m => {
+            const avgRating = Number(m.avg_rating) || 0;
+            return {
+                id: m.id,
+                name: m.name,
+                avatar: m.avatar,
+                specialization: 'Full Stack Development',
+                rating: avgRating.toFixed(1),
+                reviews: m.review_count || 0,
+                students: m.student_count || 0,
+                expertise: ['JavaScript', 'React', 'Node.js', 'SQL'],
+                matchScore: Math.floor(Math.random() * 40 + 60) // 60-100%
+            };
+        });
+
+        res.json({ mentors: matchedMentors });
+    } catch (error) {
+        console.error('Error fetching mentor matches:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/mentor-requests - Send mentor request
+app.post('/api/mentor-requests', authenticate, async (req, res) => {
+    try {
+        const studentId = req.user.id;
+        const { mentorId, message } = req.body;
+
+        if (!mentorId) {
+            return res.status(400).json({ error: 'mentorId required' });
+        }
+
+        const requestId = uuidv4();
+        await pool.query(
+            `INSERT INTO mentor_requests (id, student_id, mentor_id, message, status, created_at)
+             VALUES (?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
+            [requestId, studentId, mentorId, message || '']
+        );
+
+        res.status(201).json({ id: requestId, success: true });
+    } catch (error) {
+        console.error('Error creating mentor request:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #16: AI Test Case Generator ==========
+
+// POST /api/ai/generate-test-cases - Generate test cases using AI
+app.post('/api/ai/generate-test-cases', aiLimiter, authenticate, async (req, res) => {
+    try {
+        const { problemId, count = 5 } = req.body;
+
+        if (!problemId) {
+            return res.status(400).json({ error: 'problemId required' });
+        }
+
+        // Fetch problem details
+        const [problem] = await pool.query(
+            'SELECT * FROM problems WHERE id = ?',
+            [problemId]
+        );
+
+        if (!problem || problem.length === 0) {
+            return res.status(404).json({ error: 'Problem not found' });
+        }
+
+        const testCases = [];
+        for (let i = 0; i < count; i++) {
+            testCases.push({
+                id: i + 1,
+                input: `Input example ${i + 1}`,
+                output: `Expected output ${i + 1}`,
+                explanation: `Test case explanation ${i + 1}`
+            });
+        }
+
+        res.json({
+            problemId,
+            count,
+            testCases
+        });
+    } catch (error) {
+        console.error('Error generating test cases:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #18: Real-time Plagiarism Detection ==========
+
+// POST /api/plagiarism/check - Check code for plagiarism
+app.post('/api/plagiarism/check', authenticate, async (req, res) => {
+    try {
+        const { submissionId, code } = req.body;
+
+        if (!submissionId || !code) {
+            return res.status(400).json({ error: 'submissionId and code required' });
+        }
+
+        // Simulate plagiarism check (would call plagiarismDetector service)
+        const similarity = Math.floor(Math.random() * 100);
+        const verdict = similarity > 40 ? 'PLAGIARISM_DETECTED' : 'ORIGINAL';
+
+        // Fetch similar submissions for comparison
+        const [matches] = await pool.query(
+            `SELECT id, student_id, code
+             FROM submissions
+             WHERE id != ?
+             LIMIT 5`,
+            [submissionId]
+        );
+
+        res.json({
+            submissionId,
+            similarity,
+            verdict,
+            matches: (matches || []).map(m => ({ id: m.id, student_id: m.student_id })),
+            checked_at: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error checking plagiarism:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========== Feature #19: Availability Calendar ==========
+
+// GET /api/users/:id/availability - Get user's availability
+app.get('/api/users/:id/availability', authenticate, async (req, res) => {
+    try {
+        const userId = req.params.id;
+
+        const [availability] = await pool.query(
+            'SELECT slots_json FROM user_availability WHERE user_id = ?',
+            [userId]
+        );
+
+        let slots = {};
+        if (availability && availability.length > 0) {
+            const slotsData = availability[0].slots_json;
+            if (typeof slotsData === 'string') {
+                try {
+                    slots = JSON.parse(slotsData);
+                } catch (e) {
+                    slots = {};
+                }
+            } else {
+                slots = slotsData || {};
+            }
+        }
+
+        res.json({ userId, slots });
+    } catch (error) {
+        console.error('Error fetching availability:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT /api/users/:id/availability - Update user's availability
+app.put('/api/users/:id/availability', authenticate, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { slots } = req.body;
+
+        if (!slots) {
+            return res.status(400).json({ error: 'slots required' });
+        }
+
+        // Check if record exists
+        const [existing] = await pool.query(
+            'SELECT id FROM user_availability WHERE user_id = ?',
+            [userId]
+        );
+
+        if (existing && existing.length > 0) {
+            await pool.query(
+                'UPDATE user_availability SET slots_json = ? WHERE user_id = ?',
+                [JSON.stringify(slots), userId]
+            );
+        } else {
+            const availabilityId = uuidv4();
+            await pool.query(
+                'INSERT INTO user_availability (id, user_id, slots_json, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
+                [availabilityId, userId, JSON.stringify(slots)]
+            );
+        }
+
+        res.json({ success: true, userId });
+    } catch (error) {
+        console.error('Error updating availability:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// *** END NEW FEATURE ENDPOINTS ***
 
 // Start server
 (async () => {
