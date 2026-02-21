@@ -1,10 +1,12 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { ThemeContext } from '../App';
+import { useAuth } from '../App';
 import { Bell, X, Archive, Check } from 'lucide-react';
 import '../styles/NotificationCenter.css';
 
 const NotificationCenter = ({ socket }) => {
     const { theme } = useContext(ThemeContext);
+    const { user } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -15,8 +17,8 @@ const NotificationCenter = ({ socket }) => {
     const [preferences, setPreferences] = useState(null);
     const [showPreferences, setShowPreferences] = useState(false);
 
-    const userId = localStorage.getItem('userId');
-    const token = localStorage.getItem('token');
+    const userId = user?.id;
+    const token = localStorage.getItem('authToken');
 
     // Fetch notifications
     const fetchNotifications = async () => {
@@ -88,7 +90,7 @@ const NotificationCenter = ({ socket }) => {
 
             if (response.ok) {
                 setNotifications(prev =>
-                    prev.map(n => n.id === notificationId ? { ...n, read_at: new Date() } : n)
+                    prev.map(n => n.id === notificationId ? { ...n, read_status: 1 } : n)
                 );
                 fetchUnreadCount();
 
@@ -142,7 +144,12 @@ const NotificationCenter = ({ socket }) => {
         }
     };
 
-    // Initialize
+    // Fetch unread count on mount so badge shows immediately
+    useEffect(() => {
+        if (token) fetchUnreadCount();
+    }, [token]);
+
+    // Initialize full data when panel opens
     useEffect(() => {
         if (isOpen) {
             fetchNotifications();
@@ -162,7 +169,7 @@ const NotificationCenter = ({ socket }) => {
 
         socket.on('notification:read', ({ notificationId }) => {
             setNotifications(prev =>
-                prev.map(n => n.id === notificationId ? { ...n, read_at: new Date() } : n)
+                prev.map(n => n.id === notificationId ? { ...n, read_status: 1 } : n)
             );
         });
 
@@ -201,7 +208,7 @@ const NotificationCenter = ({ socket }) => {
     const filteredNotifications = filter === 'all'
         ? notifications
         : filter === 'unread'
-        ? notifications.filter(n => !n.read_at)
+        ? notifications.filter(n => !n.read_status)
         : notifications.filter(n => n.type === filter);
 
     return (
@@ -335,7 +342,7 @@ const NotificationCenter = ({ socket }) => {
                             filteredNotifications.map(notification => (
                                 <div
                                     key={notification.id}
-                                    className={`notification-item ${notification.read_at ? 'read' : 'unread'}`}
+                                    className={`notification-item ${notification.read_status ? 'read' : 'unread'}`}
                                     style={{ borderLeftColor: getPriorityColor(notification.priority) }}
                                 >
                                     <div className="notification-icon">
@@ -349,7 +356,7 @@ const NotificationCenter = ({ socket }) => {
                                         </div>
                                     </div>
                                     <div className="notification-actions">
-                                        {!notification.read_at && (
+                                        {!notification.read_status && (
                                             <button
                                                 className="action-btn"
                                                 onClick={() => markAsRead(notification.id)}

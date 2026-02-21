@@ -1,8 +1,9 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth, useTheme } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import NotificationCenter from './NotificationCenter'
 import './DashboardLayout.css'
 
 function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
@@ -13,6 +14,23 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
     const [isOnline, setIsOnline] = useState(navigator.onLine)
     const [showLangMenu, setShowLangMenu] = useState(false)
     const [expandedGroups, setExpandedGroups] = useState({})
+    const location = useLocation()
+
+    // Auto-expand the group that contains the currently active route
+    useEffect(() => {
+        if (!navItems) return
+        navItems.forEach(item => {
+            if (item.children) {
+                const hasActive = item.children.some(child =>
+                    location.pathname === child.path ||
+                    location.pathname.startsWith(child.path + '/')
+                )
+                if (hasActive) {
+                    setExpandedGroups(prev => ({ ...prev, [item.label]: true }))
+                }
+            }
+        })
+    }, [location.pathname, navItems])
 
     useEffect(() => {
         const goOnline = () => setIsOnline(true)
@@ -268,6 +286,8 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                             {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
                             <span className="sr-only">{isOnline ? 'Online' : 'Offline'}</span>
                         </div>
+                        {/* Notifications */}
+                        <NotificationCenter />
                         {mentorInfo && (
                             <div className="mentor-badge-nav">
                                 <div className="mentor-avatar-nav" aria-hidden="true">

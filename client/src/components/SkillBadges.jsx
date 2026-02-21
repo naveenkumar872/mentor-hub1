@@ -6,8 +6,9 @@ import '../styles/SkillBadges.css';
 const SkillBadges = () => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
-    const [badges, setBadges] = useState([]);
     const [unlockedBadges, setUnlockedBadges] = useState([]);
+    const [lockedBadges, setLockedBadges] = useState([]);
+    const [totalSolved, setTotalSolved] = useState(0);
     const [loading, setLoading] = useState(true);
     const token = localStorage.getItem('authToken');
 
@@ -23,7 +24,8 @@ const SkillBadges = () => {
             if (response.ok) {
                 const data = await response.json();
                 setUnlockedBadges(data.unlocked || []);
-                setBadges(data.allBadges || []);
+                setLockedBadges(data.locked || []);
+                setTotalSolved(data.totalSolved || 0);
             }
         } catch (error) {
             console.error('Error loading badges:', error);
@@ -31,19 +33,6 @@ const SkillBadges = () => {
             setLoading(false);
         }
     };
-
-    const allBadgeDefinitions = [
-        { id: 1, name: 'First Step', icon: '🚀', description: 'Solve your first problem', requirement: 'problems_solved >= 1' },
-        { id: 2, name: 'Starter', icon: '⭐', description: 'Solve 10 problems', requirement: 'problems_solved >= 10' },
-        { id: 3, name: 'Achiever', icon: '🏆', description: 'Solve 50 problems', requirement: 'problems_solved >= 50' },
-        { id: 4, name: 'Master', icon: '👑', description: 'Solve 100 problems', requirement: 'problems_solved >= 100' },
-        { id: 5, name: 'Speed Demon', icon: '⚡', description: 'Solve 5 problems in <30min each', requirement: 'fast_solves >= 5' },
-        { id: 6, name: 'Consistent', icon: '🔥', description: 'Maintain 7-day streak', requirement: 'best_streak >= 7' },
-        { id: 7, name: 'Perfect Score', icon: '💯', description: 'Get 100% success rate in a category', requirement: 'category_perfection >= 1' },
-        { id: 8, name: 'Team Player', icon: '👥', description: 'Help 5 peers in code review', requirement: 'helpful_reviews >= 5' },
-        { id: 9, name: 'Problem Solver', icon: '🧩', description: 'Solve problems from 5 different categories', requirement: 'categories_mastered >= 5' },
-        { id: 10, name: 'Legendary', icon: '✨', description: 'Reach rank #1 on leaderboard', requirement: 'rank === 1' }
-    ];
 
     return (
         <div className={`skill-badges-container ${theme}`}>
@@ -67,21 +56,15 @@ const SkillBadges = () => {
                         </h3>
                         <div className="badges-grid">
                             {unlockedBadges.length > 0 ? (
-                                unlockedBadges.map(badge => {
-                                    const badgeDef = allBadgeDefinitions.find(b => b.id === badge.badge_id);
-                                    return (
-                                        <div key={badge.id} className="badge-card unlocked">
-                                            <div className="badge-icon">{badgeDef?.icon}</div>
-                                            <div className="badge-name">{badgeDef?.name}</div>
-                                            <div className="badge-description">{badgeDef?.description}</div>
-                                            <div className="unlock-date">
-                                                Unlocked {new Date(badge.unlocked_at).toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                    );
-                                })
+                                unlockedBadges.map(badge => (
+                                    <div key={badge.id} className="badge-card unlocked">
+                                        <div className="badge-icon">{badge.icon}</div>
+                                        <div className="badge-name">{badge.name}</div>
+                                        <div className="badge-description">{badge.requirement}</div>
+                                    </div>
+                                ))
                             ) : (
-                                <div className="no-badges">No badges unlocked yet. Complete challenges to earn them!</div>
+                                <div className="no-badges">No badges unlocked yet. Complete challenges to earn them! (Problems solved: {totalSolved})</div>
                             )}
                         </div>
                     </div>
@@ -90,19 +73,17 @@ const SkillBadges = () => {
                     <div className="badges-section">
                         <h3>
                             <Lock size={20} />
-                            Locked Badges
+                            Locked Badges ({lockedBadges.length})
                         </h3>
                         <div className="badges-grid">
-                            {allBadgeDefinitions
-                                .filter(b => !unlockedBadges.find(ub => ub.badge_id === b.id))
-                                .map(badge => (
-                                    <div key={badge.id} className="badge-card locked">
-                                        <div className="badge-icon locked-icon">{badge.icon}</div>
-                                        <div className="badge-name">{badge.name}</div>
-                                        <div className="badge-description">{badge.description}</div>
-                                        <div className="badge-requirement">{badge.requirement}</div>
-                                    </div>
-                                ))}
+                            {lockedBadges.map(badge => (
+                                <div key={badge.id} className="badge-card locked">
+                                    <div className="badge-icon locked-icon">{badge.icon}</div>
+                                    <div className="badge-name">{badge.name}</div>
+                                    <div className="badge-description">{badge.requirement}</div>
+                                    <div className="badge-requirement">Need: {badge.threshold} solved</div>
+                                </div>
+                            ))}
                         </div>
                     </div>
 

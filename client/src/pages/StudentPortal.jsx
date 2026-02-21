@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2 } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Code, Send, Trophy, Clock, CheckCircle, XCircle, ChevronRight, Play, Upload, FileText, Trash2, Eye, AlertTriangle, Download, Lightbulb, HelpCircle, Sparkles, Target, Zap, BookOpen, Brain, Award, X, Video, Shield, Search, BarChart3, Flame, Layers, Database, RefreshCw, TrendingUp, Radar, Users, ArrowUpRight, ArrowDownRight, Minus, PieChart, MessageSquare, Github, ExternalLink, Link2, Calendar } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import AptitudeTestInterface from '@/components/AptitudeTestInterface'
 import GlobalTestInterface from '@/components/GlobalTestInterface'
@@ -19,8 +19,7 @@ import AITestCaseGenerator from '@/components/AITestCaseGenerator'
 import CodeReviewPanel from '@/components/CodeReviewPanel'
 import ExportReports from '@/components/ExportReports'
 import PlagiarismChecker from '@/components/PlagiarismChecker'
-import MentorMatching from '@/components/MentorMatching'
-import AvailabilityCalendar from '@/components/AvailabilityCalendar'
+import MentorAvailabilityView from '@/components/MentorAvailabilityView'
 import FeaturesShowcase from '@/components/FeaturesShowcase'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
@@ -129,7 +128,6 @@ function StudentPortal() {
 
     const navItems = [
         { path: '/student', label: t('dashboard'), icon: <LayoutDashboard size={20} /> },
-        { path: '/student/features', label: '✨ All Features', icon: <Sparkles size={20} /> },
         {
             label: 'Learning',
             icon: <ClipboardList size={20} />,
@@ -165,17 +163,15 @@ function StudentPortal() {
             children: [
                 { path: '/student/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> },
                 { path: '/student/plagiarism', label: 'Plagiarism Check', icon: <AlertTriangle size={20} /> },
-                { path: '/student/mentor-matching', label: 'Mentor Matching', icon: <Users size={20} /> },
                 { path: '/student/messaging', label: 'Direct Messages', icon: <MessageSquare size={20} />, badge: unreadCount }
             ]
         },
         {
-            label: 'Calendar & Settings',
-            icon: <Clock size={20} />,
+            label: 'My Mentor',
+            icon: <Calendar size={20} />,
             defaultExpanded: false,
             children: [
-                { path: '/student/availability', label: 'Availability Calendar', icon: <Clock size={20} /> },
-                { path: '/student/settings', label: 'Settings', icon: <Zap size={20} /> }
+                { path: '/student/availability', label: 'Mentor Availability', icon: <Calendar size={20} /> }
             ]
         }
     ]
@@ -200,9 +196,8 @@ function StudentPortal() {
                 <Route path="/reports" element={<ExportReports user={user} />} />
                 <Route path="/code-reviews" element={<CodeReviewPanel user={user} />} />
                 <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
-                <Route path="/mentor-matching" element={<MentorMatching currentUser={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
-                <Route path="/availability" element={<AvailabilityCalendar user={user} />} />
+                <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
             </Routes>
         </DashboardLayout>

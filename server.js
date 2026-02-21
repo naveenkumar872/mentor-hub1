@@ -4539,109 +4539,6 @@ app.get('/api/allocations', async (req, res) => {
 
 // ==================== LEADERBOARD ROUTES ====================
 
-// Get global leaderboard
-app.get('/api/leaderboard', authenticate, async (req, res) => {
-    try {
-        const { limit = 100, timeRange = 'alltime' } = req.query;
-        const pageLimit = Math.min(500, Math.max(1, parseInt(limit)));
-
-        let query = `
-            SELECT 
-                ls.user_id,
-                u.username,
-                u.tier,
-                u.avatar,
-                u.email,
-                ls.problems_solved,
-                ls.total_points,
-                ls.current_streak,
-                ls.success_rate,
-                ROW_NUMBER() OVER (ORDER BY ls.total_points DESC) as rank
-            FROM leaderboard_stats ls
-            JOIN users u ON ls.user_id = u.id
-            WHERE ls.problems_solved > 0
-        `;
-
-        if (timeRange === 'week') {
-            query = `
-                SELECT 
-                    wl.user_id,
-                    u.username,
-                    u.tier,
-                    u.avatar,
-                    wl.problems_solved_week as problems_solved,
-                    wl.weekly_points as total_points,
-                    0 as current_streak,
-                    COALESCE(ls.success_rate, 0) as success_rate,
-                    ROW_NUMBER() OVER (ORDER BY wl.weekly_points DESC) as rank
-                FROM weekly_leaderboard wl
-                JOIN users u ON wl.user_id = u.id
-                LEFT JOIN leaderboard_stats ls ON wl.user_id = ls.user_id
-                WHERE WEEK(wl.week_start) = WEEK(CURDATE()) 
-                AND YEAR(wl.week_start) = YEAR(CURDATE())
-            `;
-        } else if (timeRange === 'month') {
-            query = `
-                SELECT 
-                    wl.user_id,
-                    u.username,
-                    u.tier,
-                    u.avatar,
-                    SUM(wl.problems_solved_week) as problems_solved,
-                    SUM(wl.weekly_points) as total_points,
-                    0 as current_streak,
-                    COALESCE(ls.success_rate, 0) as success_rate,
-                    ROW_NUMBER() OVER (ORDER BY SUM(wl.weekly_points) DESC) as rank
-                FROM weekly_leaderboard wl
-                JOIN users u ON wl.user_id = u.id
-                LEFT JOIN leaderboard_stats ls ON wl.user_id = ls.user_id
-                WHERE MONTH(wl.week_start) = MONTH(CURDATE())
-                AND YEAR(wl.week_start) = YEAR(CURDATE())
-                GROUP BY wl.user_id, u.username, u.tier, u.avatar, ls.success_rate
-            `;
-        }
-
-        query += ` ORDER BY rank ASC LIMIT ?`;
-
-        const [rankings] = await pool.query(query, [pageLimit]);
-
-        // Get current user rank
-        const [userRows] = await pool.query(
-            'SELECT ranking FROM leaderboard_stats WHERE user_id = ?',
-            [req.user.id]
-        );
-
-        const userRank = userRows[0] ? {
-            rank: userRows[0].ranking,
-            userId: req.user.id
-        } : null;
-
-        // Fetch current user's full stats if needed
-        if (userRank) {
-            const [userStats] = await pool.query(
-                `SELECT problems_solved, total_points, current_streak, success_rate
-                 FROM leaderboard_stats WHERE user_id = ?`,
-                [req.user.id]
-            );
-            if (userStats.length > 0) {
-                userRank.problems_solved = userStats[0].problems_solved;
-                userRank.total_points = userStats[0].total_points;
-                userRank.current_streak = userStats[0].current_streak;
-                userRank.success_rate = userStats[0].success_rate;
-            }
-        }
-
-        res.json({
-            rankings,
-            userRank,
-            total: rankings.length
-        });
-    } catch (error) {
-        console.error('Error fetching leaderboard:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // Get category-specific leaderboard
 app.get('/api/leaderboard/category/:categoryName', authenticate, async (req, res) => {
     try {
@@ -8800,7 +8697,7 @@ io.on('connection', (socket) => {
         try {
             const { notificationId, userId } = data;
             await pool.query(
-                'UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+                'UPDATE notifications SET read_status = 1 WHERE id = ? AND user_id = ?',
                 [notificationId, userId]
             );
             // Broadcast read status to other user sessions
@@ -8831,7 +8728,7 @@ io.on('connection', (socket) => {
         try {
             const { userId } = data;
             const [result] = await pool.query(
-                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL',
+                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_status = 0 AND archived_at IS NULL',
                 [userId]
             );
             socket.emit('unread_count', { count: result[0]?.count || 0 });
@@ -9913,7 +9810,7 @@ app.get('/api/notifications', authenticate, async (req, res) => {
         }
 
         if (unread_only === 'true') {
-            query += ' AND read_at IS NULL';
+            query += ' AND read_status = 0';
         }
 
         if (archived === 'true') {
@@ -9956,7 +9853,7 @@ app.get('/api/notifications/unread/count', authenticate, async (req, res) => {
     try {
         const userId = req.user.id;
         const [result] = await pool.query(
-            'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL',
+            'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_status = 0 AND archived_at IS NULL',
             [userId]
         );
         res.json({ unreadCount: result[0]?.count || 0 });
@@ -9984,7 +9881,7 @@ app.patch('/api/notifications/:id/read', authenticate, async (req, res) => {
 
         // Mark as read
         await pool.query(
-            'UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id = ?',
+            'UPDATE notifications SET read_status = 1 WHERE id = ?',
             [notificationId]
         );
 
@@ -10049,7 +9946,7 @@ app.patch('/api/notifications/read-multiple', authenticate, async (req, res) => 
 
         // Mark all as read
         await pool.query(
-            `UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+            `UPDATE notifications SET read_status = 1 WHERE id IN (${placeholders})`,
             notificationIds
         );
 
@@ -10146,7 +10043,7 @@ app.get('/api/notifications/digest/send', authenticate, authorize(['admin']), as
         // Get user's unread notifications
         const [notifications] = await pool.query(
             `SELECT * FROM notifications 
-             WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL
+             WHERE user_id = ? AND read_status = 0 AND archived_at IS NULL
              ORDER BY created_at DESC LIMIT 50`,
             [userId]
         );
@@ -10266,54 +10163,192 @@ app.delete('/api/reviews/:id', authenticate, async (req, res) => {
 app.post('/api/reports/export', authenticate, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { format, reportType, dateRange, startDate, endDate } = req.body;
+        const { format, reportType, dateRange } = req.body;
 
         if (!format || !reportType) {
             return res.status(400).json({ error: 'format and reportType required' });
         }
 
-        // Fetch relevant data based on report type
-        let [submissions] = await pool.query(
-            'SELECT * FROM submissions WHERE student_id = ? ORDER BY submitted_at DESC',
-            [userId]
-        );
+        // Fetch user info
+        const [[userInfo]] = await pool.query('SELECT name, email FROM users WHERE id = ?', [userId]);
 
-        // Filter by date range if provided
-        if (dateRange || (startDate && endDate)) {
-            const now = new Date();
-            let filterDate = new Date();
-
-            switch (dateRange) {
-                case 'week': filterDate.setDate(now.getDate() - 7); break;
-                case 'month': filterDate.setMonth(now.getMonth() - 1); break;
-                case 'quarter': filterDate.setMonth(now.getMonth() - 3); break;
-                case 'year': filterDate.setFullYear(now.getFullYear() - 1); break;
-            }
-
-            if (startDate && endDate) {
-                filterDate = new Date(startDate);
-            }
-
-            submissions = submissions.filter(s => new Date(s.submitted_at) >= filterDate);
+        // Date filter
+        const now = new Date();
+        let filterDate = new Date(0);
+        switch (dateRange) {
+            case 'week':    filterDate = new Date(now); filterDate.setDate(now.getDate() - 7); break;
+            case 'month':   filterDate = new Date(now); filterDate.setMonth(now.getMonth() - 1); break;
+            case 'quarter': filterDate = new Date(now); filterDate.setMonth(now.getMonth() - 3); break;
+            case 'year':    filterDate = new Date(now); filterDate.setFullYear(now.getFullYear() - 1); break;
+            default:        filterDate = new Date(0); break;
         }
 
-        // Build report based on type
-        let reportData = {
-            title: `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report`,
-            generatedAt: new Date().toISOString(),
-            totalSubmissions: submissions.length,
-            averageScore: submissions.length > 0 
-                ? (submissions.reduce((sum, s) => sum + (s.score || 0), 0) / submissions.length).toFixed(2)
-                : 0
-        };
+        // Fetch submissions with problem titles
+        let [submissions] = await pool.query(
+            `SELECT s.id, s.score, s.status, s.submitted_at, s.language,
+                    COALESCE(p.title, 'N/A') as problem_title,
+                    COALESCE(p.difficulty, 'N/A') as difficulty,
+                    COALESCE(p.type, 'coding') as problem_type
+             FROM submissions s
+             LEFT JOIN problems p ON s.problem_id = p.id
+             WHERE s.student_id = ? AND s.submitted_at >= ?
+             ORDER BY s.submitted_at DESC`,
+            [userId, filterDate]
+        );
 
-        // Return report with export format instruction
-        res.json({
-            success: true,
-            format,
-            reportData,
-            exportUrl: `/api/reports/download?id=${uuidv4()}&format=${format}`
-        });
+        // Summary stats
+        const totalSubmissions = submissions.length;
+        const avgScore = totalSubmissions > 0
+            ? (submissions.reduce((sum, s) => sum + (parseFloat(s.score) || 0), 0) / totalSubmissions).toFixed(1)
+            : 0;
+        const passed = submissions.filter(s => (parseFloat(s.score) || 0) >= 70).length;
+        const successRate = totalSubmissions > 0 ? ((passed / totalSubmissions) * 100).toFixed(1) : 0;
+        const reportTitle = `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report`;
+        const generatedAt = new Date().toLocaleString();
+        const dateRangeLabel = { week: 'Last 7 Days', month: 'Last 30 Days', quarter: 'Last 90 Days', year: 'Last Year', alltime: 'All Time' }[dateRange] || 'All Time';
+
+        // ── CSV ─────────────────────────────────────────────────────────────
+        if (format === 'csv') {
+            const rows = [
+                ['AI Mentor Hub – ' + reportTitle],
+                ['Student', userInfo?.name || '', 'Email', userInfo?.email || ''],
+                ['Date Range', dateRangeLabel, 'Generated', generatedAt],
+                [],
+                ['Summary'],
+                ['Total Submissions', totalSubmissions],
+                ['Average Score', avgScore + '%'],
+                ['Pass Rate', successRate + '%'],
+                ['Problems Passed', passed],
+                [],
+                ['Submission Details'],
+                ['#', 'Problem', 'Difficulty', 'Type', 'Language', 'Score', 'Status', 'Date']
+            ];
+            submissions.forEach((s, i) => {
+                rows.push([
+                    i + 1,
+                    s.problem_title,
+                    s.difficulty,
+                    s.problem_type,
+                    s.language || 'N/A',
+                    (s.score || 0) + '%',
+                    s.status || 'submitted',
+                    new Date(s.submitted_at).toLocaleDateString()
+                ]);
+            });
+            const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="report-${reportType}-${Date.now()}.csv"`);
+            return res.send('\uFEFF' + csv); // BOM for Excel compatibility
+        }
+
+        // ── Excel (HTML table with Excel MIME) ──────────────────────────────
+        if (format === 'xlsx') {
+            const rows = submissions.map((s, i) => `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td>${s.problem_title}</td>
+                    <td>${s.difficulty}</td>
+                    <td>${s.problem_type}</td>
+                    <td>${s.language || 'N/A'}</td>
+                    <td>${s.score || 0}%</td>
+                    <td>${s.status || 'submitted'}</td>
+                    <td>${new Date(s.submitted_at).toLocaleDateString()}</td>
+                </tr>`).join('');
+            const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Report</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
+<body>
+<table border="1">
+  <tr><th colspan="8" style="font-size:14pt;font-weight:bold;">AI Mentor Hub – ${reportTitle}</th></tr>
+  <tr><td><b>Student</b></td><td>${userInfo?.name || ''}</td><td><b>Email</b></td><td>${userInfo?.email || ''}</td><td><b>Date Range</b></td><td>${dateRangeLabel}</td><td><b>Generated</b></td><td>${generatedAt}</td></tr>
+  <tr><td colspan="8"></td></tr>
+  <tr><th colspan="8" style="font-size:12pt;font-weight:bold;">Summary</th></tr>
+  <tr><td><b>Total Submissions</b></td><td>${totalSubmissions}</td><td><b>Avg Score</b></td><td>${avgScore}%</td><td><b>Pass Rate</b></td><td>${successRate}%</td><td><b>Passed</b></td><td>${passed}</td></tr>
+  <tr><td colspan="8"></td></tr>
+  <tr><th>#</th><th>Problem</th><th>Difficulty</th><th>Type</th><th>Language</th><th>Score</th><th>Status</th><th>Date</th></tr>
+  ${rows || '<tr><td colspan="8">No submissions found for this period.</td></tr>'}
+</table>
+</body></html>`;
+            res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="report-${reportType}-${Date.now()}.xls"`);
+            return res.send(html);
+        }
+
+        // ── PDF (styled HTML for print) ──────────────────────────────────────
+        if (format === 'pdf') {
+            const rows = submissions.map((s, i) => `
+                <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+                    <td>${i + 1}</td>
+                    <td>${s.problem_title}</td>
+                    <td><span class="badge ${s.difficulty?.toLowerCase()}">${s.difficulty}</span></td>
+                    <td>${s.problem_type}</td>
+                    <td>${s.language || 'N/A'}</td>
+                    <td class="score ${(parseFloat(s.score) || 0) >= 70 ? 'pass' : 'fail'}">${s.score || 0}%</td>
+                    <td>${s.status || 'submitted'}</td>
+                    <td>${new Date(s.submitted_at).toLocaleDateString()}</td>
+                </tr>`).join('');
+            const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>${reportTitle}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 32px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 20px; margin-bottom: 24px; }
+  .brand { font-size: 22px; font-weight: 800; color: #4f46e5; }
+  .report-title { font-size: 16px; color: #64748b; margin-top: 4px; }
+  .meta { text-align: right; font-size: 12px; color: #64748b; }
+  .meta strong { color: #1a1a2e; }
+  .summary { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: #4f46e5; }
+  .stat-card .label { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  h3 { font-size: 14px; font-weight: 700; color: #1a1a2e; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #4f46e5; color: #fff; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; }
+  tr.even td { background: #f8fafc; }
+  tr.odd td { background: #fff; }
+  .badge { padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 600; }
+  .badge.easy { background: #dcfce7; color: #16a34a; }
+  .badge.medium { background: #fef9c3; color: #ca8a04; }
+  .badge.hard { background: #fee2e2; color: #dc2626; }
+  .score { font-weight: 700; }
+  .score.pass { color: #16a34a; }
+  .score.fail { color: #dc2626; }
+  .footer { margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+  .no-data { text-align: center; padding: 32px; color: #94a3b8; }
+  @media print { body { padding: 0; } @page { margin: 20mm; } }
+</style>
+</head><body>
+<div class="header">
+  <div>
+    <div class="brand">AI Mentor Hub</div>
+    <div class="report-title">${reportTitle}</div>
+  </div>
+  <div class="meta">
+    <div><strong>Student:</strong> ${userInfo?.name || 'N/A'}</div>
+    <div><strong>Email:</strong> ${userInfo?.email || 'N/A'}</div>
+    <div><strong>Period:</strong> ${dateRangeLabel}</div>
+    <div><strong>Generated:</strong> ${generatedAt}</div>
+  </div>
+</div>
+<div class="summary">
+  <div class="stat-card"><div class="value">${totalSubmissions}</div><div class="label">Total Submissions</div></div>
+  <div class="stat-card"><div class="value">${avgScore}%</div><div class="label">Average Score</div></div>
+  <div class="stat-card"><div class="value">${successRate}%</div><div class="label">Pass Rate</div></div>
+  <div class="stat-card"><div class="value">${passed}</div><div class="label">Problems Passed</div></div>
+</div>
+<h3>Submission Details</h3>
+<table>
+  <thead><tr><th>#</th><th>Problem</th><th>Difficulty</th><th>Type</th><th>Language</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="8" class="no-data">No submissions found for this period.</td></tr>'}</tbody>
+</table>
+<div class="footer"><span>AI Mentor Hub – Student Report</span><span>Generated on ${generatedAt}</span></div>
+<script>window.onload = function(){ window.print(); }</script>
+</body></html>`;
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.send(html);
+        }
+
+        res.status(400).json({ error: 'Invalid format. Use csv, xlsx, or pdf.' });
     } catch (error) {
         console.error('Error exporting report:', error.message);
         res.status(500).json({ error: error.message });

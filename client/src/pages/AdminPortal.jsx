@@ -15,6 +15,9 @@ import DirectMessaging from '../components/DirectMessaging'
 import FileUpload from '../components/FileUpload'
 import SkillTestManager from '../components/SkillTestManager'
 import SkillSubmissions from '../components/SkillSubmissions'
+import AdminPlagiarismDashboard from '../components/AdminPlagiarismDashboard'
+import ExportReports from '../components/ExportReports'
+import CodeReviewPanel from '../components/CodeReviewPanel'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -104,6 +107,18 @@ function AdminPortal() {
                 setTitle(t('analytics'))
                 setSubtitle(t('advanced_analytics_subtitle'))
                 break
+            case 'plagiarism':
+                setTitle('Plagiarism Dashboard')
+                setSubtitle('Monitor and review plagiarism detection reports')
+                break
+            case 'code-reviews':
+                setTitle('Code Reviews')
+                setSubtitle('View all code review comments across the platform')
+                break
+            case 'reports':
+                setTitle('Export Reports')
+                setSubtitle('Generate and download platform-wide reports')
+                break
             case 'skill-tests':
                 setTitle('Skill Tests')
                 setSubtitle('Create and manage AI skill assessments')
@@ -157,7 +172,9 @@ function AdminPortal() {
                 { path: '/admin/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/admin/skill-submissions', label: 'Skill Submissions', icon: <Brain size={20} /> },
                 { path: '/admin/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
-                { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> }
+                { path: '/admin/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
+                { path: '/admin/plagiarism', label: 'Plagiarism Dashboard', icon: <Shield size={20} /> },
+                { path: '/admin/code-reviews', label: 'Code Reviews', icon: <Github size={20} /> }
             ]
         },
         {
@@ -167,7 +184,8 @@ function AdminPortal() {
             children: [
                 { path: '/admin/operations', label: t('admin_operations'), icon: <Settings size={20} /> },
                 { path: '/admin/user-management', label: 'User Management', icon: <Shield size={20} /> },
-                { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount }
+                { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
+                { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         }
     ]
@@ -191,6 +209,9 @@ function AdminPortal() {
                 <Route path="/operations" element={<AdminOperations />} />
                 <Route path="/user-management" element={<UserManagement />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={{ ...user, role: 'admin' }} />} />
+                <Route path="/plagiarism" element={<AdminPlagiarismDashboard adminId={user?.id} adminName={user?.name} />} />
+                <Route path="/code-reviews" element={<AdminCodeReviews />} />
+                <Route path="/reports" element={<ExportReports />} />
             </Routes>
         </DashboardLayout>
     )
@@ -7799,6 +7820,82 @@ function AdminAnalyticsDashboard() {
                     </div>
                 </div>
             )}
+        </div>
+    )
+}
+
+const ADMIN_API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+
+function AdminCodeReviews() {
+    const [submissions, setSubmissions] = useState([])
+    const [selectedId, setSelectedId] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const token = localStorage.getItem('authToken')
+
+    useEffect(() => {
+        axios.get(`${ADMIN_API_BASE}/api/submissions`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => setSubmissions(res.data?.submissions || res.data || []))
+            .catch(() => setSubmissions([]))
+            .finally(() => setLoading(false))
+    }, [])
+
+    if (selectedId) {
+        return (
+            <div>
+                <button
+                    onClick={() => setSelectedId(null)}
+                    style={{ marginBottom: 16, padding: '8px 16px', cursor: 'pointer', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6 }}
+                >
+                    ← Back to all submissions
+                </button>
+                <CodeReviewPanel submissionId={selectedId} />
+            </div>
+        )
+    }
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading submissions…</div>
+
+    if (!submissions.length) {
+        return (
+            <div style={{ padding: 40, textAlign: 'center', opacity: 0.7 }}>
+                <Github size={48} style={{ marginBottom: 12 }} />
+                <p>No submissions found.</p>
+            </div>
+        )
+    }
+
+    return (
+        <div style={{ maxWidth: 900, margin: '0 auto' }}>
+            <p style={{ marginBottom: 16, opacity: 0.7 }}>
+                Showing {submissions.length} submission(s). Click one to view its review comments.
+            </p>
+            {submissions.map(sub => (
+                <div
+                    key={sub.id}
+                    onClick={() => setSelectedId(sub.id)}
+                    style={{
+                        padding: '14px 18px',
+                        marginBottom: 10,
+                        borderRadius: 8,
+                        background: 'var(--card-bg, #1e293b)',
+                        border: '1px solid var(--border, #334155)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}
+                >
+                    <div>
+                        <div style={{ fontWeight: 600 }}>{sub.problem_title || sub.title || `Submission #${sub.id}`}</div>
+                        <div style={{ fontSize: 13, opacity: 0.65 }}>
+                            {sub.student_name || sub.username || 'User'} · {sub.language || 'Code'} · Score: {sub.score ?? '—'}
+                        </div>
+                    </div>
+                    <ChevronRight size={18} style={{ opacity: 0.5 }} />
+                </div>
+            ))}
         </div>
     )
 }

@@ -224,7 +224,7 @@ class NotificationsService {
     async getUnreadCount(userId) {
         try {
             const [result] = await this.pool.query(
-                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_at IS NULL AND archived_at IS NULL',
+                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND read_status = 0 AND archived_at IS NULL',
                 [userId]
             );
             return result[0]?.count || 0;

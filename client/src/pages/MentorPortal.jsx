@@ -17,6 +17,9 @@ import axios from 'axios'
 import GlobalReportModal from '../components/GlobalReportModal'
 // Advanced Features Components
 import { LearningCurveChart } from '../components/AnalyticsComponents'
+import AvailabilityCalendar from '../components/AvailabilityCalendar'
+import CodeReviewPanel from '../components/CodeReviewPanel'
+import ExportReports from '../components/ExportReports'
 import './Portal.css'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
@@ -88,6 +91,18 @@ function MentorPortal() {
                 setTitle('Direct Messaging')
                 setSubtitle('Chat with your students')
                 break
+            case 'code-reviews':
+                setTitle('Code Reviews')
+                setSubtitle('Review and comment on student code submissions')
+                break
+            case 'availability':
+                setTitle('Availability Calendar')
+                setSubtitle('Set your availability for mentoring sessions')
+                break
+            case 'reports':
+                setTitle('Export Reports')
+                setSubtitle('Download performance and analytics reports')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -116,7 +131,17 @@ function MentorPortal() {
                 { path: '/mentor/leaderboard', label: t('leaderboard'), icon: <Trophy size={20} /> },
                 { path: '/mentor/all-submissions', label: t('all_submissions'), icon: <List size={20} /> },
                 { path: '/mentor/analytics', label: t('analytics'), icon: <TrendingUp size={20} /> },
-                { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> }
+                { path: '/mentor/live-monitoring', label: t('live_monitoring'), icon: <Activity size={20} /> },
+                { path: '/mentor/code-reviews', label: 'Code Reviews', icon: <Code size={20} /> }
+            ]
+        },
+        {
+            label: 'Tools',
+            icon: <Settings size={20} />,
+            defaultExpanded: false,
+            children: [
+                { path: '/mentor/availability', label: 'Availability Calendar', icon: <Calendar size={20} /> },
+                { path: '/mentor/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         },
         { path: '/mentor/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount }
@@ -136,6 +161,9 @@ function MentorPortal() {
                 <Route path="/analytics" element={<MentorAnalytics user={user} />} />
                 <Route path="/live-monitoring" element={<MentorLiveMonitoring user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
+                <Route path="/code-reviews" element={<MentorCodeReviews user={user} />} />
+                <Route path="/availability" element={<AvailabilityCalendar />} />
+                <Route path="/reports" element={<ExportReports />} />
             </Routes>
         </DashboardLayout>
     )
@@ -3465,6 +3493,80 @@ function GlobalTestsMentor({ user }) {
 
 function SkillTestsMentor({ user }) {
     return <MentorTestManager testType="skill" user={user} />
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+
+function MentorCodeReviews({ user }) {
+    const [submissions, setSubmissions] = useState([])
+    const [selectedId, setSelectedId] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const token = localStorage.getItem('authToken')
+
+    useEffect(() => {
+        axios.get(`${API_BASE_URL}/api/submissions?mentorId=${user?.id}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => setSubmissions(res.data?.submissions || res.data || []))
+            .catch(() => setSubmissions([]))
+            .finally(() => setLoading(false))
+    }, [user])
+
+    if (selectedId) {
+        return (
+            <div>
+                <button
+                    onClick={() => setSelectedId(null)}
+                    style={{ marginBottom: 16, padding: '8px 16px', cursor: 'pointer', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6 }}
+                >
+                    ← Back to submissions
+                </button>
+                <CodeReviewPanel submissionId={selectedId} />
+            </div>
+        )
+    }
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading submissions…</div>
+
+    if (!submissions.length) {
+        return (
+            <div style={{ padding: 40, textAlign: 'center', opacity: 0.7 }}>
+                <Code size={48} style={{ marginBottom: 12 }} />
+                <p>No submissions to review yet.</p>
+            </div>
+        )
+    }
+
+    return (
+        <div style={{ maxWidth: 800, margin: '0 auto' }}>
+            <p style={{ marginBottom: 16, opacity: 0.7 }}>Select a submission to view its code review comments:</p>
+            {submissions.map(sub => (
+                <div
+                    key={sub.id}
+                    onClick={() => setSelectedId(sub.id)}
+                    style={{
+                        padding: '14px 18px',
+                        marginBottom: 10,
+                        borderRadius: 8,
+                        background: 'var(--card-bg, #1e293b)',
+                        border: '1px solid var(--border, #334155)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                    }}
+                >
+                    <div>
+                        <div style={{ fontWeight: 600 }}>{sub.problem_title || sub.title || `Submission #${sub.id}`}</div>
+                        <div style={{ fontSize: 13, opacity: 0.65 }}>
+                            {sub.student_name || sub.username || 'Student'} · {sub.language || 'Code'} · Score: {sub.score ?? '—'}
+                        </div>
+                    </div>
+                    <ChevronRight size={18} style={{ opacity: 0.5 }} />
+                </div>
+            ))}
+        </div>
+    )
 }
 
 export default MentorPortal

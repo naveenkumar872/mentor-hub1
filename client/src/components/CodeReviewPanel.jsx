@@ -23,7 +23,7 @@ const CodeReviewPanel = ({ submissionId, problemId }) => {
             });
             if (response.ok) {
                 const data = await response.json();
-                setComments(data);
+                setComments(data.reviews || []);
             }
         } catch (error) {
             console.error('Error loading comments:', error);
