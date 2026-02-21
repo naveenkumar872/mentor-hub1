@@ -66,8 +66,10 @@ function authenticate(req, res, next) {
     try {
         const decoded = verifyToken(token);
         req.user = decoded;
+        console.log('[AUTH] ✅ Token verified. User ID:', decoded.id);
         next();
     } catch (error) {
+        console.log('[AUTH] ❌ Token verification failed:', error.message);
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({ error: 'Token expired. Please login again.' });
         }
