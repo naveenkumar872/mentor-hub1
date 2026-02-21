@@ -157,7 +157,7 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                             <NavLink
                                 key={item.path}
                                 to={item.path}
-                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''} ${item.highlight ? 'nav-item-highlight' : ''}`}
                                 onClick={() => setSidebarOpen(false)}
                                 aria-current={({ isActive }) => isActive ? 'page' : undefined}
                             >

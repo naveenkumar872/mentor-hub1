@@ -190,9 +190,18 @@ const NotificationCenter = ({ socket }) => {
             mentor_assignment: '👨‍🏫',
             deadline: '⏰',
             system: '⚙️',
-            alert: '⚠️'
+            alert: '⚠️',
+            code_review: '🔍'
         };
         return icons[type] || '📬';
+    };
+
+    const handleNotificationClick = (notification) => {
+        markAsRead(notification.id);
+        if (notification.action_url) {
+            setIsOpen(false);
+            window.location.href = notification.action_url;
+        }
     };
 
     const getPriorityColor = (priority) => {
@@ -316,7 +325,7 @@ const NotificationCenter = ({ socket }) => {
 
                     {/* Filter Buttons */}
                     <div className="notification-filters">
-                        {['all', 'unread', 'submission', 'message', 'test', 'achievement'].map(f => (
+                        {['all', 'unread', 'submission', 'code_review', 'message', 'test', 'achievement'].map(f => (
                             <button
                                 key={f}
                                 className={`filter-btn ${filter === f ? 'active' : ''}`}
@@ -343,7 +352,8 @@ const NotificationCenter = ({ socket }) => {
                                 <div
                                     key={notification.id}
                                     className={`notification-item ${notification.read_status ? 'read' : 'unread'}`}
-                                    style={{ borderLeftColor: getPriorityColor(notification.priority) }}
+                                    style={{ borderLeftColor: notification.type === 'code_review' ? '#6366f1' : getPriorityColor(notification.priority), cursor: notification.action_url ? 'pointer' : 'default' }}
+                                    onClick={() => notification.action_url && handleNotificationClick(notification)}
                                 >
                                     <div className="notification-icon">
                                         {getNotificationIcon(notification.type)}

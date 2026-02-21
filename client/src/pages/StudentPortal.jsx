@@ -13,14 +13,12 @@ import SQLDebugger from '@/components/SQLDebugger'
 import DirectMessaging from '@/components/DirectMessaging'
 import SkillTestPortal from '@/components/SkillTestPortal'
 import SkillSubmissions from '@/components/SkillSubmissions'
-import AdvancedSearch from '@/components/AdvancedSearch'
-import AIRecommendations from '@/components/AIRecommendations'
-import AITestCaseGenerator from '@/components/AITestCaseGenerator'
 import CodeReviewPanel from '@/components/CodeReviewPanel'
 import ExportReports from '@/components/ExportReports'
 import PlagiarismChecker from '@/components/PlagiarismChecker'
 import MentorAvailabilityView from '@/components/MentorAvailabilityView'
 import FeaturesShowcase from '@/components/FeaturesShowcase'
+import ConnectAlumni from '@/components/ConnectAlumni'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -120,6 +118,10 @@ function StudentPortal() {
                 setTitle('Skill Test Submissions')
                 setSubtitle('View your skill test results & reports')
                 break
+            case 'connect-alumni':
+                setTitle('Connect Alumni')
+                setSubtitle('Network with alumni for career growth')
+                break
             default:
                 setTitle(t('dashboard'))
                 setSubtitle(t('welcome_back_name', { name: user?.name || '' }))
@@ -137,10 +139,7 @@ function StudentPortal() {
                 { path: '/student/assignments', label: t('coding_problems'), icon: <Code size={20} /> },
                 { path: '/student/aptitude', label: t('aptitude_tests'), icon: <Brain size={20} /> },
                 { path: '/student/global-tests', label: t('global_complete_tests'), icon: <Layers size={20} /> },
-                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> },
-                { path: '/student/search', label: 'Advanced Search', icon: <Search size={20} /> },
-                { path: '/student/recommendations', label: 'AI Recommendations', icon: <Sparkles size={20} /> },
-                { path: '/student/test-generator', label: 'Test Generator', icon: <FileText size={20} /> }
+                { path: '/student/skill-tests', label: 'Skill Tests', icon: <Target size={20} /> }
             ]
         },
         {
@@ -173,7 +172,8 @@ function StudentPortal() {
             children: [
                 { path: '/student/availability', label: 'Mentor Availability', icon: <Calendar size={20} /> }
             ]
-        }
+        },
+        { path: '/student/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true }
     ]
 
     return (
@@ -185,19 +185,17 @@ function StudentPortal() {
                 <Route path="/aptitude" element={<AptitudeTests user={user} />} />
                 <Route path="/global-tests" element={<GlobalTests user={user} />} />
                 <Route path="/skill-tests" element={<SkillTestPortal user={user} />} />
-                <Route path="/search" element={<AdvancedSearch user={user} />} />
-                <Route path="/recommendations" element={<AIRecommendations user={user} />} />
-                <Route path="/test-generator" element={<AITestCaseGenerator user={user} />} />
                 <Route path="/skill-submissions" element={<SkillSubmissions user={user} />} />
                 <Route path="/submissions" element={<Submissions user={user} />} />
                 <Route path="/analytics" element={<StudentAnalytics user={user} />} />
                 <Route path="/leaderboard" element={<GamificationLeaderboard limit={100} />} />
-                <Route path="/badges" element={<AchievementBadges userId={user?.id} />} />
+                <Route path="/badges" element={<AchievementBadges studentId={user?.id} />} />
                 <Route path="/reports" element={<ExportReports user={user} />} />
-                <Route path="/code-reviews" element={<CodeReviewPanel user={user} />} />
+                <Route path="/code-reviews" element={<StudentCodeReviews user={user} />} />
                 <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
                 <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
+                <Route path="/connect-alumni" element={<ConnectAlumni />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
             </Routes>
         </DashboardLayout>
@@ -4444,6 +4442,93 @@ function StudentAnalytics({ user }) {
                     )}
                 </div>
             )}
+        </div>
+    )
+}
+
+// ==================== STUDENT CODE REVIEWS (read-only view) ====================
+function StudentCodeReviews({ user }) {
+    const [submissions, setSubmissions] = useState([])
+    const [selected, setSelected] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const token = localStorage.getItem('authToken')
+
+    useEffect(() => {
+        axios.get(`${API_BASE}/submissions?studentId=${user?.id}&limit=100`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => {
+                const data = Array.isArray(res.data) ? res.data : (res.data?.data || [])
+                setSubmissions(data.filter(s => !s.isMLTask))
+            })
+            .catch(() => setSubmissions([]))
+            .finally(() => setLoading(false))
+    }, [user])
+
+    if (selected) {
+        return (
+            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+                <button
+                    onClick={() => setSelected(null)}
+                    style={{ marginBottom: 16, padding: '7px 16px', cursor: 'pointer', background: 'var(--primary, #6366f1)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                    ← Back to my submissions
+                </button>
+                <CodeReviewPanel submissionId={selected.id} submission={selected} />
+            </div>
+        )
+    }
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading your submissions…</div>
+
+    if (!submissions.length) {
+        return (
+            <div style={{ padding: 40, textAlign: 'center', opacity: 0.7 }}>
+                <Code size={48} style={{ marginBottom: 12 }} />
+                <p>No submissions yet. Complete a coding problem to receive code reviews.</p>
+            </div>
+        )
+    }
+
+    return (
+        <div style={{ maxWidth: 860, margin: '0 auto' }}>
+            <p style={{ marginBottom: 12, opacity: 0.55, fontSize: '0.85rem' }}>
+                {submissions.length} submission{submissions.length !== 1 ? 's' : ''} — click one to view mentor feedback
+            </p>
+            {submissions.map(sub => {
+                const statusColor = sub.status === 'accepted' ? '#4ade80' : sub.status === 'rejected' ? '#f87171' : '#94a3b8'
+                const statusBg   = sub.status === 'accepted' ? 'rgba(34,197,94,0.12)' : sub.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)'
+                return (
+                    <div
+                        key={sub.id}
+                        onClick={() => setSelected(sub)}
+                        style={{ padding: '13px 16px', marginBottom: 8, borderRadius: 10, background: 'var(--card-bg, #1e293b)', border: '1px solid var(--border-color, #334155)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, transition: 'border-color 0.15s' }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = '#6366f1'}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color, #334155)'}
+                    >
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '0.9rem', flexShrink: 0 }}>
+                            {'</>'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.93rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {sub.itemTitle || `Submission #${sub.id}`}
+                            </div>
+                            <div style={{ fontSize: '0.78rem', opacity: 0.55, marginTop: 2 }}>
+                                {sub.language || 'Code'} · {new Date(sub.submittedAt).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            {sub.score != null && (
+                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fbbf24' }}>{sub.score}%</span>
+                            )}
+                            <span style={{ fontSize: '0.72rem', padding: '2px 9px', borderRadius: 20, background: statusBg, color: statusColor, fontWeight: 600 }}>
+                                {(sub.status || 'unknown').toUpperCase()}
+                            </span>
+                            <ChevronRight size={15} style={{ opacity: 0.4 }} />
+                        </div>
+                    </div>
+                )
+            })}
         </div>
     )
 }

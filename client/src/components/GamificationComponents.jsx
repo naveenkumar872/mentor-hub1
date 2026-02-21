@@ -255,6 +255,7 @@ export function GamificationLeaderboard({ limit = 100 }) {
  */
 export function AchievementBadges({ studentId }) {
     const [achievements, setAchievements] = useState([]);
+    const [totalSolved, setTotalSolved] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -263,8 +264,20 @@ export function AchievementBadges({ studentId }) {
 
     const fetchAchievements = async () => {
         try {
-            const response = await axios.get(`${API_BASE}/gamification/achievements/${studentId}`);
-            setAchievements(response.data.achievements || []);
+            const token = localStorage.getItem('authToken');
+            const response = await axios.get(`${API_BASE}/users/${studentId}/badges`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const unlocked = response.data.unlocked || [];
+            setTotalSolved(response.data.totalSolved || 0);
+            // Map server badge shape to display shape
+            const mapped = unlocked.map(b => ({
+                badge_icon: b.icon,
+                badge_name: b.name,
+                requirement: b.requirement,
+                earned_at: new Date().toISOString()
+            }));
+            setAchievements(mapped);
         } catch (error) {
             console.error('Error fetching achievements:', error);
             setAchievements([]);
@@ -280,9 +293,16 @@ export function AchievementBadges({ studentId }) {
             <div style={{ width: '100%' }}>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
                     <Award size={20} style={{ color: '#f59e0b' }} />
-                    Recent Achievements
+                    Skill Badges
                 </h3>
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1rem' }}>No achievements yet. Keep learning!</p>
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎯</div>
+                    <p style={{ marginBottom: '0.5rem', fontWeight: 600 }}>No badges unlocked yet</p>
+                    <p style={{ fontSize: '0.85rem' }}>
+                        You've solved <strong style={{ color: 'var(--primary)' }}>{totalSolved}</strong> problem{totalSolved !== 1 ? 's' : ''} so far.
+                        Solve 1 problem with score ≥ 70 to earn your first badge!
+                    </p>
+                </div>
             </div>
         );
     }
@@ -291,7 +311,7 @@ export function AchievementBadges({ studentId }) {
         <div style={{ width: '100%' }}>
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
                 <Award size={20} style={{ color: '#f59e0b' }} />
-                Recent Achievements
+                Skill Badges ({achievements.length} unlocked)
             </h3>
 
             <div style={{
@@ -323,10 +343,10 @@ export function AchievementBadges({ studentId }) {
                             {achievement.badge_name}
                         </div>
                         <div style={{
-                            fontSize: '0.75rem',
+                            fontSize: '0.72rem',
                             color: 'var(--text-muted)'
                         }}>
-                            {new Date(achievement.earned_at).toLocaleDateString()}
+                            {achievement.requirement || '✓ Unlocked'}
                         </div>
                     </div>
                 ))}

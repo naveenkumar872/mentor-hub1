@@ -122,6 +122,10 @@
     to { transform: rotate(360deg); }
 }
 
+.spinning {
+    animation: spin 0.8s linear infinite;
+}
+
 .results-section {
     margin-top: 2rem;
 }
@@ -323,6 +327,204 @@
     text-align: center;
     padding: 2rem;
     color: var(--text-secondary);
+}
+
+/* Two-panel layout */
+.plagiarism-layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.submission-select-panel {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.submission-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.submission-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.submission-item:hover {
+    background: rgba(99, 102, 241, 0.08);
+    border-color: var(--border-color);
+}
+
+.submission-item.active {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: var(--primary);
+}
+
+.submission-item-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.submission-item-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+
+.submission-item-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Right checker panel */
+.checker-panel {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    min-height: 300px;
+}
+
+.no-selection-msg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 260px;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.selected-submission-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.selected-submission-info h4 {
+    margin: 0;
+    font-size: 1rem;
+    flex: 1;
+}
+
+.lang-badge {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.code-preview {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    max-height: 160px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin-bottom: 1.25rem;
+    color: var(--text-secondary);
+}
+
+.plagiarism-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+    padding: 0.65rem 1rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+}
+
+/* Result state styles */
+.plagiarism-result {
+    border-radius: 10px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.plagiarism-result.warning {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1.5px solid rgba(239, 68, 68, 0.4);
+}
+
+.plagiarism-result.suspicious {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1.5px solid rgba(245, 158, 11, 0.4);
+}
+
+.plagiarism-result.safe {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1.5px solid rgba(16, 185, 129, 0.4);
+}
+
+.plagiarism-result.warning .result-icon { color: #ef4444; }
+.plagiarism-result.suspicious .result-icon { color: #f59e0b; }
+.plagiarism-result.safe .result-icon { color: #10b981; }
+
+.plagiarism-result .result-icon {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.plagiarism-result .result-content h4 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.plagiarism-result .similarity-score {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    width: auto;
+    height: auto;
+    position: static;
+    margin: 0;
+}
+
+@media (max-width: 768px) {
+    .plagiarism-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .submission-select-panel {
+        max-height: 250px;
+    }
 }
 
 @media (max-width: 768px) {

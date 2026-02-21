@@ -19,13 +19,10 @@ const AdvancedSearch = ({ onResultsChange }) => {
     const handleSearch = async () => {
         setLoading(true);
         try {
-            const params = new URLSearchParams({
-                q: searchQuery,
-                difficulty: filters.difficulty,
-                category: filters.category,
-                status: filters.status,
-                timeRange: filters.timeRange
-            });
+            const params = new URLSearchParams({ q: searchQuery });
+            if (filters.difficulty !== 'all') params.append('difficulty', filters.difficulty);
+            if (filters.category !== 'all') params.append('category', filters.category);
+            if (filters.status !== 'all') params.append('status', filters.status);
 
             const response = await fetch(`/api/search?${params}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -42,6 +39,11 @@ const AdvancedSearch = ({ onResultsChange }) => {
             setLoading(false);
         }
     };
+
+    // Auto-load results on mount and when filters change
+    useEffect(() => {
+        handleSearch();
+    }, [filters]);
 
     const exportResults = () => {
         const csv = results.map(r => 

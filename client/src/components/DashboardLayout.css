@@ -138,6 +138,25 @@
     border-left: 3px solid var(--primary);
 }
 
+/* Connect Alumni – highlighted nav item */
+.nav-item-highlight {
+    margin-top: 0.5rem;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.08));
+    border: 1.5px solid rgba(99, 102, 241, 0.25);
+    color: #818cf8 !important;
+    font-weight: 700 !important;
+}
+.nav-item-highlight:hover {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(139, 92, 246, 0.18)) !important;
+    border-color: rgba(99, 102, 241, 0.5) !important;
+    color: #a5b4fc !important;
+}
+.nav-item-highlight.active {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(139, 92, 246, 0.22)) !important;
+    border-left: 3px solid #818cf8 !important;
+    color: #a5b4fc !important;
+}
+
 /* First nav item (Dashboard) spacing */
 .sidebar-nav > .nav-item:first-child {
     margin-bottom: 1rem;

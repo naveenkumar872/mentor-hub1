@@ -3499,34 +3499,43 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 function MentorCodeReviews({ user }) {
     const [submissions, setSubmissions] = useState([])
-    const [selectedId, setSelectedId] = useState(null)
+    const [selected, setSelected] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState('')
     const token = localStorage.getItem('authToken')
 
     useEffect(() => {
-        axios.get(`${API_BASE_URL}/api/submissions?mentorId=${user?.id}`, {
+        axios.get(`${API_BASE_URL}/api/submissions?mentorId=${user?.id}&limit=100`, {
             headers: { Authorization: `Bearer ${token}` }
         })
-            .then(res => setSubmissions(res.data?.submissions || res.data || []))
+            .then(res => {
+                const data = Array.isArray(res.data) ? res.data : (res.data?.data || [])
+                setSubmissions(data)
+            })
             .catch(() => setSubmissions([]))
             .finally(() => setLoading(false))
     }, [user])
 
-    if (selectedId) {
+    if (selected) {
         return (
-            <div>
+            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
                 <button
-                    onClick={() => setSelectedId(null)}
-                    style={{ marginBottom: 16, padding: '8px 16px', cursor: 'pointer', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6 }}
+                    onClick={() => setSelected(null)}
+                    style={{ marginBottom: 16, padding: '7px 16px', cursor: 'pointer', background: 'var(--primary, #6366f1)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
                     ← Back to submissions
                 </button>
-                <CodeReviewPanel submissionId={selectedId} />
+                <CodeReviewPanel submissionId={selected.id} submission={selected} />
             </div>
         )
     }
 
     if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading submissions…</div>
+
+    const filtered = submissions.filter(s =>
+        (s.itemTitle || '').toLowerCase().includes(search.toLowerCase()) ||
+        (s.studentName || '').toLowerCase().includes(search.toLowerCase())
+    )
 
     if (!submissions.length) {
         return (
@@ -3538,33 +3547,55 @@ function MentorCodeReviews({ user }) {
     }
 
     return (
-        <div style={{ maxWidth: 800, margin: '0 auto' }}>
-            <p style={{ marginBottom: 16, opacity: 0.7 }}>Select a submission to view its code review comments:</p>
-            {submissions.map(sub => (
-                <div
-                    key={sub.id}
-                    onClick={() => setSelectedId(sub.id)}
-                    style={{
-                        padding: '14px 18px',
-                        marginBottom: 10,
-                        borderRadius: 8,
-                        background: 'var(--card-bg, #1e293b)',
-                        border: '1px solid var(--border, #334155)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                    }}
-                >
-                    <div>
-                        <div style={{ fontWeight: 600 }}>{sub.problem_title || sub.title || `Submission #${sub.id}`}</div>
-                        <div style={{ fontSize: 13, opacity: 0.65 }}>
-                            {sub.student_name || sub.username || 'Student'} · {sub.language || 'Code'} · Score: {sub.score ?? '—'}
+        <div style={{ maxWidth: 860, margin: '0 auto' }}>
+            {/* Search bar */}
+            <div style={{ marginBottom: 16, position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} />
+                <input
+                    type="text"
+                    placeholder="Search by problem or student name…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px 9px 36px', borderRadius: 8, border: '1px solid var(--border-color, #334155)', background: 'var(--bg-secondary, #1e293b)', color: 'inherit', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }}
+                />
+            </div>
+
+            <p style={{ marginBottom: 12, opacity: 0.55, fontSize: '0.85rem' }}>{filtered.length} submission{filtered.length !== 1 ? 's' : ''} — click one to open the code and add a review</p>
+
+            {filtered.map(sub => {
+                const statusColor = sub.status === 'accepted' ? '#4ade80' : sub.status === 'rejected' ? '#f87171' : '#94a3b8'
+                const statusBg   = sub.status === 'accepted' ? 'rgba(34,197,94,0.12)' : sub.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)'
+                return (
+                    <div
+                        key={sub.id}
+                        onClick={() => setSelected(sub)}
+                        style={{ padding: '13px 16px', marginBottom: 8, borderRadius: 10, background: 'var(--card-bg, #1e293b)', border: '1px solid var(--border-color, #334155)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, transition: 'border-color 0.15s' }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = '#6366f1'}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color, #334155)'}
+                    >
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>
+                            {(sub.studentName || 'S')[0].toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {sub.itemTitle || `Submission #${sub.id}`}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: 2 }}>
+                                {sub.studentName || 'Student'} · {sub.language || 'Code'} · {new Date(sub.submittedAt).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            {sub.score != null && (
+                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fbbf24' }}>{sub.score}%</span>
+                            )}
+                            <span style={{ fontSize: '0.72rem', padding: '2px 9px', borderRadius: 20, background: statusBg, color: statusColor, fontWeight: 600 }}>
+                                {(sub.status || 'unknown').toUpperCase()}
+                            </span>
+                            <ChevronRight size={16} style={{ opacity: 0.4 }} />
                         </div>
                     </div>
-                    <ChevronRight size={18} style={{ opacity: 0.5 }} />
-                </div>
-            ))}
+                )
+            })}
         </div>
     )
 }

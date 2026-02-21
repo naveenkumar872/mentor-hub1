@@ -7191,7 +7191,6 @@ function AptitudeTestsAdmin() {
 function AdminAnalyticsDashboard() {
     const { t } = useI18n()
     const [activeTab, setActiveTab] = useState('overview')
-    const [plagiarism, setPlagiarism] = useState(null)
     const [timeToSolve, setTimeToSolve] = useState(null)
     const [topicAnalysis, setTopicAnalysis] = useState(null)
     const [proctoring, setProctoring] = useState(null)
@@ -7203,13 +7202,11 @@ function AdminAnalyticsDashboard() {
     useEffect(() => {
         setLoading(true)
         Promise.all([
-            axios.get(`${API_BASE}/analytics/plagiarism`),
             axios.get(`${API_BASE}/analytics/time-to-solve`),
             axios.get(`${API_BASE}/analytics/topics`),
             axios.get(`${API_BASE}/proctoring/analytics`).catch(() => ({ data: null })),
             axios.get(`${API_BASE}/proctoring/analytics/by-student`).catch(() => ({ data: null }))
-        ]).then(([pRes, tRes, taRes, prRes, ssRes]) => {
-            setPlagiarism(pRes.data)
+        ]).then(([tRes, taRes, prRes, ssRes]) => {
             setTimeToSolve(tRes.data)
             setTopicAnalysis(taRes.data)
             setProctoring(prRes.data)
@@ -7239,7 +7236,6 @@ function AdminAnalyticsDashboard() {
 
     const tabs = [
         { id: 'overview', label: t('topic_analysis'), icon: <BarChart2 size={16} /> },
-        { id: 'plagiarism', label: t('plagiarism_detection'), icon: <Shield size={16} /> },
         { id: 'time-to-solve', label: t('time_to_solve'), icon: <Clock size={16} /> },
         { id: 'proctoring', label: '🎥 Proctoring', icon: <Video size={16} /> },
         { id: 'student-stats', label: '👥 Student Stats', icon: <Users size={16} /> },
@@ -7360,84 +7356,6 @@ function AdminAnalyticsDashboard() {
                             </div>
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* PLAGIARISM TAB */}
-            {activeTab === 'plagiarism' && plagiarism && (
-                <div>
-                    {/* Stats */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #3b82f6' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('total_submissions')}</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 800 }}>{plagiarism.stats.totalSubmissions}</div>
-                        </div>
-                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #ef4444' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('plagiarism_flags')}</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ef4444' }}>{plagiarism.stats.plagiarismCount}</div>
-                        </div>
-                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #f59e0b' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('plagiarism_rate')}</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f59e0b' }}>{plagiarism.stats.plagiarismRate}%</div>
-                        </div>
-                        <div style={{ padding: '1.25rem', borderRadius: '14px', background: 'var(--card-bg)', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', borderLeft: '4px solid #8b5cf6' }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{t('repeat_offenders')}</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: '#8b5cf6' }}>{plagiarism.repeatOffenders.length}</div>
-                        </div>
-                    </div>
-
-                    {/* Offenders + Problems side by side */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-                        <div className="dashboard-panel">
-                            <h3 className="panel-title" style={{ color: '#ef4444' }}><AlertTriangle size={18} /> {t('repeat_offenders')}</h3>
-                            {plagiarism.repeatOffenders.length > 0 ? plagiarism.repeatOffenders.map((o, i) => (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.05)', marginBottom: '0.5rem' }}>
-                                    <div><div style={{ fontWeight: 600 }}>{o.name}</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{o.copiedFrom.slice(0, 3).join(', ')}</div></div>
-                                    <span style={{ background: '#ef4444', color: '#fff', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 700, fontSize: '0.8rem' }}>{o.count}x</span>
-                                </div>
-                            )) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem' }}>{t('no_offenders')}</div>}
-                        </div>
-                        <div className="dashboard-panel">
-                            <h3 className="panel-title"><FileCode size={18} color="#f59e0b" /> {t('most_copied_problems')}</h3>
-                            {plagiarism.byProblem.length > 0 ? plagiarism.byProblem.map((p, i) => (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', borderRadius: '8px', background: 'var(--bg-secondary)', marginBottom: '0.5rem' }}>
-                                    <div><div style={{ fontWeight: 600 }}>{p.title}</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{p.difficulty}</div></div>
-                                    <span style={{ fontWeight: 700, color: '#f59e0b' }}>{p.flaggedCount} flags</span>
-                                </div>
-                            )) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem' }}>{t('no_data')}</div>}
-                        </div>
-                    </div>
-
-                    {/* Flagged Table */}
-                    <div className="dashboard-panel">
-                        <h3 className="panel-title"><Shield size={18} color="#ef4444" /> {t('all_flagged_submissions')}</h3>
-                        {plagiarism.flaggedSubmissions.length > 0 ? (
-                            <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                    <thead><tr style={{ borderBottom: '2px solid var(--border-color)' }}>
-                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('student')}</th>
-                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('problem')}</th>
-                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('language')}</th>
-                                        <th style={{ textAlign: 'center', padding: '0.6rem' }}>{t('score')}</th>
-                                        <th style={{ textAlign: 'left', padding: '0.6rem' }}>{t('copied_from')}</th>
-                                        <th style={{ textAlign: 'right', padding: '0.6rem' }}>{t('date')}</th>
-                                    </tr></thead>
-                                    <tbody>
-                                        {plagiarism.flaggedSubmissions.slice(0, 30).map((s, i) => (
-                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                <td style={{ padding: '0.6rem', fontWeight: 600 }}>{s.studentName}</td>
-                                                <td style={{ padding: '0.6rem' }}>{s.problemTitle}</td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>{s.language}</td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'center' }}>{s.score}</td>
-                                                <td style={{ padding: '0.6rem', color: '#ef4444' }}>{s.copiedFromName || s.copiedFrom}</td>
-                                                <td style={{ padding: '0.6rem', textAlign: 'right', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(s.submittedAt).toLocaleDateString()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>{t('no_plagiarism_detected')}</div>}
-                    </div>
                 </div>
             )}
 
@@ -7827,75 +7745,122 @@ function AdminAnalyticsDashboard() {
 const ADMIN_API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 function AdminCodeReviews() {
+    const { user } = useAuth()
     const [submissions, setSubmissions] = useState([])
-    const [selectedId, setSelectedId] = useState(null)
+    const [selected, setSelected] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState('')
     const token = localStorage.getItem('authToken')
 
     useEffect(() => {
-        axios.get(`${ADMIN_API_BASE}/api/submissions`, {
+        axios.get(`${ADMIN_API_BASE}/api/submissions?limit=200`, {
             headers: { Authorization: `Bearer ${token}` }
         })
-            .then(res => setSubmissions(res.data?.submissions || res.data || []))
+            .then(res => {
+                const data = Array.isArray(res.data) ? res.data : (res.data?.data || res.data?.submissions || [])
+                setSubmissions(data)
+            })
             .catch(() => setSubmissions([]))
             .finally(() => setLoading(false))
     }, [])
 
-    if (selectedId) {
+    if (selected) {
         return (
-            <div>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <button
-                    onClick={() => setSelectedId(null)}
-                    style={{ marginBottom: 16, padding: '8px 16px', cursor: 'pointer', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6 }}
+                    onClick={() => setSelected(null)}
+                    style={{ alignSelf: 'flex-start', padding: '8px 18px', cursor: 'pointer', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                    ← Back to all submissions
+                    ← Back to submissions
                 </button>
-                <CodeReviewPanel submissionId={selectedId} />
+                <CodeReviewPanel submissionId={selected.id} submission={selected} user={user} />
             </div>
         )
     }
 
-    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading submissions…</div>
+    if (loading) return <div style={{ padding: 40, textAlign: 'center', opacity: 0.6 }}>Loading submissions…</div>
 
-    if (!submissions.length) {
-        return (
-            <div style={{ padding: 40, textAlign: 'center', opacity: 0.7 }}>
-                <Github size={48} style={{ marginBottom: 12 }} />
-                <p>No submissions found.</p>
-            </div>
-        )
-    }
+    const filtered = submissions.filter(s => {
+        const q = search.toLowerCase()
+        return !q
+            || (s.problem_title || s.itemTitle || s.title || '').toLowerCase().includes(q)
+            || (s.student_name || s.studentName || s.username || '').toLowerCase().includes(q)
+    })
 
     return (
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
-            <p style={{ marginBottom: 16, opacity: 0.7 }}>
-                Showing {submissions.length} submission(s). Click one to view its review comments.
-            </p>
-            {submissions.map(sub => (
-                <div
-                    key={sub.id}
-                    onClick={() => setSelectedId(sub.id)}
+        <div style={{ padding: '0 4px' }}>
+            {/* Header */}
+            <div style={{ marginBottom: 20 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700 }}>Code Reviews</h2>
+                <p style={{ margin: 0, opacity: 0.55, fontSize: 13 }}>View and post code review comments across the platform</p>
+            </div>
+
+            {/* Search */}
+            <div style={{ marginBottom: 16, position: 'relative', maxWidth: 420 }}>
+                <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search by problem or student name…"
                     style={{
-                        padding: '14px 18px',
-                        marginBottom: 10,
-                        borderRadius: 8,
-                        background: 'var(--card-bg, #1e293b)',
-                        border: '1px solid var(--border, #334155)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
+                        width: '100%', padding: '10px 14px 10px 38px',
+                        borderRadius: 8, border: '1px solid var(--border, #334155)',
+                        background: 'var(--card-bg, #1e293b)', color: 'inherit',
+                        fontSize: 13, outline: 'none', boxSizing: 'border-box'
                     }}
-                >
-                    <div>
-                        <div style={{ fontWeight: 600 }}>{sub.problem_title || sub.title || `Submission #${sub.id}`}</div>
-                        <div style={{ fontSize: 13, opacity: 0.65 }}>
-                            {sub.student_name || sub.username || 'User'} · {sub.language || 'Code'} · Score: {sub.score ?? '—'}
-                        </div>
-                    </div>
-                    <ChevronRight size={18} style={{ opacity: 0.5 }} />
+                />
+                <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.4, pointerEvents: 'none' }} />
+            </div>
+
+            <p style={{ marginBottom: 14, opacity: 0.5, fontSize: 12 }}>
+                Showing {filtered.length} of {submissions.length} submission(s) — click one to view/post reviews
+            </p>
+
+            {!filtered.length ? (
+                <div style={{ padding: '48px 0', textAlign: 'center', opacity: 0.5 }}>
+                    <Github size={40} style={{ marginBottom: 12 }} />
+                    <p style={{ margin: 0 }}>No submissions found.</p>
                 </div>
-            ))}
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {filtered.map(sub => {
+                        const title = sub.problem_title || sub.itemTitle || sub.title || `Submission #${sub.id}`
+                        const student = sub.student_name || sub.studentName || sub.username || 'Unknown'
+                        const score = sub.score != null ? sub.score : '—'
+                        const lang = sub.language || 'Code'
+                        const date = sub.submitted_at || sub.submittedAt || sub.created_at
+                        return (
+                            <div
+                                key={sub.id}
+                                onClick={() => setSelected(sub)}
+                                style={{
+                                    padding: '14px 18px',
+                                    borderRadius: 10,
+                                    background: 'var(--card-bg, #1e293b)',
+                                    border: '1px solid var(--border, #334155)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    transition: 'border-color 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--primary, #4f46e5)'}
+                                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border, #334155)'}
+                            >
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+                                    <div style={{ fontSize: 12, opacity: 0.55, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                        <span>👤 {student}</span>
+                                        <span>💻 {lang}</span>
+                                        <span>🏆 Score: {score}</span>
+                                        {date && <span>📅 {new Date(date).toLocaleDateString()}</span>}
+                                    </div>
+                                </div>
+                                <ChevronRight size={18} style={{ opacity: 0.4, flexShrink: 0, marginLeft: 12 }} />
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
         </div>
     )
 }

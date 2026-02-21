@@ -10111,8 +10111,8 @@ app.post('/api/submissions/:id/reviews', authenticate, async (req, res) => {
         const { lineNumber, comment, codeSnippet } = req.body;
         const authorId = req.user.id;
 
-        if (!lineNumber || !comment) {
-            return res.status(400).json({ error: 'lineNumber and comment required' });
+        if (!comment) {
+            return res.status(400).json({ error: 'comment is required' });
         }
 
         const reviewId = uuidv4();
@@ -10121,6 +10121,29 @@ app.post('/api/submissions/:id/reviews', authenticate, async (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [reviewId, submissionId, authorId, lineNumber, comment, codeSnippet]
         );
+
+        // Notify the student about the new code review
+        try {
+            const [[sub]] = await pool.query(
+                'SELECT s.student_id, p.title as problem_title, u.name as mentor_name FROM submissions s LEFT JOIN problems p ON s.problem_id = p.id JOIN users u ON u.id = ? WHERE s.id = ?',
+                [authorId, submissionId]
+            );
+            if (sub?.student_id) {
+                const lineInfo = lineNumber ? ` on line ${lineNumber}` : '';
+                const problemName = sub.problem_title || 'your submission';
+                await createNotification(
+                    sub.student_id,
+                    'code_review',
+                    '💬 New Code Review',
+                    `${sub.mentor_name || 'Your mentor'} left a review${lineInfo} on "${problemName}"`,
+                    { submissionId, reviewId, lineNumber },
+                    '/student/code-reviews',
+                    'normal'
+                );
+            }
+        } catch (notifErr) {
+            console.error('Error sending code review notification:', notifErr.message);
+        }
 
         res.status(201).json({ id: reviewId, success: true });
     } catch (error) {
@@ -10360,27 +10383,28 @@ app.post('/api/reports/export', authenticate, async (req, res) => {
 // GET /api/search - Full-text search with filters
 app.get('/api/search', authenticate, async (req, res) => {
     try {
-        const { q, difficulty, status } = req.query;
-
-        if (!q) {
-            return res.status(400).json({ error: 'Search query required' });
-        }
+        const { q, difficulty, category, status } = req.query;
 
         let query = `
-            SELECT p.*
+            SELECT p.id, p.title, p.description, p.difficulty, p.type as category, p.status, p.created_at
             FROM problems p
-            WHERE (p.title LIKE ? OR p.description LIKE ?)
+            WHERE p.status = 'live'
         `;
-        const params = [`%${q}%`, `%${q}%`];
+        const params = [];
 
-        if (difficulty) {
+        if (q && q.trim()) {
+            query += ' AND (p.title LIKE ? OR p.description LIKE ?)';
+            params.push(`%${q.trim()}%`, `%${q.trim()}%`);
+        }
+
+        if (difficulty && difficulty !== 'all') {
             query += ' AND p.difficulty = ?';
             params.push(difficulty);
         }
 
-        if (status) {
-            query += ' AND p.status = ?';
-            params.push(status);
+        if (category && category !== 'all') {
+            query += ' AND p.type = ?';
+            params.push(category);
         }
 
         query += ' ORDER BY p.created_at DESC LIMIT 50';
@@ -10388,9 +10412,12 @@ app.get('/api/search', authenticate, async (req, res) => {
         const [results] = await pool.query(query, params);
 
         res.json({
-            query: q,
+            query: q || '',
             resultCount: results.length,
-            results: results || []
+            results: results.map(r => ({
+                ...r,
+                category: r.category || 'general'
+            }))
         });
     } catch (error) {
         console.error('Error searching:', error.message);
@@ -10426,23 +10453,49 @@ app.get('/api/recommendations/ai', authenticate, async (req, res) => {
             recommendedDifficulty = weakAreas[0];
         }
 
-        const [recommendations] = await pool.query(
-            `SELECT p.*
+        const [rawProblems] = await pool.query(
+            `SELECT p.id, p.title, p.difficulty, p.type, p.language, p.description
              FROM problems p
-             WHERE p.difficulty = ? OR p.difficulty = 'medium'
+             WHERE (p.difficulty = ? OR p.difficulty = 'medium') AND p.status = 'live'
              ORDER BY p.difficulty ASC, p.created_at DESC
              LIMIT 10`,
             [recommendedDifficulty]
         );
 
+        const difficultyPriority = { easy: 1, medium: 2, hard: 3 };
+        const reasonMap = {
+            easy: 'Great for building foundational skills',
+            medium: 'Helps consolidate your understanding',
+            hard: 'Challenge yourself to reach the next level'
+        };
+        const weakReasonMap = {
+            easy: 'Your easy problem scores are below 70% — practice these to improve',
+            medium: 'Your medium problem scores need work — focus here to level up',
+            hard: 'Your hard problem scores are low — targeted practice will help'
+        };
+
+        const recommendations = rawProblems.map(p => ({
+            id: p.id,
+            title: p.title,
+            difficulty: p.difficulty,
+            language: p.language || p.type || 'Python',
+            type: weakAreas.includes(p.difficulty) ? 'skill-gap' : 'practice',
+            priority: difficultyPriority[p.difficulty] || 2,
+            reason: weakAreas.includes(p.difficulty)
+                ? (weakReasonMap[p.difficulty] || 'Needs improvement')
+                : (reasonMap[p.difficulty] || 'Recommended for you'),
+            description: p.description
+        }));
+
+        const insights = weakAreas.length > 0
+            ? [`Weak areas detected: ${weakAreas.join(', ')}`, 'Focus on flagged problems to raise your score']
+            : ['You\'re performing well!', 'Try these problems to stay sharp'];
+
         res.json({
             userId,
-            weakAreas: weakAreas.length > 0 ? weakAreas : [],
-            recommendations: recommendations || [],
-            insights: [
-                'Focus on weak difficulty levels to improve score',
-                'Practice problems in recommended order'
-            ]
+            weakAreas,
+            recommendations,
+            insights
         });
     } catch (error) {
         console.error('Error getting recommendations:', error.message);
@@ -10698,24 +10751,80 @@ app.post('/api/plagiarism/check', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'submissionId and code required' });
         }
 
-        // Simulate plagiarism check (would call plagiarismDetector service)
-        const similarity = Math.floor(Math.random() * 100);
-        const verdict = similarity > 40 ? 'PLAGIARISM_DETECTED' : 'ORIGINAL';
-
-        // Fetch similar submissions for comparison
-        const [matches] = await pool.query(
-            `SELECT id, student_id, code
-             FROM submissions
-             WHERE id != ?
-             LIMIT 5`,
+        // Get this submission's problem_id for same-problem comparison
+        const [[thisSubmission]] = await pool.query(
+            'SELECT problem_id FROM submissions WHERE id = ?',
             [submissionId]
         );
+        if (!thisSubmission) {
+            return res.status(404).json({ error: 'Submission not found' });
+        }
+
+        // Fetch other students' submissions for the same problem
+        const [otherSubmissions] = await pool.query(
+            `SELECT s.id, s.student_id, s.code,
+                    COALESCE(NULLIF(u.name,''), NULLIF(u.email,''), CONCAT('Student #', LEFT(CAST(s.student_id AS CHAR),8))) AS student_name,
+                    u.email AS student_email
+             FROM submissions s
+             LEFT JOIN users u ON u.id = s.student_id
+             WHERE s.id != ?
+               AND s.problem_id = ?
+               AND s.student_id != (SELECT student_id FROM submissions WHERE id = ?)
+             ORDER BY s.submitted_at DESC
+             LIMIT 10`,
+            [submissionId, thisSubmission.problem_id, submissionId]
+        );
+
+        // Token-based Jaccard similarity
+        function tokenize(c) {
+            if (!c) return new Set();
+            return new Set(
+                c.toLowerCase()
+                    .replace(/\/\/.*/g, '')
+                    .replace(/\/\*[\s\S]*?\*\//g, '')
+                    .replace(/[^\w\s]/g, ' ')
+                    .split(/\s+/)
+                    .filter(t => t.length > 1)
+            );
+        }
+        function jaccardSimilarity(c1, c2) {
+            const s1 = tokenize(c1);
+            const s2 = tokenize(c2);
+            const intersection = [...s1].filter(x => s2.has(x)).length;
+            const union = new Set([...s1, ...s2]).size;
+            return union === 0 ? 0 : Math.round((intersection / union) * 100);
+        }
+
+        // Score all matches and sort by highest similarity
+        const scoredMatches = (otherSubmissions || [])
+            .map(m => ({
+                id: m.id,
+                student_id: m.student_id,
+                student_name: m.student_name || 'Unknown Student',
+                student_email: m.student_email || '',
+                similarity: jaccardSimilarity(code, m.code)
+            }))
+            .sort((a, b) => b.similarity - a.similarity);
+
+        const maxSimilarity = scoredMatches.length > 0 ? scoredMatches[0].similarity : 0;
+        const verdict = maxSimilarity >= 70 ? 'PLAGIARISM_DETECTED'
+                      : maxSimilarity >= 40 ? 'SUSPICIOUS'
+                      : 'ORIGINAL';
+
+        // Only surface matches >= 30% as meaningful
+        const significantMatches = scoredMatches.filter(m => m.similarity >= 30).slice(0, 5);
 
         res.json({
             submissionId,
-            similarity,
+            similarity: maxSimilarity,
             verdict,
-            matches: (matches || []).map(m => ({ id: m.id, student_id: m.student_id })),
+            matches: significantMatches.map(m => ({
+                id: m.id,
+                student_id: m.student_id,
+                student_name: m.student_name,
+                student_email: m.student_email,
+                similarity: m.similarity
+            })),
             checked_at: new Date().toISOString()
         });
     } catch (error) {
@@ -10790,6 +10899,211 @@ app.put('/api/users/:id/availability', authenticate, async (req, res) => {
     } catch (error) {
         console.error('Error updating availability:', error.message);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================
+// CONNECT ALUMNI ROUTES
+// ============================================================
+
+// GET /api/alumni  – list all alumni profiles
+app.get('/api/alumni', authenticate, async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT u.id, u.name, u.email, u.role,
+                    COALESCE(ap.company, '') AS company,
+                    COALESCE(ap.job_title, '') AS job_title,
+                    COALESCE(ap.location, '') AS location,
+                    COALESCE(ap.batch_year, 0) AS batch_year,
+                    COALESCE(ap.skills_json, '[]') AS skills_json,
+                    COALESCE(ap.bio, '') AS bio,
+                    COALESCE(ap.avatar_url, '') AS avatar
+             FROM users u
+             LEFT JOIN alumni_profiles ap ON ap.user_id = u.id
+             WHERE u.role = 'alumni'
+             ORDER BY u.name`
+        );
+        const userId = req.user.userId || req.user.id;
+        const alumni = await Promise.all(rows.map(async row => {
+            const [conn] = await pool.query(
+                `SELECT status FROM alumni_connections
+                 WHERE (requester_id = ? AND target_id = ?) OR (requester_id = ? AND target_id = ?)`,
+                [userId, row.id, row.id, userId]
+            );
+            let connection_status = 'none';
+            if (conn.length > 0) {
+                connection_status = conn[0].status === 'accepted' ? 'connected' : 'pending';
+            }
+            return {
+                ...row,
+                skills: (() => { try { return JSON.parse(row.skills_json) } catch { return [] } })(),
+                connection_status,
+                mutual_connections: 0
+            };
+        }));
+        res.json({ alumni });
+    } catch (err) {
+        console.error('Alumni list error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/alumni/connect  – send / accept connection request
+app.post('/api/alumni/connect', authenticate, async (req, res) => {
+    try {
+        const requesterId = req.user.userId || req.user.id;
+        const { targetId } = req.body;
+        if (!targetId) return res.status(400).json({ error: 'targetId required' });
+        const [existing] = await pool.query(
+            'SELECT id, status FROM alumni_connections WHERE requester_id = ? AND target_id = ?',
+            [requesterId, targetId]
+        );
+        if (existing.length > 0) return res.json({ message: 'Request already exists', status: existing[0].status });
+        const id = uuidv4();
+        await pool.query(
+            'INSERT INTO alumni_connections (id, requester_id, target_id, status, created_at) VALUES (?, ?, ?, ?, NOW())',
+            [id, requesterId, targetId, 'pending']
+        );
+        res.json({ success: true, status: 'pending' });
+    } catch (err) {
+        console.error('Alumni connect error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/alumni/connect/:id/accept – accept connection
+app.put('/api/alumni/connect/:id/accept', authenticate, async (req, res) => {
+    try {
+        await pool.query(
+            "UPDATE alumni_connections SET status = 'accepted' WHERE id = ?",
+            [req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/alumni/connect/:id – withdraw / decline connection
+app.delete('/api/alumni/connect/:id', authenticate, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM alumni_connections WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/alumni/posts  – get feed posts (alumni + own)
+app.get('/api/alumni/posts', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+        const [posts] = await pool.query(
+            `SELECT ap.*, u.name AS author_name,
+                    COALESCE(alp.company, '') AS author_company,
+                    COALESCE(alp.job_title, '') AS author_title,
+                    (SELECT COUNT(*) FROM alumni_post_likes l WHERE l.post_id = ap.id) AS likes,
+                    (SELECT COUNT(*) FROM alumni_post_comments c WHERE c.post_id = ap.id) AS comments,
+                    (SELECT COUNT(*) FROM alumni_post_likes l2 WHERE l2.post_id = ap.id AND l2.user_id = ?) AS liked_by_me
+             FROM alumni_posts ap
+             JOIN users u ON u.id = ap.author_id
+             LEFT JOIN alumni_profiles alp ON alp.user_id = ap.author_id
+             ORDER BY ap.created_at DESC
+             LIMIT ? OFFSET ?`,
+            [userId, limit, offset]
+        );
+        res.json({ posts: posts.map(p => ({ ...p, liked_by_me: p.liked_by_me > 0, tags: (() => { try { return JSON.parse(p.tags_json || '[]') } catch { return [] } })() })) });
+    } catch (err) {
+        console.error('Alumni posts error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/alumni/posts  – create a post
+app.post('/api/alumni/posts', authenticate, async (req, res) => {
+    try {
+        const authorId = req.user.userId || req.user.id;
+        const { content, type = 'update', tags = [] } = req.body;
+        if (!content?.trim()) return res.status(400).json({ error: 'content required' });
+        const id = uuidv4();
+        await pool.query(
+            'INSERT INTO alumni_posts (id, author_id, content, type, tags_json, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+            [id, authorId, content.trim(), type, JSON.stringify(tags)]
+        );
+        res.json({ success: true, id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/alumni/posts/:id/like – toggle like
+app.post('/api/alumni/posts/:id/like', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const postId = req.params.id;
+        const [existing] = await pool.query('SELECT id FROM alumni_post_likes WHERE post_id = ? AND user_id = ?', [postId, userId]);
+        if (existing.length > 0) {
+            await pool.query('DELETE FROM alumni_post_likes WHERE post_id = ? AND user_id = ?', [postId, userId]);
+            return res.json({ liked: false });
+        }
+        await pool.query('INSERT INTO alumni_post_likes (id, post_id, user_id, created_at) VALUES (?, ?, ?, NOW())', [uuidv4(), postId, userId]);
+        res.json({ liked: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/alumni/posts/:id/comment – add comment
+app.post('/api/alumni/posts/:id/comment', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const { text } = req.body;
+        if (!text?.trim()) return res.status(400).json({ error: 'text required' });
+        const id = uuidv4();
+        await pool.query(
+            'INSERT INTO alumni_post_comments (id, post_id, user_id, text, created_at) VALUES (?, ?, ?, ?, NOW())',
+            [id, req.params.id, userId, text.trim()]
+        );
+        res.json({ success: true, id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/alumni/messages/:alumniId – get DM thread
+app.get('/api/alumni/messages/:alumniId', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const otherId = req.params.alumniId;
+        const [msgs] = await pool.query(
+            `SELECT * FROM alumni_messages
+             WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+             ORDER BY created_at ASC LIMIT 100`,
+            [userId, otherId, otherId, userId]
+        );
+        res.json({ messages: msgs });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/alumni/messages – send a DM
+app.post('/api/alumni/messages', authenticate, async (req, res) => {
+    try {
+        const senderId = req.user.userId || req.user.id;
+        const { receiverId, text } = req.body;
+        if (!receiverId || !text?.trim()) return res.status(400).json({ error: 'receiverId and text required' });
+        const id = uuidv4();
+        await pool.query(
+            'INSERT INTO alumni_messages (id, sender_id, receiver_id, text, created_at) VALUES (?, ?, ?, ?, NOW())',
+            [id, senderId, receiverId, text.trim()]
+        );
+        res.json({ success: true, id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

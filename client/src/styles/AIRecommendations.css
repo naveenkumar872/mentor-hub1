@@ -69,6 +69,26 @@
     flex-shrink: 0;
 }
 
+.rec-insights {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.insight-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: rgba(79, 70, 229, 0.12);
+    color: #818cf8;
+    border: 1px solid rgba(79, 70, 229, 0.25);
+}
+
 .recommendations-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
