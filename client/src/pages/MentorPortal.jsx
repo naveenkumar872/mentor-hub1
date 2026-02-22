@@ -144,7 +144,8 @@ function MentorPortal() {
                 { path: '/mentor/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
         },
-        { path: '/mentor/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount }
+        { path: '/mentor/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
+        { path: '/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true, external: true }
     ]
 
     return (

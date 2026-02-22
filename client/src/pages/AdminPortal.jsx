@@ -187,7 +187,8 @@ function AdminPortal() {
                 { path: '/admin/messaging', label: 'Messaging', icon: <Mail size={20} />, badge: unreadCount },
                 { path: '/admin/reports', label: 'Export Reports', icon: <Download size={20} /> }
             ]
-        }
+        },
+        { path: '/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true, external: true }
     ]
 
     return (

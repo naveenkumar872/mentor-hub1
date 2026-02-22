@@ -216,9 +216,9 @@ function App() {
                                 user ? <Navigate to={`/${user.role}`} replace /> : <Login />
                             } />
 
-                            {/* Full-page Connect Alumni portal — for students and alumni */}
+                            {/* Full-page Connect Alumni portal — for all roles */}
                             <Route path="/connect-alumni" element={
-                                <ProtectedRoute allowedRoles={['student', 'alumni']}>
+                                <ProtectedRoute allowedRoles={['student', 'alumni', 'mentor', 'admin']}>
                                     <ErrorBoundary title="Alumni Portal Error">
                                         <ConnectAlumni />
                                     </ErrorBoundary>

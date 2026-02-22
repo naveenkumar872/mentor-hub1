@@ -10909,6 +10909,7 @@ app.put('/api/users/:id/availability', authenticate, async (req, res) => {
 // GET /api/alumni  – list all alumni profiles
 app.get('/api/alumni', authenticate, async (req, res) => {
     try {
+        const userId = req.user.userId || req.user.id;
         const [rows] = await pool.query(
             `SELECT u.id, u.name, u.email, u.role,
                     COALESCE(ap.company, '') AS company,
@@ -10920,10 +10921,10 @@ app.get('/api/alumni', authenticate, async (req, res) => {
                     COALESCE(ap.avatar_url, '') AS avatar
              FROM users u
              LEFT JOIN alumni_profiles ap ON ap.user_id = u.id
-             WHERE u.role = 'alumni'
-             ORDER BY u.name`
+             WHERE u.role IN ('alumni', 'mentor', 'admin') AND u.id != ?
+             ORDER BY u.name`,
+            [userId]
         );
-        const userId = req.user.userId || req.user.id;
         const alumni = await Promise.all(rows.map(async row => {
             const [conn] = await pool.query(
                 `SELECT status FROM alumni_connections
@@ -11158,6 +11159,78 @@ app.post('/api/alumni/messages', authenticate, async (req, res) => {
         );
         res.json({ success: true, id });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/alumni/network – get ALL connected users (alumni AND students)
+app.get('/api/alumni/network', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const [rows] = await pool.query(
+            `SELECT u.id, u.name, u.email, u.role,
+                    COALESCE(ap.company, '') AS company,
+                    COALESCE(ap.job_title, '') AS job_title,
+                    COALESCE(ap.location, '') AS location,
+                    COALESCE(ap.batch_year, 0) AS batch_year,
+                    COALESCE(ap.skills_json, '[]') AS skills_json,
+                    COALESCE(ap.bio, '') AS bio,
+                    COALESCE(ap.avatar_url, '') AS avatar,
+                    ac.created_at AS connected_since
+             FROM alumni_connections ac
+             JOIN users u ON u.id = IF(ac.requester_id = ?, ac.target_id, ac.requester_id)
+             LEFT JOIN alumni_profiles ap ON ap.user_id = u.id
+             WHERE (ac.requester_id = ? OR ac.target_id = ?) AND ac.status = 'accepted'
+             ORDER BY u.name`,
+            [userId, userId, userId]
+        );
+        const network = rows.map(row => ({
+            ...row,
+            skills: (() => { try { return JSON.parse(row.skills_json) } catch { return [] } })(),
+            connection_status: 'connected'
+        }));
+        res.json({ network });
+    } catch (err) {
+        console.error('Alumni network error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/alumni/conversations – list message threads with last message
+app.get('/api/alumni/conversations', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const [partners] = await pool.query(
+            `SELECT DISTINCT IF(sender_id = ?, receiver_id, sender_id) AS partner_id
+             FROM alumni_messages WHERE sender_id = ? OR receiver_id = ?`,
+            [userId, userId, userId]
+        );
+        const conversations = [];
+        for (const p of partners) {
+            const [msgs] = await pool.query(
+                `SELECT text, created_at, sender_id FROM alumni_messages
+                 WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                 ORDER BY created_at DESC LIMIT 1`,
+                [userId, p.partner_id, p.partner_id, userId]
+            );
+            const [uInfo] = await pool.query(
+                `SELECT u.id, u.name, u.role, COALESCE(ap.job_title, '') AS job_title, COALESCE(ap.company, '') AS company
+                 FROM users u LEFT JOIN alumni_profiles ap ON ap.user_id = u.id WHERE u.id = ?`,
+                [p.partner_id]
+            );
+            if (msgs.length > 0 && uInfo.length > 0) {
+                conversations.push({
+                    ...uInfo[0],
+                    last_message: msgs[0].text,
+                    last_time: msgs[0].created_at,
+                    is_mine: msgs[0].sender_id === userId
+                });
+            }
+        }
+        conversations.sort((a, b) => new Date(b.last_time) - new Date(a.last_time));
+        res.json({ conversations });
+    } catch (err) {
+        console.error('Alumni conversations error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
