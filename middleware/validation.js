@@ -48,9 +48,25 @@ const createProblemSchema = z.object({
     language: z.string().optional().default('Python'),
     mentorId: z.string().min(1, 'Mentor ID is required'),
     category: z.string().optional().default('general'),
-    maxAttempts: z.number().int().min(0).optional().default(0),
-    type: z.string().optional().default('coding')
-});
+    maxAttempts: z.union([z.number(), z.string().transform(Number)]).optional().default(0),
+    type: z.string().optional().default('Coding'),
+    // Additional fields used by the route handler
+    status: z.string().optional().default('live'),
+    deadline: z.string().optional().nullable(),
+    sampleInput: z.string().optional().default(''),
+    expectedOutput: z.string().optional().default(''),
+    sqlSchema: z.string().optional().nullable(),
+    expectedQueryResult: z.string().optional().nullable(),
+    // Proctoring settings
+    enableProctoring: z.boolean().optional().default(false),
+    enableVideoAudio: z.boolean().optional().default(false),
+    disableCopyPaste: z.boolean().optional().default(false),
+    trackTabSwitches: z.boolean().optional().default(false),
+    maxTabSwitches: z.union([z.number(), z.string().transform(Number)]).optional().default(3),
+    enableFaceDetection: z.boolean().optional().default(false),
+    detectMultipleFaces: z.boolean().optional().default(false),
+    trackFaceLookaway: z.boolean().optional().default(false)
+}).passthrough();
 
 // ==================== SUBMISSION SCHEMAS ====================
 

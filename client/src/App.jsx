@@ -1,7 +1,20 @@
 import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import axios from 'axios'
 import Login from './pages/Login'
 import ErrorBoundary from './components/shared/ErrorBoundary'
+
+// ── Global axios interceptor ──────────────────────────────────────────────────
+// Automatically attach the JWT token to every outgoing axios request.
+axios.interceptors.request.use((config) => {
+    const token = localStorage.getItem('authToken')
+    if (token) {
+        config.headers = config.headers || {}
+        config.headers['Authorization'] = `Bearer ${token}`
+    }
+    return config
+})
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Lazy load heavy portal pages for code splitting
 const StudentPortal = lazy(() => import('./pages/StudentPortal'))
