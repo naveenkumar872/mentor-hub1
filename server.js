@@ -10994,6 +10994,61 @@ app.delete('/api/alumni/connect/:id', authenticate, async (req, res) => {
     }
 });
 
+// DELETE /api/alumni/connect/withdraw/:targetId – withdraw by target user id
+app.delete('/api/alumni/connect/withdraw/:targetId', authenticate, async (req, res) => {
+    try {
+        const requesterId = req.user.userId || req.user.id;
+        const targetId = req.params.targetId;
+        await pool.query(
+            'DELETE FROM alumni_connections WHERE requester_id = ? AND target_id = ?',
+            [requesterId, targetId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/alumni/requests – get pending connection requests received
+app.get('/api/alumni/requests', authenticate, async (req, res) => {
+    try {
+        const userId = req.user.userId || req.user.id;
+        const [rows] = await pool.query(
+            `SELECT ac.id, ac.requester_id AS from_id, ac.created_at,
+                    u.name AS from_name, u.email AS from_email,
+                    COALESCE(ap.company, '') AS from_company,
+                    COALESCE(ap.job_title, '') AS from_title,
+                    COALESCE(ap.bio, '') AS from_bio
+             FROM alumni_connections ac
+             JOIN users u ON u.id = ac.requester_id
+             LEFT JOIN alumni_profiles ap ON ap.user_id = ac.requester_id
+             WHERE ac.target_id = ? AND ac.status = 'pending'
+             ORDER BY ac.created_at DESC`,
+            [userId]
+        );
+        res.json({ requests: rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/alumni/posts/:id/comments – get comments for a post
+app.get('/api/alumni/posts/:id/comments', authenticate, async (req, res) => {
+    try {
+        const [comments] = await pool.query(
+            `SELECT c.id, c.text, c.created_at, u.name AS author_name
+             FROM alumni_post_comments c
+             JOIN users u ON u.id = c.user_id
+             WHERE c.post_id = ?
+             ORDER BY c.created_at ASC`,
+            [req.params.id]
+        );
+        res.json({ comments });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/alumni/posts  – get feed posts (alumni + own)
 app.get('/api/alumni/posts', authenticate, async (req, res) => {
     try {

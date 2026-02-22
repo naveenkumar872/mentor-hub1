@@ -7,6 +7,7 @@ import ErrorBoundary from './components/shared/ErrorBoundary'
 const StudentPortal = lazy(() => import('./pages/StudentPortal'))
 const MentorPortal = lazy(() => import('./pages/MentorPortal'))
 const AdminPortal = lazy(() => import('./pages/AdminPortal'))
+const ConnectAlumni = lazy(() => import('./components/ConnectAlumni'))
 
 // Create Auth Context
 export const AuthContext = createContext(null)
@@ -163,7 +164,9 @@ function App() {
             }
 
             // Navigate to appropriate portal based on role
-            navigate(`/${data.user.role}`)
+            // Alumni users go to /alumni, everyone else to their portal
+            const dest = data.user.role === 'alumni' ? '/alumni' : `/${data.user.role}`
+            navigate(dest)
 
             return { success: true }
         } catch (error) {
@@ -211,6 +214,22 @@ function App() {
                         <Routes>
                             <Route path="/login" element={
                                 user ? <Navigate to={`/${user.role}`} replace /> : <Login />
+                            } />
+
+                            {/* Full-page Connect Alumni portal — for students and alumni */}
+                            <Route path="/connect-alumni" element={
+                                <ProtectedRoute allowedRoles={['student', 'alumni']}>
+                                    <ErrorBoundary title="Alumni Portal Error">
+                                        <ConnectAlumni />
+                                    </ErrorBoundary>
+                                </ProtectedRoute>
+                            } />
+
+                            {/* Alumni users redirect to Connect Alumni portal */}
+                            <Route path="/alumni" element={
+                                <ProtectedRoute allowedRoles={['alumni']}>
+                                    <Navigate to="/connect-alumni" replace />
+                                </ProtectedRoute>
                             } />
 
                             <Route path="/student/*" element={

@@ -18,7 +18,6 @@ import ExportReports from '@/components/ExportReports'
 import PlagiarismChecker from '@/components/PlagiarismChecker'
 import MentorAvailabilityView from '@/components/MentorAvailabilityView'
 import FeaturesShowcase from '@/components/FeaturesShowcase'
-import ConnectAlumni from '@/components/ConnectAlumni'
 import { useAuth } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import axios from 'axios'
@@ -173,7 +172,7 @@ function StudentPortal() {
                 { path: '/student/availability', label: 'Mentor Availability', icon: <Calendar size={20} /> }
             ]
         },
-        { path: '/student/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true }
+        { path: '/connect-alumni', label: 'Connect Alumni', icon: <Users size={20} />, highlight: true, external: true }
     ]
 
     return (
@@ -195,7 +194,6 @@ function StudentPortal() {
                 <Route path="/plagiarism" element={<PlagiarismChecker user={user} />} />
                 <Route path="/messaging" element={<DirectMessaging currentUser={user} />} />
                 <Route path="/availability" element={<MentorAvailabilityView user={user} />} />
-                <Route path="/connect-alumni" element={<ConnectAlumni />} />
                 <Route path="/features" element={<FeaturesShowcase />} />
             </Routes>
         </DashboardLayout>

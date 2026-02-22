@@ -8,13 +8,14 @@ require('dotenv').config();
 const mysql = require('mysql2/promise');
 
 async function migrate() {
+    const dbUrl = new URL(process.env.DATABASE_URL);
     const pool = await mysql.createPool({
-        host: process.env.DB_HOST || 'localhost',
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || '',
-        database: process.env.DB_NAME || 'mentor_hub',
-        port: process.env.DB_PORT || 3306,
-        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+        host: dbUrl.hostname,
+        user: dbUrl.username,
+        password: dbUrl.password,
+        database: dbUrl.pathname.slice(1),
+        port: Number(dbUrl.port) || 4000,
+        ssl: { rejectUnauthorized: true },
         waitForConnections: true,
     });
 
@@ -29,8 +30,8 @@ async function migrate() {
             job_title    VARCHAR(255)  DEFAULT '',
             location     VARCHAR(255)  DEFAULT '',
             batch_year   INT           DEFAULT NULL,
-            skills_json  TEXT          DEFAULT '[]',
-            bio          TEXT          DEFAULT '',
+            skills_json  TEXT,
+            bio          TEXT,
             avatar_url   VARCHAR(500)  DEFAULT NULL,
             linkedin_url VARCHAR(500)  DEFAULT NULL,
             created_at   DATETIME      DEFAULT CURRENT_TIMESTAMP,
@@ -56,7 +57,7 @@ async function migrate() {
             author_id   VARCHAR(36)   NOT NULL,
             content     TEXT          NOT NULL,
             type        ENUM('update','job','insight') DEFAULT 'update',
-            tags_json   TEXT          DEFAULT '[]',
+            tags_json   TEXT,
             created_at  DATETIME      DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,

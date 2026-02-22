@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, useTheme } from '../App'
 import { useI18n } from '../services/i18n.jsx'
 import { Sun, Moon, LogOut, Menu, X, Brain, User, Globe, Wifi, WifiOff, ChevronDown } from 'lucide-react'
@@ -15,6 +15,7 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
     const [showLangMenu, setShowLangMenu] = useState(false)
     const [expandedGroups, setExpandedGroups] = useState({})
     const location = useLocation()
+    const navigateTo = useNavigate()
 
     // Auto-expand the group that contains the currently active route
     useEffect(() => {
@@ -153,6 +154,20 @@ function DashboardLayout({ children, navItems, title, subtitle, mentorInfo }) {
                         }
                         
                         // Regular item (no children)
+                        // External items navigate outside the current portal layout
+                        if (item.external) {
+                            return (
+                                <button
+                                    key={item.path}
+                                    className={`nav-item ${item.highlight ? 'nav-item-highlight' : ''}`}
+                                    onClick={() => { setSidebarOpen(false); navigateTo(item.path) }}
+                                    style={{ border: 'none', background: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                                >
+                                    {item.icon}
+                                    <span>{item.label}</span>
+                                </button>
+                            )
+                        }
                         return (
                             <NavLink
                                 key={item.path}
