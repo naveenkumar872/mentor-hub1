@@ -3496,8 +3496,6 @@ function SkillTestsMentor({ user }) {
     return <MentorTestManager testType="skill" user={user} />
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-
 function MentorCodeReviews({ user }) {
     const [submissions, setSubmissions] = useState([])
     const [selected, setSelected] = useState(null)
@@ -3506,7 +3504,7 @@ function MentorCodeReviews({ user }) {
     const token = localStorage.getItem('authToken')
 
     useEffect(() => {
-        axios.get(`${API_BASE_URL}/api/submissions?mentorId=${user?.id}&limit=100`, {
+        axios.get(`${API_BASE}/submissions?mentorId=${user?.id}&limit=100`, {
             headers: { Authorization: `Bearer ${token}` }
         })
             .then(res => {

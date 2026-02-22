@@ -305,7 +305,7 @@ function ChatPanel({alumni:a,currentUser,onClose,embedded=false,onMessageSent,on
     const pollRef=useRef(null)
 
     const fetchMsgs=useCallback(()=>{
-        axios.get(`${API}/alumni/messages/${a.id}`,authH()).then(r=>{setMsgs(r.data.messages||[]);setLd(false)}).catch(()=>setLd(false))
+        return axios.get(`${API}/alumni/messages/${a.id}`,authH()).then(r=>{setMsgs(r.data.messages||[]);setLd(false)}).catch(()=>setLd(false))
     },[a.id])
 
     useEffect(()=>{
@@ -322,9 +322,17 @@ function ChatPanel({alumni:a,currentUser,onClose,embedded=false,onMessageSent,on
         const t=input.trim();setInput('');setSending(true)
         try{
             await axios.post(`${API}/alumni/messages`,{receiverId:a.id,text:t},authH())
-            setMsgs(prev=>[...prev,{id:Date.now(),sender_id:currentUser?.id||'me',text:t,created_at:new Date().toISOString()}])
-            onMessageSent?.()
-        }catch{}
+            // Immediately refresh messages so the sent message appears without waiting for the 5-second poll
+            await fetchMsgs()
+            // Delay conversations refresh slightly to avoid the race condition where the DB
+            // write hasn't committed by the time fetchConversations runs
+            setTimeout(()=>onMessageSent?.(), 300)
+        }catch(err){
+            // Restore the typed text so the user can retry
+            setInput(t)
+            const msg = err?.response?.data?.error || err?.message || 'Failed to send message'
+            alert('Could not send message: ' + msg)
+        }
         setSending(false)
     }
 

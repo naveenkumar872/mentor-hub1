@@ -2,6 +2,8 @@ import React, { useContext, useEffect, useState } from 'react';
 import { ThemeContext, useAuth } from '../App';
 import { MessageCircle, Send, Trash2, User, Clock, Hash } from 'lucide-react';
 
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+
 const CodeReviewPanel = ({ submissionId, submission }) => {
     const { theme } = useContext(ThemeContext);
     const { user } = useAuth();
@@ -23,7 +25,7 @@ const CodeReviewPanel = ({ submissionId, submission }) => {
     const loadComments = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/submissions/${submissionId}/reviews`, {
+            const res = await fetch(`${API_BASE}/submissions/${submissionId}/reviews`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.ok) {
@@ -41,18 +43,37 @@ const CodeReviewPanel = ({ submissionId, submission }) => {
         if (!newComment.trim() || posting) return;
         setPosting(true);
         try {
-            const res = await fetch(`/api/submissions/${submissionId}/reviews`, {
+            const res = await fetch(`${API_BASE}/submissions/${submissionId}/reviews`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ comment: newComment, lineNumber: selectedLine })
             });
             if (res.ok) {
+                const saved = await res.json();
+                // Optimistically add the new comment immediately so the UI updates
+                // without needing a round-trip refetch, then still reload for accuracy.
+                const optimistic = {
+                    id: saved.id,
+                    submission_id: submissionId,
+                    author_id: user?.id,
+                    author_name: user?.name || 'You',
+                    line_number: selectedLine,
+                    comment: newComment,
+                    created_at: new Date().toISOString()
+                };
+                setComments(prev => [...prev, optimistic]);
                 setNewComment('');
                 setSelectedLine(null);
+                // Reload to get server-accurate data (author_name from JOIN, etc.)
                 await loadComments();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                console.error('Failed to post review:', err);
+                alert('Failed to post review: ' + (err.error || res.status));
             }
         } catch (e) {
             console.error(e);
+            alert('Network error posting review.');
         } finally {
             setPosting(false);
         }
@@ -60,7 +81,7 @@ const CodeReviewPanel = ({ submissionId, submission }) => {
 
     const deleteComment = async (id) => {
         try {
-            const res = await fetch(`/api/reviews/${id}`, {
+            const res = await fetch(`${API_BASE}/reviews/${id}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` }
             });
