@@ -212,6 +212,9 @@ global.advancedServices = {
 const allowedOrigins = [
     'http://localhost:5173', // Vite Frontend
     'http://localhost:3000', // Local Backend
+    'https://mentor-hub-frontend-zttb.onrender.com', // Hosted Frontend
+    // Additional origins from env (comma-separated)
+    ...( process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()) : [] ),
 ];
 
 app.use(cors({
@@ -225,7 +228,7 @@ app.use(cors({
             return allowed === origin;
         });
 
-        // Also allow CORS_ORIGIN from env
+        // Also allow CORS_ORIGIN from env (legacy single-origin support)
         const envOrigin = process.env.CORS_ORIGIN;
         if (isAllowed || (envOrigin && origin === envOrigin)) {
             callback(null, true);
