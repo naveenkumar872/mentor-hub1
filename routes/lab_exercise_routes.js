@@ -2,7 +2,7 @@
  * Lab Exercise Routes
  * - Admin: CRUD, assign, status management, submission review
  * - Student: view assigned exercises, submit code, view own submissions
- * - AI evaluation via Cerebras
+ * - AI evaluation via Cerebrass
  */
 
 const express = require('express')

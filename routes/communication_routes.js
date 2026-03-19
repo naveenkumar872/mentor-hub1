@@ -734,7 +734,7 @@ module.exports = function communicationRoutes(pool, authenticate, cerebrasChat) 
                 'SELECT AVG(score) as avg_score FROM comm_test_submissions WHERE session_id = ? AND student_id = ?',
                 [sessionId, studentId]
             );
-            const overallScore = Math.round(agg?.avg_score || 0);
+            const overallScore = Math.max(0, Math.min(100, Math.round(Number(agg?.avg_score) || 0)));
             await pool.query(
                 'UPDATE comm_test_sessions SET completed_at = NOW(), overall_score = ? WHERE id = ? AND student_id = ?',
                 [overallScore, sessionId, studentId]
@@ -896,7 +896,7 @@ Respond ONLY with valid JSON, no markdown:
             const { sessionId } = req.params;
             const studentId = String(req.user.id);
             const [[sessionInfo]] = await pool.query(
-                `SELECT s.started_at, s.completed_at, t.section_times FROM comm_test_sessions s
+                `SELECT s.started_at, s.completed_at, s.overall_score, t.section_times FROM comm_test_sessions s
                  LEFT JOIN comm_tests t ON s.test_id = t.id
                  WHERE s.id = ? AND s.student_id = ?`,
                 [sessionId, studentId]
@@ -914,15 +914,22 @@ Respond ONLY with valid JSON, no markdown:
             }
             const moduleStats = Object.entries(byModule).map(([type, subs]) => ({
                 module: type,
-                avgScore: Math.round(subs.reduce((s, x) => s + (x.score || 0), 0) / subs.length),
+                avgScore: Math.max(0, Math.min(100, Math.round(subs.reduce((s, x) => s + (Number(x.score) || 0), 0) / subs.length))),
                 attempts: subs.length, submissions: subs,
                 allocatedMinutes: sectionTimes[type] || null
             }));
-            const overallScore = moduleStats.length
+            const computedOverallScore = moduleStats.length
                 ? Math.round(moduleStats.reduce((s, m) => s + m.avgScore, 0) / moduleStats.length)
                 : 0;
+            const overallScore = Math.max(
+                0,
+                Math.min(
+                    100,
+                    Number(sessionInfo?.overall_score ?? computedOverallScore) || 0
+                )
+            );
             res.json({ success: true, sessionId, overallScore, modules: moduleStats, sectionTimes,
-                session: { started_at: sessionInfo?.started_at, completed_at: sessionInfo?.completed_at } });
+                session: { started_at: sessionInfo?.started_at, completed_at: sessionInfo?.completed_at, overall_score: sessionInfo?.overall_score } });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }

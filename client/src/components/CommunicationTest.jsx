@@ -9,6 +9,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
+import BrowserSpeechRecognition, { useSpeechRecognition as useBrowserSpeechRecognition } from 'react-speech-recognition'
 import {
     Mic, MicOff, Volume2, CheckCircle, XCircle, BarChart2, Trophy,
     RefreshCw, ChevronRight, Clock, Target, Brain, BookOpen,
@@ -17,6 +18,15 @@ import {
 import ModuleGDRound from './ModuleGDRound'
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api'
+const TRANSCRIPT_SOURCE = {
+    JS_LIBRARY: 'browser',
+    WHISPER: 'whisper',
+    NATIVE: 'native'
+}
+
+function getNativeSpeechRecognition() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -52,7 +62,7 @@ function ScoreBadge({ score, size = 'md' }) {
 
 // Try Web Speech API as a last-resort fallback if Groq transcription fails
 function tryBrowserSpeechFallback(onResult, onError) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    const SR = getNativeSpeechRecognition()
     if (!SR) { onError('Transcription unavailable. Please try again.'); return }
     const rec = new SR()
     rec.lang = 'en-US'; rec.interimResults = false; rec.maxAlternatives = 1
@@ -62,6 +72,52 @@ function tryBrowserSpeechFallback(onResult, onError) {
     try { rec.start() } catch { onError('Fallback speech recognition failed.') }
     // Auto-stop after 8 seconds to avoid hanging
     setTimeout(() => { try { rec.stop() } catch {} }, 8000)
+}
+
+function transcribeWithNativeSpeechRecognition() {
+    return new Promise((resolve, reject) => {
+        const SR = getNativeSpeechRecognition()
+        if (!SR) {
+            reject(new Error('Native speech recognition is unavailable.'))
+            return
+        }
+
+        const rec = new SR()
+        let settled = false
+
+        rec.lang = 'en-US'
+        rec.interimResults = false
+        rec.maxAlternatives = 1
+
+        rec.onresult = e => {
+            settled = true
+            const text = e?.results?.[0]?.[0]?.transcript?.trim() || ''
+            if (text) resolve(text)
+            else reject(new Error('Native speech recognition returned empty text.'))
+        }
+
+        rec.onerror = e => {
+            settled = true
+            reject(new Error(e?.error || 'Native speech recognition failed.'))
+        }
+
+        rec.onend = () => {
+            if (!settled) {
+                reject(new Error('Native speech recognition ended without a transcript.'))
+            }
+        }
+
+        try {
+            rec.start()
+        } catch (e) {
+            reject(e)
+            return
+        }
+
+        setTimeout(() => {
+            try { rec.stop() } catch {}
+        }, 8000)
+    })
 }
 
 function useSpeechRecognition() {
@@ -146,6 +202,170 @@ function useSpeechRecognition() {
     return { isListening, isProcessing, transcript, error, durationSec, supported, start, stop, reset }
 }
 
+function usePrimaryBrowserSpeechRecognition() {
+    const [isListening, setIsListening] = useState(false)
+    const [isProcessing, setIsProcessing] = useState(false)
+    const [transcript, setTranscript] = useState('')
+    const [error, setError] = useState(null)
+    const [durationSec, setDurationSec] = useState(0)
+    const [transcriptSource, setTranscriptSource] = useState(null)
+    const mediaRecorderRef = useRef(null)
+    const chunksRef = useRef([])
+    const startTimeRef = useRef(null)
+    const browserTranscriptRef = useRef('')
+    const browserErrorRef = useRef(null)
+
+    const {
+        transcript: browserTranscript,
+        resetTranscript,
+        browserSupportsSpeechRecognition
+    } = useBrowserSpeechRecognition()
+
+    useEffect(() => {
+        browserTranscriptRef.current = browserTranscript || ''
+    }, [browserTranscript])
+
+    const canRecordAudio = !!(window.MediaRecorder && navigator.mediaDevices?.getUserMedia)
+    const nativeSpeechRecognitionSupported = !!getNativeSpeechRecognition()
+    const supported = browserSupportsSpeechRecognition || canRecordAudio || nativeSpeechRecognitionSupported
+
+    const transcribeWithWhisper = useCallback(async (mimeType) => {
+        if (chunksRef.current.length === 0) {
+            throw new Error('No audio captured for transcription.')
+        }
+
+        const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
+        const fd = new FormData()
+        fd.append('audio', blob, 'speech.webm')
+
+        const res = await axios.post(`${API_BASE}/comm-test/transcribe`, fd, {
+            headers: getAuthHeaders(),
+            timeout: 15000
+        })
+
+        if (!res.data.success || !res.data.transcript) {
+            throw new Error(res.data.error || 'Whisper transcription did not return any text.')
+        }
+
+        return res.data.transcript
+    }, [])
+
+    const start = useCallback(async () => {
+        setTranscript('')
+        setError(null)
+        setDurationSec(0)
+        setIsProcessing(false)
+        setTranscriptSource(null)
+        browserErrorRef.current = null
+        browserTranscriptRef.current = ''
+        resetTranscript()
+
+        if (!supported) {
+            setError('Speech recognition is not available in this browser. Please use Chrome, Edge, or Firefox.')
+            return
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm')
+                    ? 'audio/webm'
+                    : ''
+            const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+            chunksRef.current = []
+            mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+            mr.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop())
+                setIsListening(false)
+                setDurationSec(Math.round((Date.now() - startTimeRef.current) / 1000))
+                if (chunksRef.current.length === 0) return
+
+                setIsProcessing(true)
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 500))
+                    const browserText = (browserTranscriptRef.current || '').trim()
+
+                    if (browserSupportsSpeechRecognition && !browserErrorRef.current && browserText) {
+                        setTranscript(browserText)
+                        setTranscriptSource(TRANSCRIPT_SOURCE.JS_LIBRARY)
+                    } else {
+                        try {
+                            const whisperText = await transcribeWithWhisper(mimeType)
+                            setTranscript(whisperText)
+                            setTranscriptSource(TRANSCRIPT_SOURCE.WHISPER)
+                        } catch (whisperError) {
+                            const nativeText = await transcribeWithNativeSpeechRecognition()
+                            setTranscript(nativeText)
+                            setTranscriptSource(TRANSCRIPT_SOURCE.NATIVE)
+                            console.warn('Whisper fallback failed, native speech recognition succeeded:', whisperError.message)
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Speech transcription failed:', e.message)
+                    setError('Speech recognition failed in the JS library, Whisper fallback, and native browser fallback. Please try again.')
+                } finally {
+                    setIsProcessing(false)
+                }
+            }
+
+            mr.start()
+            mediaRecorderRef.current = mr
+            startTimeRef.current = Date.now()
+
+            if (browserSupportsSpeechRecognition) {
+                try {
+                    await BrowserSpeechRecognition.startListening({ continuous: true, language: 'en-US' })
+                } catch (speechError) {
+                    browserErrorRef.current = speechError?.message || 'Browser speech recognition failed to start.'
+                }
+            }
+
+            setIsListening(true)
+        } catch (e) {
+            setError(
+                e.name === 'NotAllowedError'
+                    ? 'Microphone access denied. Please allow microphone access in your browser settings.'
+                    : 'Could not access microphone. Please try again.'
+            )
+        }
+    }, [browserSupportsSpeechRecognition, resetTranscript, supported, transcribeWithWhisper])
+
+    const stop = useCallback(() => {
+        try { BrowserSpeechRecognition.stopListening() } catch {}
+
+        if (mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop()
+            return
+        }
+
+        if (browserSupportsSpeechRecognition) {
+            const browserText = (browserTranscriptRef.current || '').trim()
+            setIsListening(false)
+            if (browserText) {
+                setTranscript(browserText)
+                setTranscriptSource(TRANSCRIPT_SOURCE.JS_LIBRARY)
+            } else {
+                setError('No speech detected. Please try again.')
+            }
+        }
+    }, [browserSupportsSpeechRecognition])
+
+    const reset = useCallback(() => {
+        try { BrowserSpeechRecognition.abortListening() } catch {}
+        setTranscript('')
+        setError(null)
+        setDurationSec(0)
+        setIsProcessing(false)
+        setTranscriptSource(null)
+        browserErrorRef.current = null
+        browserTranscriptRef.current = ''
+        resetTranscript()
+    }, [resetTranscript])
+
+    return { isListening, isProcessing, transcript, transcriptSource, error, durationSec, supported, start, stop, reset }
+}
+
 // ─── Module A: Read & Speak ───────────────────────────────────────────────────
 
 function ModuleReadSpeak({ sessionId, testId, onComplete }) {
@@ -156,7 +376,7 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
     const [completed, setCompleted] = useState([])
     const [totalQ, setTotalQ] = useState(0)
     const [allDone, setAllDone] = useState(false)
-    const { isListening, isProcessing, transcript, error, durationSec, supported, start, stop, reset } = useSpeechRecognition()
+    const { isListening, isProcessing, transcript, transcriptSource, error, durationSec, supported, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
 
     const fetchSentence = async (completedIds) => {
         setLoading(true); setSentence(null); setQuestionId(null); reset()
@@ -263,6 +483,9 @@ function ModuleReadSpeak({ sessionId, testId, onComplete }) {
                             <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: 14, marginBottom: 16 }}>
                                 <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: 6, fontWeight: 700, textTransform: 'uppercase' }}>Your Speech</div>
                                 <div style={{ color: '#f1f5f9', fontStyle: 'italic' }}>"{transcript}"</div>
+                                <div style={{ marginTop: 8, fontSize: '0.72rem', color: '#94a3b8' }}>
+                                    Source: {transcriptSource === TRANSCRIPT_SOURCE.JS_LIBRARY ? 'JS library speech recognition' : transcriptSource === TRANSCRIPT_SOURCE.WHISPER ? 'Whisper fallback' : transcriptSource === TRANSCRIPT_SOURCE.NATIVE ? 'Native browser speech recognition fallback' : 'Unknown'}
+                                </div>
                             </div>
                         )}
 
@@ -290,7 +513,7 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
     const [completed, setCompleted] = useState([])
     const [totalQ, setTotalQ] = useState(0)
     const [allDone, setAllDone] = useState(false)
-    const { isListening, isProcessing, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
+    const { isListening, isProcessing, transcript, transcriptSource, error, supported, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
 
     const fetchSentence = async (completedIds) => {
         setLoading(true); setSentence(null); setQuestionId(null); setPlayed(false); reset()
@@ -406,7 +629,12 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
                                 {isListening && <div style={{ marginTop: 10, color: '#ef4444', fontSize: '0.82rem' }}>🔴 Recording… speak clearly</div>}
                                 {isProcessing && <div style={{ marginTop: 10, color: '#a855f7', fontSize: '0.82rem' }}>⏳ Transcribing your speech…</div>}
                                 {transcript && (
-                                    <div style={{ marginTop: 12, color: '#f1f5f9', fontStyle: 'italic', fontSize: '0.9rem' }}>"{transcript}"</div>
+                                    <div style={{ marginTop: 12 }}>
+                                        <div style={{ color: '#f1f5f9', fontStyle: 'italic', fontSize: '0.9rem' }}>"{transcript}"</div>
+                                        <div style={{ marginTop: 6, fontSize: '0.72rem', color: '#94a3b8' }}>
+                                            Source: {transcriptSource === TRANSCRIPT_SOURCE.JS_LIBRARY ? 'JS library speech recognition' : transcriptSource === TRANSCRIPT_SOURCE.WHISPER ? 'Whisper fallback' : transcriptSource === TRANSCRIPT_SOURCE.NATIVE ? 'Native browser speech recognition fallback' : 'Unknown'}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -431,11 +659,10 @@ function ModuleListenRepeat({ sessionId, testId, onComplete }) {
 function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
     const [topic, setTopic] = useState(null)
     const [questionId, setQuestionId] = useState(null)
-    const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
     const [completed, setCompleted] = useState([])
-    const { isListening, isProcessing, transcript, error, supported, start, stop, reset } = useSpeechRecognition()
+    const { isListening, isProcessing, transcript, transcriptSource, error, supported, start, stop, reset } = usePrimaryBrowserSpeechRecognition()
     const cancelBrowserSpeech = useCallback(() => {
         try { window.speechSynthesis?.cancel() } catch {}
     }, [])
@@ -539,6 +766,9 @@ function ModuleTopicSpeak({ sessionId, testId, onComplete }) {
                             <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: 14, marginBottom: 16, maxHeight: 120, overflowY: 'auto' }}>
                                 <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: 6, fontWeight: 700, textTransform: 'uppercase' }}>Transcribed</div>
                                 <div style={{ color: '#f1f5f9', fontSize: '0.9rem', lineHeight: 1.5 }}>{transcript}</div>
+                                <div style={{ marginTop: 8, fontSize: '0.72rem', color: '#94a3b8' }}>
+                                    Source: {transcriptSource === TRANSCRIPT_SOURCE.JS_LIBRARY ? 'JS library speech recognition' : transcriptSource === TRANSCRIPT_SOURCE.WHISPER ? 'Whisper fallback' : transcriptSource === TRANSCRIPT_SOURCE.NATIVE ? 'Native browser speech recognition fallback' : 'Unknown'}
+                                </div>
                             </div>
                         )}
 
@@ -580,7 +810,6 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete, moduleType = 'gramma
     const [questions, setQuestions] = useState([])
     const [currentIdx, setCurrentIdx] = useState(0)
     const [answers, setAnswers] = useState({})
-    const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [submitting, setSubmitting] = useState(false)
 
@@ -590,7 +819,7 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete, moduleType = 'gramma
     const moduleColor = MODULE_COLORS[moduleType] || '#c084fc'
 
     const fetchQuiz = async () => {
-        setLoading(true); setResult(null); setAnswers({}); setCurrentIdx(0)
+        setLoading(true); setAnswers({}); setCurrentIdx(0)
         try {
             const { data } = await axios.get(`${API_BASE}/comm-test/tests/${testId}/grammar-batch`, {
                 params: { count: 5, module_type: moduleType }, headers: getAuthHeaders()
@@ -613,10 +842,10 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete, moduleType = 'gramma
         setSubmitting(true)
         try {
             const ans = questions.map(q => ({ id: q.id, answer: answers[q.id] || '' }))
-            const { data } = await axios.post(`${API_BASE}/comm-test/submit/grammar-quiz`, {
+            await axios.post(`${API_BASE}/comm-test/submit/grammar-quiz`, {
                 sessionId, answers: ans, moduleType
             }, { headers: getAuthHeaders() })
-            setResult(data)
+            await onComplete()
         } catch (e) { console.error(e) }
         setSubmitting(false)
     }
@@ -629,32 +858,13 @@ function ModuleGrammarQuiz({ sessionId, testId, onComplete, moduleType = 'gramma
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
                     <Brain size={20} color={moduleColor} />
                     <span style={{ fontWeight: 800, fontSize: '1rem', color: moduleColor, textTransform: 'uppercase' }}>{moduleLabel}</span>
-                    {!result && questions.length > 0 && (
+                    {questions.length > 0 && (
                         <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>Question {currentIdx + 1} / {questions.length}</span>
                     )}
                 </div>
 
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>Loading quiz…</div>
-                ) : result ? (
-                    <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
-                            <ScoreBadge score={result.score} size="lg" />
-                            <div>
-                                <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#f1f5f9' }}>Quiz Submitted</div>
-                                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Score saved: {result.percentage}%</div>
-                            </div>
-                        </div>
-                        <div style={{ background: '#0f172a', borderRadius: 12, padding: '16px 18px', border: '1px solid rgba(16,185,129,0.25)', marginBottom: 20 }}>
-                            <div style={{ color: '#10b981', fontWeight: 800, fontSize: '0.95rem', marginBottom: 6 }}>Answers recorded successfully</div>
-                            <div style={{ color: '#94a3b8', fontSize: '0.83rem', lineHeight: 1.6 }}>
-                                This section is complete. The detailed answer review is hidden during the live communication test so the correct responses are not revealed before you continue.
-                            </div>
-                        </div>
-                        <button onClick={onComplete} style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', borderRadius: 10, color: 'white', fontWeight: 700, cursor: 'pointer' }}>
-                            Next Module <ArrowRight size={14} style={{ marginLeft: 4 }} />
-                        </button>
-                    </div>
                 ) : questions.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: 32, color: '#64748b' }}>No questions found for this module.</div>
                 ) : (
@@ -739,13 +949,16 @@ function SessionReport({ sessionId, onRestart }) {
         'listen-repeat':  { label: 'Listen & Repeat', color: '#5b21b6', bg: 'rgba(91,33,182,0.12)'  },
         'topic-speak':    { label: 'Topic Speaking',  color: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
         'grammar-quiz':   { label: 'Grammar Quiz',    color: '#c084fc', bg: 'rgba(192,132,252,0.12)'},
+        'vocabulary-test': { label: 'Vocabulary Test', color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
+        'email-writing':  { label: 'Professional Writing', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
         'gd-round':       { label: 'Group Discussion', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' },
     }
 
     if (loading) return <div style={{ textAlign: 'center', padding: 60, color: '#64748b' }}>Generating your report…</div>
     if (!report) return null
 
-    const score = report.overallScore
+    const rawScore = Number.isFinite(Number(report?.overallScore)) ? Number(report.overallScore) : 0
+    const score = Math.max(0, Math.min(100, Math.round(rawScore)))
 
     function renderModuleDetail(module, submissions) {
         if (module === 'gd-round') {
@@ -836,7 +1049,7 @@ function SessionReport({ sessionId, onRestart }) {
             })
         }
 
-        if (module === 'grammar-quiz') {
+        if (module === 'grammar-quiz' || module === 'vocabulary-test') {
             const reviews = submissions.flatMap(sub => {
                 try { return sub.ai_scores?.review || [] } catch { return [] }
             })
@@ -866,7 +1079,7 @@ function SessionReport({ sessionId, onRestart }) {
                             {reviews.map((r, i) => (
                                 <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                                     <td style={{ padding: '6px 8px', color: '#cbd5e1', fontSize: 12, maxWidth: 200 }}>{r.sentence}</td>
-                                    <td style={{ padding: '6px 8px' }}><span style={{ background: 'rgba(168,85,247,0.15)', color: '#c084fc', borderRadius: 4, padding: '1px 6px', fontSize: 10 }}>{r.category}</span></td>
+                                    <td style={{ padding: '6px 8px' }}><span style={{ background: module === 'vocabulary-test' ? 'rgba(52,211,153,0.15)' : 'rgba(168,85,247,0.15)', color: module === 'vocabulary-test' ? '#34d399' : '#c084fc', borderRadius: 4, padding: '1px 6px', fontSize: 10 }}>{r.category}</span></td>
                                     <td style={{ padding: '6px 8px', color: r.isCorrect ? '#10b981' : '#f87171', fontWeight: 600 }}>{r.userAnswer}</td>
                                     <td style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
                                         <span style={{ color: '#10b981', fontWeight: 700 }}>{r.correctAnswer}</span>
@@ -903,7 +1116,7 @@ function SessionReport({ sessionId, onRestart }) {
     }
 
     const modules = report.modules || []
-    const totalAttempts = modules.reduce((s, m) => s + m.attempts, 0)
+    const totalAttempts = modules.reduce((s, m) => s + (Number(m.attempts) || 0), 0)
     const passing = score >= 60
     const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B+' : score >= 60 ? 'B' : 'C'
     const moduleTrunc = modules.map(m => (MODULE_META_REPORT[m.module]?.label || m.module)).join(', ')
@@ -1358,14 +1571,17 @@ export default function CommunicationTest({ user }) {
         return filtered.length > 0 ? filtered : MODULES
     }
 
-    const nextModule = () => {
+    const nextModule = async () => {
         const mods = getActiveModules()
         if (moduleIndex < mods.length - 1) {
             setModuleIndex(i => i + 1)
         } else {
-            // Last module done — complete session
-            axios.post(`${API_BASE}/comm-test/session/complete`, { sessionId }, { headers: getAuthHeaders() })
-                .catch(console.error)
+            // Last module done — complete session before showing the report
+            try {
+                await axios.post(`${API_BASE}/comm-test/session/complete`, { sessionId }, { headers: getAuthHeaders() })
+            } catch (e) {
+                console.error(e)
+            }
             setPhase('report')
         }
     }
